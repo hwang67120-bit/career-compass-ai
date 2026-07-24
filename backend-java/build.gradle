@@ -1,0 +1,62 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.0'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.careercompass'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// REST API, 파일 업로드, Python 서버 호출, SSE
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	// 이메일·파일 크기·요청값 검증
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// PostgreSQL 데이터 저장
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// PostgreSQL JDBC 드라이버
+	runtimeOnly 'org.postgresql:postgresql'
+	// 회원가입·로그인·권한 검사
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// JWT 검증
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	// DB 스키마 변경 이력 관리
+	implementation 'org.flywaydb:flyway-core'
+	// Flyway의 PostgreSQL 지원
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+	// 서버 상태와 헬스 체크
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// 개발 시 PostgreSQL 컨테이너 자동 연결
+	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+
+	// JUnit, Mockito, AssertJ
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	// 로그인·권한 테스트
+	testImplementation 'org.springframework.security:spring-security-test'
+	// Spring과 테스트 컨테이너 연결
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// 실제 PostgreSQL 통합 테스트
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: 'postgres:16'
+    environment:
+      - 'POSTGRES_DB=career_compass'
+      - 'POSTGRES_USER=career_compass'
+      - 'POSTGRES_PASSWORD=career_compass'
+    ports:
+      - '5432:5432'
