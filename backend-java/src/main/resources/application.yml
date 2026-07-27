@@ -31,3 +31,11 @@ management:
     web:
       exposure:
         include: health
+
+github:
+  api:
+    base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    api-version: ${GITHUB_API_VERSION:2022-11-28}
+    user-agent: ${GITHUB_API_USER_AGENT:career-compass-ai}
+    connect-timeout: ${GITHUB_API_CONNECT_TIMEOUT}
+    read-timeout: ${GITHUB_API_READ_TIMEOUT}
