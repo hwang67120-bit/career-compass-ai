@@ -31,3 +31,7 @@ management:
     web:
       exposure:
         include: health
+
+python:
+  worker:
+    base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}

@@ -3,12 +3,8 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.health.router import router as health_router
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
-
-
-@app.get("/health")
-def check_health() -> dict[str, str]:
-    """서버가 요청을 처리할 수 있는 상태인지 확인한다."""
-    return {"status": "ok"}
+app.include_router(health_router)
