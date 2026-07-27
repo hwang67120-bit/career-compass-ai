@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: career-compass-backend
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:career_compass}
+    username: ${DB_USERNAME:career_compass}
+    password: ${DB_PASSWORD:career_compass}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    locations: classpath:db/migration
+
+  docker:
+    compose:
+      file: compose.yaml
+
+  # OAuth2 리소스 서버(JWT 검증) 설정은 인증 정책 확정 전이라 비워둠 - 확인 필요
+  # security:
+  #   oauth2:
+  #     resourceserver:
+  #       jwt:
+  #         issuer-uri: ${JWT_ISSUER_URI}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+python:
+  worker:
+    base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
