@@ -8,8 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @ConfigurationPropertiesScan
 public class CareerCompassApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(CareerCompassApplication.class, args);
-	}
-
+    public static void main(String[] args) {
+        SpringApplication.run(CareerCompassApplication.class, args);
+    }
 }
