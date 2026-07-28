@@ -24,11 +24,72 @@ Actuator, 내부 GitHub REST 호출과 아직 구현되지 않은 API는 포함�
 
 | 도메인 | 기능 | Method | Endpoint |
 | --- | --- | --- | --- |
+| 인증 | GitHub 로그인 시작 | `GET` | `/oauth2/authorization/github` |
+| 인증 | 현재 로그인 사용자 조회 | `GET` | `/api/v1/auth/me` |
+| 인증 | CSRF 토큰 조회 | `GET` | `/api/v1/auth/csrf` |
+| 인증 | 로그아웃 | `POST` | `/api/v1/auth/logout` |
 | 사용자 문서 | 텍스트 문서 등록 | `POST` | `/api/v1/documents` |
 | 프로젝트 출처 | 공개 GitHub 저장소 등록 | `POST` | `/api/v1/project-sources/github` |
 
 개발 환경의 기본 주소는 Postman 환경 파일의 `baseUrl`을 사용한다.
 현재 Linux 개발 환경은 `http://100.68.47.24:8080`이다.
+
+### 인증
+
+`prod` 프로필은 GitHub OAuth 로그인과 서버 세션 쿠키를 사용한다.
+비밀번호·이메일·GitHub 저장소 권한은 수집하지 않으며, GitHub 숫자 사용자 ID와
+내부 사용자 UUID의 연결만 저장한다.
+
+1. 브라우저에서 `GET /oauth2/authorization/github`를 연다.
+2. GitHub 로그인·동의 후 `/login/oauth2/code/github` callback으로 돌아온다.
+3. 서버가 GitHub 사용자 ID를 확인하고 `UserAccount`와 `ExternalIdentity`를 조회하거나 생성한다.
+4. 로그인 세션을 만들고 브라우저 확인 화면 `/`로 이동한다.
+5. 이후 보호 API는 `JSESSIONID` 세션 쿠키로 사용자를 확인한다.
+
+운영 실행에는 다음 환경변수가 필요하다.
+
+```text
+SPRING_PROFILES_ACTIVE=prod
+GITHUB_OAUTH_CLIENT_ID=...
+GITHUB_OAUTH_CLIENT_SECRET=...
+SESSION_COOKIE_SECURE=true
+```
+
+로컬 HTTP에서 OAuth 로그인을 확인할 때만 `SESSION_COOKIE_SECURE=false`를 사용하고,
+운영에서는 HTTPS와 `true`를 사용한다.
+
+현재 Linux 개발 서버용 GitHub OAuth App callback은
+`http://100.68.47.24:8080/login/oauth2/code/github`로 등록한다.
+운영 배포에서는 별도의 OAuth App과 HTTPS callback을 사용한다.
+
+세션 인증의 상태 변경 요청은 CSRF 검증이 필요하다.
+
+1. 세션 쿠키를 유지한 상태로 `GET /api/v1/auth/csrf`를 호출한다.
+2. 응답의 `headerName`과 `token`을 확인한다.
+3. `POST`, `PATCH`, `DELETE` 요청에 `X-CSRF-TOKEN: {token}` 헤더를 보낸다.
+
+`dev`, `test` 프로필은 기존 Postman·단위 테스트 흐름을 유지하기 위해 OAuth 로그인을 요구하지 않고
+`TEST_USER_ID`에 설정된 고정 사용자 UUID를 사용한다.
+
+- 로그인 세션이 없으면 `401 UNAUTHORIZED`
+- 인증됐지만 허용되지 않은 경로이면 `403 FORBIDDEN`
+- CSRF 토큰이 없거나 일치하지 않는 상태 변경 요청은 `403 FORBIDDEN`
+- `/actuator/health`는 운영 상태 확인을 위해 인증 대상에서 제외
+- 세션 쿠키와 GitHub 액세스 토큰은 Python Worker나 외부 LLM 제공자로 전달하지 않음
+- GitHub 액세스 토큰은 데이터베이스에 저장하지 않음
+
+### 브라우저 확인 화면
+
+Java 서버의 `/` 경로에서 로그인과 자료 등록 상태를 브라우저로 확인할 수 있다.
+
+- 운영 프로필: 첫 화면에서 GitHub OAuth 로그인을 시작하고, 성공하면 `/`로 돌아온다.
+- 개발·테스트 프로필: `TEST_USER_ID`의 고정 사용자로 바로 자료 등록 화면을 연다.
+- 문서 등록: 현재 도메인 API 범위에 맞춰 이력서·포트폴리오 텍스트를 등록한다. PDF 업로드 UI는 파일 업로드 API 구현 후 추가한다.
+- GitHub 등록: 공개 저장소 URL을 실제 GitHub API로 검증하고 저장소명, 기본 브랜치, 커밋 SHA를 표시한다.
+- 상태 표시: 서버 응답에 따라 등록 전, 등록 중, 등록 완료, 등록 실패를 구분한다.
+
+화면은 별도 프론트 서버 없이 Spring Boot 정적 리소스로 제공되므로 Java 서버와 같은 출처에서 API를 호출한다.
+운영 프로필의 변경 요청은 `/api/v1/auth/csrf`에서 받은 CSRF 토큰을 요청 헤더에 포함한다.
 
 ### 공통 응답
 
