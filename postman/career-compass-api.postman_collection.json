@@ -1,0 +1,204 @@
+{
+  "info": {
+    "_postman_id": "2b47c730-8579-4e46-a109-41e5b9685291",
+    "name": "Career Compass API",
+    "description": "Career Compass Java 백엔드의 실제 HTTP 동작을 사용자가 직접 확인하는 Collection입니다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "서버 상태 확인",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "health"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('서버가 200을 반환한다', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('서버 상태가 UP이다', function () {",
+              "    pm.expect(pm.response.json().status).to.eql('UP');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GitHub 공개 저장소 등록 - 201",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"repositoryUrl\": \"{{githubRepositoryUrl}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/project-sources/github",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "project-sources",
+            "github"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('저장소가 201로 등록된다', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "const response = pm.response.json();",
+              "const submittedUrl = pm.environment.get('githubRepositoryUrl');",
+              "const expectedRepositoryUrl = submittedUrl.replace(/\\.git\\/?$/, '').replace(/\\/$/, '');",
+              "const expectedFullName = expectedRepositoryUrl.replace('https://github.com/', '');",
+              "pm.test('검증된 GitHub 정보와 commitSha가 반환된다', function () {",
+              "    pm.expect(response.data.repositoryUrl).to.eql(expectedRepositoryUrl);",
+              "    pm.expect(response.data.repositoryFullName.toLowerCase()).to.eql(expectedFullName.toLowerCase());",
+              "    pm.expect(response.data.commitSha).to.be.a('string').and.not.empty;",
+              "    pm.expect(response.data.status).to.eql('REGISTERED');",
+              "});",
+              "if (response.data) {",
+              "    pm.environment.set('projectSourceId', response.data.projectSourceId);",
+              "    pm.environment.set('commitSha', response.data.commitSha);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GitHub 주소 형식 오류 - 400",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"repositoryUrl\": \"{{invalidGitHubRepositoryUrl}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/project-sources/github",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "project-sources",
+            "github"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('허용되지 않은 주소가 400으로 거부된다', function () {",
+              "    pm.response.to.have.status(400);",
+              "    pm.expect(pm.response.json().error.errorType).to.eql('INVALID_GITHUB_REPOSITORY_URL');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "존재하지 않는 GitHub 저장소 - 404",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"repositoryUrl\": \"{{missingGitHubRepositoryUrl}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/project-sources/github",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "project-sources",
+            "github"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('확인할 수 없는 저장소가 404로 거부된다', function () {",
+              "    pm.response.to.have.status(404);",
+              "    pm.expect(pm.response.json().error.errorType).to.eql('GITHUB_REPOSITORY_UNAVAILABLE');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

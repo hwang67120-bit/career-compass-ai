@@ -28,6 +28,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	// 이메일·파일 크기·요청값 검증
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// GitHub API 호출용 명령형 HTTP 클라이언트 자동 구성
+	implementation 'org.springframework.boot:spring-boot-starter-restclient'
 	// PostgreSQL 데이터 저장
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	// PostgreSQL JDBC 드라이버
@@ -37,7 +39,7 @@ dependencies {
 	// JWT 검증
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	// DB 스키마 변경 이력 관리
-	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// Flyway의 PostgreSQL 지원
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	// 서버 상태와 헬스 체크
@@ -47,13 +49,17 @@ dependencies {
 
 	// JUnit, Mockito, AssertJ
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	// Spring Boot 4의 RestClient 테스트 슬라이스
+	testImplementation 'org.springframework.boot:spring-boot-restclient-test'
 	// 로그인·권한 테스트
 	testImplementation 'org.springframework.security:spring-security-test'
 	// Spring과 테스트 컨테이너 연결
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// Spring Boot 4.1.0이 관리하는 Testcontainers 모듈 버전 정렬
+	testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
 	// 실제 PostgreSQL 통합 테스트
-	testImplementation 'org.testcontainers:junit-jupiter'
-	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

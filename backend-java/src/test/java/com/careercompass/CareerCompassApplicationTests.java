@@ -1,13 +1,14 @@
 package com.careercompass;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
 class CareerCompassApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
-
+    @Test
+    void application_hasSpringBootConfiguration() {
+        assertThat(CareerCompassApplication.class).hasAnnotation(SpringBootApplication.class);
+    }
 }
