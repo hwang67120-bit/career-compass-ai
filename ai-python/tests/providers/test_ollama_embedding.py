@@ -23,7 +23,7 @@ async def provider(settings: OllamaSettings):
         base_url=str(settings.ollama_base_url).rstrip("/"),
         timeout=timeout,
     ) as client:
-        yield OllamaEmbeddingProvider(client=client, model_name=settings.embedding_model)
+        yield OllamaEmbeddingProvider(client=client, model_name=settings.ollama_embedding_model)
 
 
 @pytest.mark.asyncio
