@@ -11,6 +11,7 @@ class OllamaSettings(BaseSettings):
 
     ollama_base_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:11434")
     ollama_model: str
+    embedding_model: str
     ollama_connect_timeout_seconds: PositiveFloat = 3
     ollama_read_timeout_seconds: PositiveFloat = 120
 
