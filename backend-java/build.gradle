@@ -36,8 +36,8 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	// 회원가입·로그인·권한 검사
 	implementation 'org.springframework.boot:spring-boot-starter-security'
-	// JWT 검증
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	// GitHub OAuth 로그인과 세션 인증
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 	// DB 스키마 변경 이력 관리
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// Flyway의 PostgreSQL 지원
@@ -51,6 +51,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	// Spring Boot 4의 RestClient 테스트 슬라이스
 	testImplementation 'org.springframework.boot:spring-boot-restclient-test'
+	// Spring Boot 4의 MockMvc 테스트 슬라이스
+	testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
 	// 로그인·권한 테스트
 	testImplementation 'org.springframework.security:spring-security-test'
 	// Spring과 테스트 컨테이너 연결
