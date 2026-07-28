@@ -34,6 +34,8 @@ PDF 등록
 | 브라우저 확인 화면 | Java 구현 완료 |
 | PDF 페이지 텍스트 추출 | Python 서비스 구현 완료 |
 | PDF Java–Python 추출 계약 | MVP 확정 |
+| Ollama·Gemini 구조화 추출, 임베딩·유사도·재정렬 | Python 내부 구현 완료 (API 미연결) |
+| 내부 서비스 인증(2차 방어선) | Python 구현 완료, Java 쪽 헤더 전송은 미구현 |
 | PDF 업로드·비동기 추출 작업 연결 | 미구현 |
 | 추출 후보 수정·확정 | 미구현 |
 | 채용공고 등록·분석·결과 화면 | 미구현 |
@@ -44,11 +46,18 @@ PDF 등록
 
 - 협업·정책·코드 규칙: [AGENTS.md](AGENTS.md)
 - Java API와 공통 예외: [backend-java/README.md](backend-java/README.md)
+- Python API와 내부 구조: [ai-python/README.md](ai-python/README.md)
 - Java–Python 계약 목록: [contracts/README.md](contracts/README.md)
 - PDF 문서 추출 계약: [contracts/document-extraction.md](contracts/document-extraction.md)
 - 상태 소유권: [docs/architecture/domain-state-ownership.md](docs/architecture/domain-state-ownership.md)
 - Java–Python 연결: [docs/architecture/java-python-connection.md](docs/architecture/java-python-connection.md)
 - 가드레일: [docs/architecture/guardrails.md](docs/architecture/guardrails.md)
+- 계층·컴포넌트 이름 정의: [docs/architecture/layer-terminology.md](docs/architecture/layer-terminology.md)
+- LLM 제공자 연동(Ollama·Gemini): [docs/architecture/llm-providers.md](docs/architecture/llm-providers.md)
+- 임베딩과 의미 유사도: [docs/architecture/embedding-similarity.md](docs/architecture/embedding-similarity.md)
+- 후보 재정렬: [docs/architecture/reranking.md](docs/architecture/reranking.md)
+- 학습 데이터 기준: [docs/architecture/training-data-standards.md](docs/architecture/training-data-standards.md)
+- 오차 범위 계산·보정: [docs/architecture/error-calibration.md](docs/architecture/error-calibration.md)
 
 ## 책임 경계
 
