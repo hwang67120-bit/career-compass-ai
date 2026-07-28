@@ -107,9 +107,11 @@ class GeminiEmbeddingProvider:
             raise ValueError("texts에 빈 값이 있으면 임베딩을 생성할 수 없습니다.")
 
         try:
+            # list[str]은 SDK가 실제로 허용하는 값이지만, mypy가 list의
+            # 무공변성 때문에 Union 리스트 타입과 다르다고 오탐지한다.
             response = await self.client.aio.models.embed_content(
                 model=self.model_name,
-                contents=texts,
+                contents=texts,  # type: ignore[arg-type]
             )
         except errors.ServerError as error:
             raise EmbeddingUnavailableError(
