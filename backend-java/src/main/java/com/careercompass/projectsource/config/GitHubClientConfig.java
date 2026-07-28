@@ -15,7 +15,7 @@ public class GitHubClientConfig {
      * 기능: 자동 리다이렉트를 차단하고 허용된 GitHub API 호스트만 사용하는 HTTP 클라이언트를 구성한다.
      */
     @Bean
-    RestClient gitHubRestClient(RestClient.Builder builder, GitHubApiProperties properties) {
+    RestClient gitHubApiRestClient(RestClient.Builder builder, GitHubApiProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER)

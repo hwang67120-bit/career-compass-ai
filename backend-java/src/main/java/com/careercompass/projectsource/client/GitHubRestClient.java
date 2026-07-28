@@ -16,7 +16,7 @@ public class GitHubRestClient implements GitHubRepositoryGateway {
 
     private final RestClient restClient;
 
-    public GitHubRestClient(@Qualifier("gitHubRestClient") RestClient restClient) {
+    public GitHubRestClient(@Qualifier("gitHubApiRestClient") RestClient restClient) {
         this.restClient = restClient;
     }
 
