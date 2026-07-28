@@ -36,3 +36,7 @@ github:
     user-agent: ${GITHUB_API_USER_AGENT:career-compass-ai}
     connect-timeout: ${GITHUB_API_CONNECT_TIMEOUT}
     read-timeout: ${GITHUB_API_READ_TIMEOUT}
+
+python:
+  worker:
+    base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
