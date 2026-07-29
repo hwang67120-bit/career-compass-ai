@@ -82,11 +82,23 @@ PDF 등록
 - 양쪽 서버에서 같은 예제로 계약 테스트를 실행한다.
 - 계약에 없는 필드와 상태를 구현에서 임의로 추가하지 않는다.
 
+### 문서 추출 흐름 소유권 (2026-07-29 합의)
+
+병렬 작업 충돌을 줄이기 위해 "공통 구현"을 두지 않는다. 계약은 공동으로 정하고, 실행 제어는 Java, AI 처리는 Python이 맡는다.
+
+- 프론트: `POST /api/v1/documents/{documentId}/extractions` 호출
+- Java: 분석 시작, 권한 확인, `ExtractionTask` 생성·상태 관리 — 고정 메서드: `createExtractionTask`, `executeDocumentExtraction`, `retrieveExtractionTask`, `saveProfileCandidate`
+- Python: `POST /internal/v1/documents/extract` 처리 — 계약 응답만 맞추면 내부 구성은 자유
+- Java: Python 결과를 계약 스키마로 재검증하고 `ProfileCandidate`로 저장
+- 프론트: 작업 상태와 결과를 조회
+
+두 서버를 동시에 실행해야 하는 작업이므로, 사용자 API의 요청·응답·상태 코드부터 먼저 확정한 뒤 각자 구현한다. 확정 전에는 어느 쪽도 이 흐름 위에 새 코드를 쌓지 않는다.
+
 ## 완료 기준
 
-1. Java와 Python 단위 테스트
-2. 두 서버를 함께 실행한 실제 HTTP 연결 테스트
+1. Java와 Python 단위 테스트. Mock은 "예상된 응답이 오면 코드가 처리하는지"만 증명하며 네트워크·multipart·환경변수·외부 서비스(Ollama 등)·파일 권한 문제는 검증하지 못한다. 실제 파일과 실제 외부 서비스를 사용하는 호출도 포함해야 이 단계를 인정한다.
+2. 두 서버를 함께 실행한 실제 HTTP 연결 테스트 (예: 실제 PDF → FastAPI → 개인정보 제거 → 실제 Ollama → 계약 JSON)
 3. 사용자 흐름을 확인하는 브라우저 테스트
 4. 테스트 서버 배포 후 외부 환경 확인
 
-현재 MVP 완료 판정에는 1~3단계를 적용하고, 서버 컴퓨터가 준비되면 4단계를 추가한다.
+현재 MVP 완료 판정에는 1~3단계를 적용하고, 서버 컴퓨터가 준비되면 4단계를 추가한다. 1단계만 통과하고 상대 서버와 아직 연결하지 않은 기능은 `UNIT_TESTED`로만 표시하고 "구현 완료"로 부르지 않는다 — 세부 상태 정의는 [AGENTS.md](AGENTS.md)와 [docs/current-work.md](docs/current-work.md)를 따른다.
