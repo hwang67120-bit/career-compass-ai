@@ -16,7 +16,23 @@
         githubResult: document.getElementById("github-result"),
         resultRepository: document.getElementById("result-repository"),
         resultBranch: document.getElementById("result-branch"),
-        resultCommit: document.getElementById("result-commit")
+        resultCommit: document.getElementById("result-commit"),
+        analysisBarIcon: document.getElementById("analysis-bar-icon"),
+        analysisBarTitle: document.getElementById("analysis-bar-title"),
+        analysisBarDescription: document.getElementById("analysis-bar-description"),
+        startAnalysisButton: document.getElementById("start-analysis-button"),
+        analysisProgressView: document.getElementById("analysis-progress-view"),
+        progressLog: document.getElementById("progress-log"),
+        analysisResultView: document.getElementById("analysis-result-view"),
+        resultChecklist: document.getElementById("result-checklist"),
+        resultSimilarity: document.getElementById("result-similarity"),
+        resultSkillGaps: document.getElementById("result-skill-gaps"),
+        backToDashboardButton: document.getElementById("back-to-dashboard-button")
+    };
+
+    const state = {
+        document: null,
+        github: null
     };
 
     class ApiRequestError extends Error {
@@ -76,8 +92,33 @@
     }
 
     function showOnly(target) {
-        [elements.loadingView, elements.loginView, elements.dashboardView]
-            .forEach((view) => view.classList.toggle("is-hidden", view !== target));
+        [
+            elements.loadingView,
+            elements.loginView,
+            elements.dashboardView,
+            elements.analysisProgressView,
+            elements.analysisResultView
+        ].forEach((view) => view.classList.toggle("is-hidden", view !== target));
+    }
+
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function updateAnalysisAvailability() {
+        const ready = Boolean(state.document);
+        elements.startAnalysisButton.disabled = !ready;
+        elements.analysisBarIcon.classList.toggle("is-ready", ready);
+
+        if (ready) {
+            elements.analysisBarTitle.textContent = "분석을 시작할 수 있어요.";
+            elements.analysisBarDescription.textContent = state.github
+                ? "이력서와 GitHub 저장소 정보로 분석을 진행합니다."
+                : "이력서 내용만으로 분석을 진행합니다.";
+        } else {
+            elements.analysisBarTitle.textContent = "이력서 내용을 먼저 등록해 주세요.";
+            elements.analysisBarDescription.textContent = "문서 등록이 확인되면 분석을 시작할 수 있어요.";
+        }
     }
 
     function showGlobalMessage(message, isError = false) {
@@ -191,6 +232,8 @@
                 documentType: formData.get("documentType"),
                 text
             });
+            state.document = result;
+            updateAnalysisAvailability();
             updateStatus(
                 elements.documentStatus,
                 "success",
@@ -235,6 +278,8 @@
             const result = await mutation("/api/v1/project-sources/github", {
                 repositoryUrl
             });
+            state.github = result;
+            updateAnalysisAvailability();
             updateStatus(
                 elements.githubStatus,
                 "success",
@@ -265,6 +310,135 @@
         }
     }
 
+    function appendLogEntry(text, detail) {
+        const entry = document.createElement("div");
+        entry.className = "chat-message chat-message-active";
+
+        const avatar = document.createElement("span");
+        avatar.className = "chat-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+
+        const bubble = document.createElement("div");
+        bubble.className = "chat-bubble";
+
+        const textElement = document.createElement("p");
+        textElement.className = "chat-text";
+        textElement.textContent = text;
+        bubble.appendChild(textElement);
+
+        if (detail) {
+            const detailElement = document.createElement("p");
+            detailElement.className = "chat-detail";
+            detailElement.textContent = detail;
+            bubble.appendChild(detailElement);
+        }
+
+        entry.append(avatar, bubble);
+        elements.progressLog.appendChild(entry);
+        entry.scrollIntoView({behavior: "smooth", block: "end"});
+        return entry;
+    }
+
+    function markLogEntryDone(entry) {
+        entry.classList.remove("chat-message-active");
+        entry.classList.add("chat-message-done");
+        entry.querySelector(".chat-avatar").innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4 10-10"></path></svg>';
+    }
+
+    async function runStep(text, detail, delayMs) {
+        const entry = appendLogEntry(text, detail);
+        await sleep(delayMs);
+        markLogEntryDone(entry);
+    }
+
+    async function startAnalysis() {
+        if (!state.document) {
+            return;
+        }
+
+        elements.progressLog.innerHTML = "";
+        showOnly(elements.analysisProgressView);
+
+        await runStep(
+            "이력서 내용 확인",
+            `${documentTypeLabel(state.document.documentType)} · ${formatDate(state.document.createdAt)}`,
+            700
+        );
+
+        if (state.github) {
+            await runStep(
+                "GitHub 저장소 확인",
+                `${state.github.repositoryFullName} · 기본 브랜치 ${state.github.defaultBranch} · ${shortCommit(state.github.commitSha)}`,
+                700
+            );
+        } else {
+            await runStep(
+                "GitHub 저장소 미등록",
+                "이력서 내용만으로 분석을 진행합니다.",
+                500
+            );
+        }
+
+        await runStep(
+            "기술 스택·경력 임베딩 계산",
+            "Python 분석 서비스 연동 준비 중이라 샘플 값으로 진행합니다.",
+            900
+        );
+
+        await runStep(
+            "채용 조건과 유사도 비교",
+            "샘플 값으로 계산 중입니다.",
+            900
+        );
+
+        await runStep("결과 정리", null, 500);
+
+        renderAnalysisResult();
+        showOnly(elements.analysisResultView);
+    }
+
+    function renderAnalysisResult() {
+        const checklistItems = [
+            {label: "3년 이상 백엔드 개발 경험", met: true},
+            {label: "Spring Boot 기반 서비스 운영 경험", met: true},
+            {label: "클라우드 인프라 운영 경험", met: false}
+        ];
+        elements.resultChecklist.innerHTML = checklistItems.map((item) => `
+            <li class="checklist-item ${item.met ? "is-met" : "is-missing"}">
+                <span class="checklist-icon" aria-hidden="true">
+                    ${item.met
+                        ? '<svg viewBox="0 0 24 24"><path d="m5 13 4 4 10-10"></path></svg>'
+                        : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg>'}
+                </span>
+                <span>${item.label}</span>
+            </li>
+        `).join("");
+
+        const similarityItems = [
+            {label: "백엔드 개발", score: 82},
+            {label: "클라우드·인프라", score: 54},
+            {label: "AI·LLM 활용", score: 38}
+        ];
+        elements.resultSimilarity.innerHTML = similarityItems.map((item) => `
+            <div class="similarity-row">
+                <div class="similarity-label">
+                    <span>${item.label}</span>
+                    <span>${item.score}%</span>
+                </div>
+                <div class="similarity-track">
+                    <div class="similarity-fill" style="width: ${item.score}%"></div>
+                </div>
+            </div>
+        `).join("");
+
+        const skillGaps = ["Kubernetes", "RAG 파이프라인 설계", "클라우드 비용 최적화"];
+        elements.resultSkillGaps.innerHTML = skillGaps
+            .map((skill) => `<span class="skill-tag">${skill}</span>`)
+            .join("");
+    }
+
     function documentTypeLabel(documentType) {
         return documentType === "PORTFOLIO" ? "포트폴리오" : "이력서";
     }
@@ -286,6 +460,9 @@
     elements.documentForm.addEventListener("submit", registerDocument);
     elements.githubForm.addEventListener("submit", registerGitHubRepository);
     elements.logoutButton.addEventListener("click", logout);
+    elements.startAnalysisButton.addEventListener("click", startAnalysis);
+    elements.backToDashboardButton.addEventListener("click", () => showOnly(elements.dashboardView));
 
+    updateAnalysisAvailability();
     loadSession();
 })();
