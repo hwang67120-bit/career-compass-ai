@@ -7,7 +7,7 @@ Python이 반환하는 근거는 후보 값을 확인하는 최소 문장 범위
 from app.guardrails.personal_information_sanitizer import sanitize_personal_information
 from app.providers.ollama import OllamaProvider
 from app.schemas.document import PageText
-from app.schemas.profile_candidate import ProfileCandidatePayload
+from app.schemas.profile_candidate import CandidateProject, ProfileCandidatePayload
 
 
 class EvidenceValidationError(RuntimeError):
@@ -35,17 +35,16 @@ def _candidate_items(payload: ProfileCandidatePayload):
 
 
 def validate_evidence(payload: ProfileCandidatePayload, pages: list[PageText]) -> None:
-    """계약 5절의 근거 규칙을 검증한다.
+    """계약 5절의 근거 규칙 중 할루시네이션·중복·유령 참조를 검증한다.
 
-    1. 모든 근거의 원문이 실제로 해당 페이지에 있는지(할루시네이션 차단) — 완화하지 않음.
-    2. 근거 식별자가 중복되지 않는지 — 완화하지 않음.
-    3. 근거를 참조하는 후보 항목은 존재하는 근거만 참조하는지 — 완화하지 않음.
+    1. 모든 근거의 원문이 실제로 해당 페이지에 있는지(할루시네이션 차단).
+    2. 근거 식별자가 중복되지 않는지.
+    3. 후보 항목이 참조하는 근거 ID가 실제로 존재하는지(유령 참조 차단).
 
-    (제안 — 코덱스 확인 필요, contracts/document-extraction.md 5절 참고)
-    "모든 후보 항목이 근거를 하나 이상 가져야 한다"는 요건은 검증하지 않는다.
-    실제 설치된 Ollama 모델 3종으로 확인한 결과 이 요건은 스키마·프롬프트를
-    조정해도 안정적으로 통과하지 못했다(0% 통과). evidenceIds가 빈 항목은
-    허용하되, 할루시네이션·중복·유령 참조는 여전히 차단한다.
+    "모든 후보 항목이 근거를 하나 이상 가져야 한다"는 계약 요건은 여기서
+    검증하지 않는다 — 대신 `filter_unevidenced_candidates`가 근거 없는
+    항목을 응답에서 제거해서 계약을 지킨다(근거 없는 값을 사실처럼
+    반환하는 대신, 조용히 빼는 방식).
 
     개인정보 제거 후 원문과 비교하므로, 제거된 개인정보는 애초에 근거로
     남을 수 없다.
@@ -73,11 +72,58 @@ def validate_evidence(payload: ProfileCandidatePayload, pages: list[PageText]) -
                 )
 
 
+def _filter_project(project: CandidateProject) -> CandidateProject:
+    return project.model_copy(
+        update={"technologies": [t for t in project.technologies if t.evidence_ids]}
+    )
+
+
+def filter_unevidenced_candidates(payload: ProfileCandidatePayload) -> ProfileCandidatePayload:
+    """근거(evidenceIds)가 없는 후보 항목을 응답에서 제거하고, 그 결과 어떤
+    후보 항목도 참조하지 않게 된 근거(evidence)도 함께 제거한다.
+
+    계약 5절(최소 근거): 모든 후보 항목은 근거를 가져야 하고, Python이
+    반환하는 근거는 후보 값을 확인하는 최소 범위로 제한한다. 후보 항목을
+    제거하고 나서 아무도 참조하지 않는 근거를 응답에 그대로 남기면 이
+    최소 범위 원칙을 어기고, sourceText에 남아있는 개인정보(예: 이름)가
+    불필요하게 노출될 위험도 커진다.
+    """
+    filtered_skills = [s for s in payload.skills if s.evidence_ids]
+    filtered_work_experiences = [w for w in payload.work_experiences if w.evidence_ids]
+    filtered_projects = [_filter_project(p) for p in payload.projects if p.evidence_ids]
+    filtered_education = [e for e in payload.education if e.evidence_ids]
+    filtered_certifications = [c for c in payload.certifications if c.evidence_ids]
+
+    referenced_ids: set[str] = set()
+    for item in [
+        *filtered_skills,
+        *filtered_work_experiences,
+        *filtered_education,
+        *filtered_certifications,
+    ]:
+        referenced_ids.update(item.evidence_ids)
+    for project in filtered_projects:
+        referenced_ids.update(project.evidence_ids)
+        for technology in project.technologies:
+            referenced_ids.update(technology.evidence_ids)
+
+    return payload.model_copy(
+        update={
+            "skills": filtered_skills,
+            "work_experiences": filtered_work_experiences,
+            "projects": filtered_projects,
+            "education": filtered_education,
+            "certifications": filtered_certifications,
+            "evidence": [e for e in payload.evidence if e.evidence_id in referenced_ids],
+        }
+    )
+
+
 async def extract_resume_profile(
     pages: list[PageText], provider: OllamaProvider
 ) -> ProfileCandidatePayload:
-    """개인정보를 제거한 원문을 provider로 구조화 추출하고 근거를 검증한다."""
+    """개인정보를 제거한 원문을 provider로 구조화 추출하고 근거를 검증·정리한다."""
     page_marked_text = build_page_marked_text(pages)
     candidate = await provider.extract_resume_profile(page_marked_text)
     validate_evidence(candidate, pages)
-    return candidate
+    return filter_unevidenced_candidates(candidate)
