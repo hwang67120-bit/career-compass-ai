@@ -152,16 +152,56 @@
 
         <div class="analysis-bar">
             <div>
-                <span class="lock-icon" aria-hidden="true">
+                <span id="analysis-bar-icon" class="lock-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
                 </span>
                 <span>
-                    <strong>분석 실행은 다음 구현 단계입니다.</strong>
-                    <small>현재 화면에서는 로그인과 자료 등록까지 실제로 확인할 수 있어요.</small>
+                    <strong id="analysis-bar-title">이력서 내용을 먼저 등록해 주세요.</strong>
+                    <small id="analysis-bar-description">문서 등록이 확인되면 분석을 시작할 수 있어요.</small>
                 </span>
             </div>
-            <button type="button" disabled>분석 시작</button>
+            <button id="start-analysis-button" type="button" disabled>분석 시작</button>
         </div>
+    </section>
+
+    <section id="analysis-progress-view" class="analysis-progress-view is-hidden" aria-labelledby="progress-title">
+        <div class="progress-heading">
+            <p class="eyebrow">ANALYZING</p>
+            <h1 id="progress-title">분석을 진행하고 있어요</h1>
+            <p>등록된 자료를 확인하면서 단계별로 알려드릴게요.</p>
+        </div>
+        <article class="panel chat-panel">
+            <div id="progress-log" class="chat-log" aria-live="polite"></div>
+        </article>
+    </section>
+
+    <section id="analysis-result-view" class="analysis-result-view is-hidden" aria-labelledby="result-title">
+        <div class="result-heading">
+            <div>
+                <p class="eyebrow">RESULT</p>
+                <h1 id="result-title">분석 결과</h1>
+            </div>
+            <span class="tag tag-sample">샘플 결과 · Python 분석 연결 전</span>
+        </div>
+
+        <div class="result-grid">
+            <article class="panel result-panel">
+                <h2>필수·우대 조건</h2>
+                <ul id="result-checklist" class="checklist"></ul>
+            </article>
+
+            <article class="panel result-panel">
+                <h2>업무·기술 유사도</h2>
+                <div id="result-similarity" class="similarity-bars"></div>
+            </article>
+
+            <article class="panel result-panel">
+                <h2>보완이 필요한 역량</h2>
+                <div id="result-skill-gaps" class="skill-tags"></div>
+            </article>
+        </div>
+
+        <button id="back-to-dashboard-button" class="secondary-button" type="button">대시보드로 돌아가기</button>
     </section>
 </main>
 
