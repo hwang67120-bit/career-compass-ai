@@ -58,6 +58,7 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 | 기능 | 현재 상태 | 확인 근거 | 다음 단계 |
 | --- | --- | --- | --- |
 | GitHub OAuth와 고정 사용자 우회 제거 | `UNIT_TESTED` | Java 전체 테스트, 로그인 전 `NONE`, GitHub 로그인 시작 `302` 확인 | 실제 Client ID·Secret으로 브라우저 로그인 |
+| 통합 AI 실행 투명성 UI | `IMPLEMENTED` | JavaScript 문법, HTML ID 연결, 중복 ID와 민감정보 검사 통과 | Java–Python 실행 이벤트·중단 계약 연결 후 브라우저 검증 |
 | 텍스트 문서 등록 | `INTEGRATION_TESTED` | Java·PostgreSQL HTTP 및 Postman 확인 이력 | GitHub 로그인 세션 적용 후 재검증 |
 | 공개 GitHub 저장소 등록 | `INTEGRATION_TESTED` | 실제 GitHub 주소 HTTP·Postman 확인 이력 | GitHub 로그인 세션·CSRF 적용 후 재검증 |
 
@@ -78,3 +79,4 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 | --- | --- | --- | --- | --- |
 | 2026-07-29 | Python 내부 분석 기능 | 구현 완료로 통칭 | `UNIT_TESTED` | 원격 Python 브랜치의 코드·테스트·README 확인 |
 | 2026-07-29 | Java GitHub OAuth | 구현 완료로 통칭 | `UNIT_TESTED` | 자동 테스트와 로컬 HTTP 확인, 실제 GitHub 브라우저 로그인 미실행 |
+| 2026-07-29 | 통합 AI 실행 투명성 UI | 미구현 | `IMPLEMENTED` | 샘플 단계·근거·토큰과 일시정지·중단·조정 UI 구현, 실제 AI·브라우저 미검증 |
