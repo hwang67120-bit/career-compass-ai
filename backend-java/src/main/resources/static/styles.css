@@ -810,6 +810,11 @@ select:focus {
     border-color: rgba(113, 232, 154, 0.3);
 }
 
+.chat-message-failed .chat-avatar {
+    color: var(--danger);
+    border-color: rgba(255, 124, 130, 0.3);
+}
+
 .chat-bubble {
     flex: 1 1 auto;
     min-width: 0;
