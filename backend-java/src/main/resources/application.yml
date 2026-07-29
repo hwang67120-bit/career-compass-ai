@@ -40,3 +40,4 @@ github:
 python:
   worker:
     base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
+    internal-token: ${INTERNAL_SERVICE_TOKEN}
