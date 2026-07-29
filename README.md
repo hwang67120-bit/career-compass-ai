@@ -55,7 +55,7 @@ flowchart LR
 | Python | 구조화 추출·임베딩·유사도·재정렬 | `UNIT_TESTED` | 제공자 및 서비스 단위 검증 |
 | 통합 | 이력서 입력부터 분석 결과까지 | 미구현 | Java–Python 분석 계약과 화면 필요 |
 
-`INTEGRATION_TESTED` 이상이더라도 인증 변경 이후 다시 검증해야 하는 기능이 있습니다. 완료 상태의 정의와 근거는 [현재 작업 상태](docs/current-work.md)를 기준으로 합니다.
+`INTEGRATION_TESTED` 이상이더라도 인증 변경 이후 다시 검증해야 하는 기능이 있습니다. Mock은 "예상된 응답이 오면 코드가 처리하는지"만 증명하며 네트워크·multipart·환경변수·외부 서비스(Ollama 등)·파일 권한 문제는 검증하지 못하므로, `UNIT_TESTED`에도 실제 파일과 실제 외부 서비스를 사용하는 호출을 포함하고 실제 통합 테스트를 별도 필수 단계로 거칩니다. 완료 상태의 정의와 근거는 [현재 작업 상태](docs/current-work.md)를 기준으로 합니다.
 
 ## 시스템 구성
 
@@ -84,6 +84,18 @@ flowchart TB
 | `contracts` | Java–Python 요청·응답 JSON 계약과 공통 예제 |
 | `deploy` | Docker Compose와 배포 설정 |
 | `docs` | API·정책·설계·현재 검증 상태 |
+
+### 문서 추출 흐름 소유권 (2026-07-29 합의)
+
+병렬 작업 충돌을 줄이기 위해 "공통 구현"을 두지 않는다. 계약은 공동으로 정하고, 실행 제어는 Java, AI 처리는 Python이 맡는다.
+
+- 프론트: `POST /api/v1/documents/{documentId}/extractions` 호출
+- Java: 분석 시작, 권한 확인, `ExtractionTask` 생성·상태 관리 — 고정 메서드: `createExtractionTask`, `executeDocumentExtraction`, `retrieveExtractionTask`, `saveProfileCandidate`
+- Python: `POST /internal/v1/documents/extract` 처리 — 계약 응답만 맞추면 내부 구성은 자유
+- Java: Python 결과를 계약 스키마로 재검증하고 `ProfileCandidate`로 저장
+- 프론트: 작업 상태와 결과를 조회
+
+두 서버를 동시에 실행해야 하는 작업이므로, 사용자 API의 요청·응답·상태 코드부터 먼저 확정한 뒤 각자 구현한다. 확정 전에는 어느 쪽도 이 흐름 위에 새 코드를 쌓지 않는다.
 
 ## 기술 스택
 

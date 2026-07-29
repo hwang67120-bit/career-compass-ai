@@ -347,10 +347,43 @@
             '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4 10-10"></path></svg>';
     }
 
+    function markLogEntryFailed(entry) {
+        entry.classList.remove("chat-message-active");
+        entry.classList.add("chat-message-failed");
+        entry.querySelector(".chat-avatar").innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>';
+    }
+
+    function appendLogDetail(entry, detail) {
+        if (!detail) {
+            return;
+        }
+        const detailElement = document.createElement("p");
+        detailElement.className = "chat-detail";
+        detailElement.textContent = detail;
+        entry.querySelector(".chat-bubble").appendChild(detailElement);
+    }
+
     async function runStep(text, detail, delayMs) {
         const entry = appendLogEntry(text, detail);
         await sleep(delayMs);
         markLogEntryDone(entry);
+    }
+
+    /**
+     * 고정 지연이 아니라 실제 비동기 작업(task)의 결과로 성공·실패를 표시하는 단계다.
+     * task는 완료 시 상세 문구를 반환하고, 실패하면 Error를 던져야 한다.
+     */
+    async function runRealStep(text, task) {
+        const entry = appendLogEntry(text, null);
+        try {
+            const detail = await task();
+            appendLogDetail(entry, detail);
+            markLogEntryDone(entry);
+        } catch (error) {
+            appendLogDetail(entry, error.message || "확인하지 못했습니다.");
+            markLogEntryFailed(entry);
+        }
     }
 
     async function startAnalysis() {
@@ -380,6 +413,14 @@
                 500
             );
         }
+
+        await runRealStep("Python 서버 연결 확인", async () => {
+            const status = await request("/api/v1/system/python-status");
+            if (!status?.connected) {
+                throw new Error("Python 서버에 연결하지 못했습니다.");
+            }
+            return `연결됨 · status=${status.status} · modelReady=${status.modelReady}`;
+        });
 
         await runStep(
             "기술 스택·경력 임베딩 계산",
