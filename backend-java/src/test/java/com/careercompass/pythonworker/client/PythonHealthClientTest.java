@@ -15,13 +15,17 @@ import org.springframework.web.client.RestClientResponseException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @RestClientTest(PythonHealthClient.class)
 @EnableConfigurationProperties(PythonWorkerProperties.class)
-@TestPropertySource(properties = "python.worker.base-url=http://python-worker.test")
+@TestPropertySource(properties = {
+        "python.worker.base-url=http://python-worker.test",
+        "python.worker.internal-token=test-internal-service-token"
+})
 class PythonHealthClientTest {
 
     @Autowired
@@ -33,6 +37,7 @@ class PythonHealthClientTest {
     @Test
     void getHealth_returnsParsedResponse_whenPythonRespondsSuccessfully() {
         server.expect(requestTo("http://python-worker.test/internal/v1/health"))
+                .andExpect(header("X-Internal-Token", "test-internal-service-token"))
                 .andRespond(withSuccess(
                         "{\"status\":\"UP\",\"model_ready\":false}",
                         MediaType.APPLICATION_JSON
