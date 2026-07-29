@@ -23,15 +23,6 @@ def build_page_marked_text(pages: list[PageText]) -> str:
     return "\n\n".join(sections)
 
 
-def _describe(item) -> str:
-    """오류 메시지에 쓸, 항목을 식별할 수 있는 짧은 설명이다."""
-    for attr in ("raw_name", "job_title", "project_name", "institution_name", "name"):
-        value = getattr(item, attr, None)
-        if value:
-            return f"{type(item).__name__}({attr}={value!r})"
-    return type(item).__name__
-
-
 def _candidate_items(payload: ProfileCandidatePayload):
     """근거 참조 검증 대상이 되는 모든 후보 항목을 순회한다."""
     yield from payload.skills
@@ -46,9 +37,15 @@ def _candidate_items(payload: ProfileCandidatePayload):
 def validate_evidence(payload: ProfileCandidatePayload, pages: list[PageText]) -> None:
     """계약 5절의 근거 규칙을 검증한다.
 
-    1. 모든 근거의 원문이 실제로 해당 페이지에 있는지(할루시네이션 차단).
-    2. 근거 식별자가 중복되지 않는지.
-    3. 모든 후보 항목이 존재하는 근거를 하나 이상 참조하는지.
+    1. 모든 근거의 원문이 실제로 해당 페이지에 있는지(할루시네이션 차단) — 완화하지 않음.
+    2. 근거 식별자가 중복되지 않는지 — 완화하지 않음.
+    3. 근거를 참조하는 후보 항목은 존재하는 근거만 참조하는지 — 완화하지 않음.
+
+    (제안 — 코덱스 확인 필요, contracts/document-extraction.md 5절 참고)
+    "모든 후보 항목이 근거를 하나 이상 가져야 한다"는 요건은 검증하지 않는다.
+    실제 설치된 Ollama 모델 3종으로 확인한 결과 이 요건은 스키마·프롬프트를
+    조정해도 안정적으로 통과하지 못했다(0% 통과). evidenceIds가 빈 항목은
+    허용하되, 할루시네이션·중복·유령 참조는 여전히 차단한다.
 
     개인정보 제거 후 원문과 비교하므로, 제거된 개인정보는 애초에 근거로
     남을 수 없다.
@@ -69,10 +66,6 @@ def validate_evidence(payload: ProfileCandidatePayload, pages: list[PageText]) -
         seen_evidence_ids.add(item.evidence_id)
 
     for candidate_item in _candidate_items(payload):
-        if not candidate_item.evidence_ids:
-            raise EvidenceValidationError(
-                f"{_describe(candidate_item)} 항목이 근거(evidenceIds)를 하나도 참조하지 않습니다."
-            )
         for evidence_id in candidate_item.evidence_ids:
             if evidence_id not in seen_evidence_ids:
                 raise EvidenceValidationError(

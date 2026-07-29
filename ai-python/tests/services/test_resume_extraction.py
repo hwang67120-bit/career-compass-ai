@@ -1,7 +1,7 @@
 import pytest
 
 from app.schemas.document import PageText
-from app.schemas.profile_candidate import CandidateEvidence, ProfileCandidatePayload
+from app.schemas.profile_candidate import CandidateEvidence, CandidateSkill, ProfileCandidatePayload
 from app.services.resume_extraction import (
     EvidenceValidationError,
     build_page_marked_text,
@@ -71,6 +71,27 @@ def test_validate_evidence_rejects_unknown_page_number() -> None:
                 page_number=2,
             )
         ]
+    )
+
+    with pytest.raises(EvidenceValidationError):
+        validate_evidence(payload, pages)
+
+
+def test_validate_evidence_allows_candidate_item_with_no_evidence() -> None:
+    """제안(코덱스 확인 필요): 근거를 못 만든 항목은 빈 evidenceIds로 허용한다."""
+    pages = [PageText(page_number=1, text="Java, Spring Boot 3년 경력")]
+    payload = ProfileCandidatePayload(
+        skills=[CandidateSkill(raw_name="Java", evidence_ids=[])],
+    )
+
+    validate_evidence(payload, pages)
+
+
+def test_validate_evidence_still_rejects_dangling_evidence_reference() -> None:
+    """근거가 없는 건 허용하지만, 존재하지 않는 근거를 참조하는 건 여전히 막는다."""
+    pages = [PageText(page_number=1, text="Java, Spring Boot 3년 경력")]
+    payload = ProfileCandidatePayload(
+        skills=[CandidateSkill(raw_name="Java", evidence_ids=["ghost-id"])],
     )
 
     with pytest.raises(EvidenceValidationError):
