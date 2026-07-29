@@ -6,6 +6,19 @@
 
 > 현재 MVP 개발 중입니다. 구현 및 검증 수준은 [현재 작업 상태](docs/current-work.md)에서 확인할 수 있습니다.
 
+## MVP 최우선 범위
+
+```text
+PDF 등록
+→ 추출 결과 수정·확정
+→ 채용공고 등록
+→ Java 조건 판정 + Python 의미 분석
+→ 결과 화면
+→ 테스트 서버 배포
+```
+
+8월 21일 MVP까지 이 흐름에 직접 필요하지 않은 부가기능은 우선 구현하지 않습니다.
+
 ## 핵심 분석 흐름
 
 ```mermaid
@@ -365,7 +378,7 @@ PostgreSQL 통합 테스트는 Docker를 사용할 수 있는 Linux 환경이 �
 
 - [현재 작업 및 검증 상태](docs/current-work.md)
 - [Java API 상세 명세](docs/README.md)
-- [Java–Python 문서 추출 계약](https://github.com/hwang67120-bit/career-compass-ai/blob/python/contracts/document-extraction.md)
+- [Java–Python 문서 추출 계약](contracts/document-extraction.md)
 - [분석 계층 책임과 정책](docs/analysis-responsibility-boundaries.md)
 - [Postman 실행 안내](postman/README.md)
 - [AI 협업 및 보안 규칙](AGENTS.md)
