@@ -134,18 +134,44 @@ def test_extract_rejects_pdf_without_extractable_text() -> None:
     assert response.json()["error"]["errorType"] == "NO_EXTRACTABLE_TEXT"
 
 
-def test_extract_reaches_not_implemented_boundary_after_real_extraction() -> None:
+def test_extract_calls_real_ollama_and_honestly_reports_the_outcome() -> None:
+    """실제 로컬 Ollama를 호출한다(mock 아님). Ollama가 꺼져 있으면 실패한다.
+
+    확인 필요: 지금 임시로 설정된 모델(OLLAMA_MODEL)은 근거(evidence) 연결
+    규칙을 매번 만족시키지는 못한다 — 성공(200)하거나, 근거 검증 실패로
+    502 MODEL_RESPONSE_INVALID를 정직하게 반환하는 경우가 둘 다 실제로
+    관찰된다. 둘 다 "가짜 성공"이 아니라 정상적인 계약 동작이므로 둘 다
+    허용하되, 완전히 다른 실패(요청 오류 등)는 여전히 실패로 처리한다.
+    """
     request_id = "41a89594-09f8-45ca-a558-3f4e84ca838e"
 
     response = client.post(
         "/internal/v1/documents/extract",
         headers={"X-Internal-Token": _valid_token(), "X-Request-Id": request_id},
         data=_valid_form_data(),
-        files={"file": ("resume.pdf", _make_pdf_bytes(["Java, Spring Boot 경력 3년"]), "application/pdf")},
+        files={
+            "file": (
+                "resume.pdf",
+                _make_pdf_bytes(
+                    ["백엔드 개발자 김철수. Java, Spring Boot 3년 경력. ABC회사에서 결제 시스템을 개발했다."]
+                ),
+                "application/pdf",
+            )
+        },
     )
 
-    assert response.status_code == 501
+    assert response.status_code in (200, 502)
     body = response.json()
     assert body["requestId"] == request_id
-    assert body["error"]["errorType"] == "PII_LLM_PIPELINE_NOT_IMPLEMENTED"
-    assert "1페이지" in body["error"]["message"]
+
+    if response.status_code == 200:
+        data = body["data"]
+        assert data["documentId"] == VALID_DOCUMENT_ID
+        assert data["extractionTaskId"] == VALID_EXTRACTION_TASK_ID
+        assert data["status"] == "EXTRACTED"
+        assert data["modelProvider"] == "ollama"
+        assert data["piiRemoved"] is True
+        assert "skills" in data["candidate"]
+        assert "evidence" in data["candidate"]
+    else:
+        assert body["error"]["errorType"] == "MODEL_RESPONSE_INVALID"

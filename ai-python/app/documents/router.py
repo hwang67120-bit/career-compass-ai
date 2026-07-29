@@ -1,15 +1,17 @@
-"""이력서·포트폴리오 PDF에서 텍스트를 추출하는 내부 API다.
+"""이력서·포트폴리오 PDF에서 텍스트를 추출하고 구조화하는 내부 API다.
 
 계약: contracts/document-extraction.md
 
-현재 범위: 요청 검증, 내부 인증과 PDF 텍스트 추출까지만 실제로 동작한다.
-개인정보 제거와 LLM 구조화 추출(계약 5절 `ProfileCandidatePayload`)은
-아직 방식이 정해지지 않아 구현하지 않았다(확인 필요: PII 제거 방식,
-이력서 구조화 프롬프트). 이 지점에 도달하면 계약에 없는 501로 명시해
-성공을 지어내지 않는다. `PII_LLM_PIPELINE_NOT_IMPLEMENTED`는 계약에
-정의된 코드가 아니므로, Java는 이걸 다른 계약 오류(재시도 가능 여부 등)와
-같은 방식으로 취급하지 말고 "파이프라인 미구현" 전용 예외로 별도 분기해
-처리해야 한다.
+파이프라인: 요청 검증 → 내부 인증 → PDF 텍스트 추출 → 개인정보 제거 →
+Ollama 구조화 추출 → 근거 검증 → 응답. 개인정보 제거는 이메일·전화번호·
+주민등록번호를 정규식으로 치환하는 방식이다(backend-java의
+BasicPersonalInformationSanitizer와 동일 패턴 재사용, docs/architecture 참고).
+이름 등 정규식으로 잡히지 않는 개인정보는 LLM 프롬프트 지시에만 의존하므로
+완전한 보장은 아니다 — 실제 사용자 자료로 재검증 필요.
+
+Gemini는 노션 "무료 등급 데이터 제한" 정책 때문에 이 파이프라인에서 쓰지
+않는다(실제 이력서를 Gemini에 보내지 않음). 실제 문서 추출은 Ollama만
+사용한다.
 """
 
 from uuid import UUID
@@ -19,12 +21,15 @@ from fastapi.responses import JSONResponse
 
 from app.documents.settings import DocumentExtractionSettings, get_document_extraction_settings
 from app.guardrails.internal_auth import verify_internal_token
-from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
+from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
+from app.providers.ollama_client import get_ollama_provider
+from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
 from app.services.pdf_extraction import (
     PdfNoExtractableTextError,
     PdfUnreadableError,
     extract_pdf_text,
 )
+from app.services.resume_extraction import EvidenceValidationError, extract_resume_profile
 
 router = APIRouter(
     prefix="/internal/v1",
@@ -43,6 +48,7 @@ async def extract_document(
     file: UploadFile = File(...),
     x_request_id: str | None = Header(default=None),
     settings: DocumentExtractionSettings = Depends(get_document_extraction_settings),
+    ollama_provider: OllamaProvider = Depends(get_ollama_provider),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
 
@@ -111,16 +117,41 @@ async def extract_document(
             ),
         )
 
-    # 여기까지는 실제로 검증됨: 요청 필드, 내부 인증, PDF 텍스트 추출(len(pages) 페이지).
-    # 개인정보 제거·LLM 구조화 추출은 방식이 정해지지 않아 다음 단계로 남긴다.
-    # 계약에 정의된 코드가 아니므로 Java는 이 errorType을 별도로 분기하지 않는다.
+    try:
+        candidate = await extract_resume_profile(pages, ollama_provider)
+    except OllamaUnavailableError:
+        return JSONResponse(
+            status_code=503,
+            content=error_envelope(
+                request_id,
+                "MODEL_UNAVAILABLE",
+                "Ollama 모델을 사용할 수 없습니다.",
+                retryable=True,
+            ),
+        )
+    except (OllamaResponseError, EvidenceValidationError):
+        return JSONResponse(
+            status_code=502,
+            content=error_envelope(
+                request_id,
+                "MODEL_RESPONSE_INVALID",
+                "모델 응답이 후보 스키마 또는 근거 검증을 통과하지 못했습니다.",
+            ),
+        )
+
     return JSONResponse(
-        status_code=501,
-        content=error_envelope(
+        status_code=200,
+        content=success_envelope(
             request_id,
-            "PII_LLM_PIPELINE_NOT_IMPLEMENTED",
-            f"PDF 텍스트 추출은 완료됐습니다({len(pages)}페이지). "
-            "개인정보 제거·LLM 구조화 추출 방식이 아직 확정되지 않아 다음 단계는 미구현입니다.",
+            {
+                "documentId": document_id,
+                "extractionTaskId": extraction_task_id,
+                "status": "EXTRACTED",
+                "candidate": candidate.model_dump(by_alias=True),
+                "modelProvider": "ollama",
+                "modelName": ollama_provider.model_name,
+                "piiRemoved": True,
+            },
         ),
     )
 
