@@ -79,10 +79,18 @@ class CandidateCertification(BaseModel):
 
 
 class ProfileCandidatePayload(BaseModel):
-    """이력서·포트폴리오에서 추출한 구조화 후보 전체다."""
+    """이력서·포트폴리오에서 추출한 구조화 후보 전체다.
+
+    필드 순서를 의도적으로 `evidence`가 먼저 오도록 뒀다. Ollama의 제약된
+    JSON 생성은 스키마의 필드 선언 순서를 따르는 경향이 있어서, 근거를
+    나중에(`evidence`가 마지막) 선언하면 skills 등 앞쪽 항목을 생성할 때
+    아직 만들지 않은 근거를 참조하지 못해 evidenceIds가 빈 채로 남는
+    문제가 실제로 관찰됐다(qwen2.5·exaone3.5·llama3.2 공통).
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
+    evidence: list[CandidateEvidence] = Field(default_factory=list)
     skills: list[CandidateSkill] = Field(default_factory=list)
     work_experiences: list[CandidateWorkExperience] = Field(
         default_factory=list, alias="workExperiences"
@@ -90,4 +98,3 @@ class ProfileCandidatePayload(BaseModel):
     projects: list[CandidateProject] = Field(default_factory=list)
     education: list[CandidateEducation] = Field(default_factory=list)
     certifications: list[CandidateCertification] = Field(default_factory=list)
-    evidence: list[CandidateEvidence] = Field(default_factory=list)

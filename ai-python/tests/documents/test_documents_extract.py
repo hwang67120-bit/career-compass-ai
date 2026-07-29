@@ -134,6 +134,35 @@ def test_extract_rejects_pdf_without_extractable_text() -> None:
     assert response.json()["error"]["errorType"] == "NO_EXTRACTABLE_TEXT"
 
 
+def test_extract_never_leaks_pii_or_internal_token_into_logs_or_response(caplog) -> None:
+    """Gate 1 요건: 개인정보·내부 토큰·모델 원문 응답이 로그나 응답에 남지 않아야 한다."""
+    fake_email = "hong.gildong.secret@example-fake.com"
+    fake_phone = "010-9999-8888"
+    fake_rrn = "901231-1234567"
+    token = _valid_token()
+
+    text = (
+        f"홍길동. 이메일: {fake_email}. 전화번호: {fake_phone}. "
+        f"주민등록번호: {fake_rrn}. Java, Spring Boot 3년 경력. "
+        "ABC회사에서 결제 시스템을 개발했다."
+    )
+
+    with caplog.at_level("DEBUG"):
+        response = client.post(
+            "/internal/v1/documents/extract",
+            headers={"X-Internal-Token": token, "X-Request-Id": "log-leak-test"},
+            data=_valid_form_data(),
+            files={"file": ("resume.pdf", _make_pdf_bytes([text]), "application/pdf")},
+        )
+
+    assert response.status_code in (200, 502, 503)
+
+    secrets = [fake_email, fake_phone, fake_rrn, token]
+    for secret in secrets:
+        assert secret not in response.text
+        assert secret not in caplog.text
+
+
 def test_extract_calls_real_ollama_and_honestly_reports_the_outcome() -> None:
     """실제 로컬 Ollama를 호출한다(mock 아님). Ollama가 꺼져 있으면 실패한다.
 
