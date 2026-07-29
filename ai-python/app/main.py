@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.documents.router import router as documents_router
 from app.health.router import router as health_router
-from app.schemas.envelope import error_envelope, resolve_request_id
+from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
@@ -41,7 +41,13 @@ async def handle_request_validation_error(
             request_id,
             "INVALID_EXTRACTION_REQUEST",
             "요청 필드가 계약을 따르지 않습니다.",
-            field_errors=[str(error) for error in exc.errors()],
+            field_errors=[
+                FieldError(
+                    field_name=".".join(str(part) for part in error["loc"]),
+                    message=error["msg"],
+                )
+                for error in exc.errors()
+            ],
         ),
     )
 
