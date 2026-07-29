@@ -6,8 +6,10 @@
 개인정보 제거와 LLM 구조화 추출(계약 5절 `ProfileCandidatePayload`)은
 아직 방식이 정해지지 않아 구현하지 않았다(확인 필요: PII 제거 방식,
 이력서 구조화 프롬프트). 이 지점에 도달하면 계약에 없는 501로 명시해
-성공을 지어내지 않는다. Java는 501 응답을 정식 계약 상태로 처리하지
-않아야 한다.
+성공을 지어내지 않는다. `PII_LLM_PIPELINE_NOT_IMPLEMENTED`는 계약에
+정의된 코드가 아니므로, Java는 이걸 다른 계약 오류(재시도 가능 여부 등)와
+같은 방식으로 취급하지 말고 "파이프라인 미구현" 전용 예외로 별도 분기해
+처리해야 한다.
 """
 
 from uuid import UUID
@@ -17,7 +19,7 @@ from fastapi.responses import JSONResponse
 
 from app.documents.settings import DocumentExtractionSettings, get_document_extraction_settings
 from app.guardrails.internal_auth import verify_internal_token
-from app.schemas.envelope import error_envelope, resolve_request_id
+from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
 from app.services.pdf_extraction import (
     PdfNoExtractableTextError,
     PdfUnreadableError,
@@ -46,11 +48,15 @@ async def extract_document(
 
     field_errors = []
     if not _is_uuid(document_id):
-        field_errors.append("documentId는 UUID 형식이어야 합니다.")
+        field_errors.append(FieldError(field_name="documentId", message="UUID 형식이어야 합니다."))
     if not _is_uuid(extraction_task_id):
-        field_errors.append("extractionTaskId는 UUID 형식이어야 합니다.")
+        field_errors.append(
+            FieldError(field_name="extractionTaskId", message="UUID 형식이어야 합니다.")
+        )
     if document_type not in _ALLOWED_DOCUMENT_TYPES:
-        field_errors.append("documentType은 RESUME 또는 PORTFOLIO여야 합니다.")
+        field_errors.append(
+            FieldError(field_name="documentType", message="RESUME 또는 PORTFOLIO여야 합니다.")
+        )
 
     if field_errors:
         return JSONResponse(

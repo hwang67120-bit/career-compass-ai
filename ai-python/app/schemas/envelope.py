@@ -9,6 +9,15 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class FieldError(BaseModel):
+    """Java의 `FieldErrorDetail(fieldName, message)`과 같은 모양의 필드 오류다."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    field_name: str = Field(alias="fieldName")
+    message: str
+
+
 class ErrorDetail(BaseModel):
     """봉투의 오류 상세 정보다."""
 
@@ -16,7 +25,7 @@ class ErrorDetail(BaseModel):
 
     error_type: str = Field(alias="errorType")
     message: str
-    field_errors: list[str] = Field(default_factory=list, alias="fieldErrors")
+    field_errors: list[FieldError] = Field(default_factory=list, alias="fieldErrors")
     retryable: bool = False
 
 
@@ -63,7 +72,7 @@ def error_envelope(
     error_type: str,
     message: str,
     retryable: bool = False,
-    field_errors: list[str] | None = None,
+    field_errors: list[FieldError] | None = None,
 ) -> dict:
     """실패 응답 봉투를 만든다."""
     envelope = ApiEnvelope(

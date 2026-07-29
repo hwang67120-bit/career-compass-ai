@@ -72,7 +72,10 @@ def test_extract_rejects_invalid_ids_and_document_type() -> None:
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["errorType"] == "INVALID_EXTRACTION_REQUEST"
-    assert len(body["error"]["fieldErrors"]) == 2
+    field_errors = body["error"]["fieldErrors"]
+    assert len(field_errors) == 2
+    assert {"fieldName": "documentId", "message": "UUID 형식이어야 합니다."} in field_errors
+    assert {"fieldName": "documentType", "message": "RESUME 또는 PORTFOLIO여야 합니다."} in field_errors
 
 
 def test_extract_rejects_non_pdf_content_type() -> None:
