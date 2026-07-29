@@ -58,6 +58,7 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 | 기능 | 현재 상태 | 확인 근거 | 다음 단계 |
 | --- | --- | --- | --- |
 | GitHub OAuth와 고정 사용자 우회 제거 | `UNIT_TESTED` | Java 전체 테스트, 로그인 전 `NONE`, GitHub 로그인 시작 `302` 확인 | 실제 Client ID·Secret으로 브라우저 로그인 |
+| Python 문서 추출 내부 클라이언트 | `UNIT_TESTED` | Java 21 전체 테스트 89개 통과, 내부 토큰·multipart·요청 ID·성공·오류 봉투 계약 단위 검증 | Java와 Python을 함께 실행해 실제 HTTP 계약 검증 |
 | 텍스트 문서 등록 | `INTEGRATION_TESTED` | Java·PostgreSQL HTTP 및 Postman 확인 이력 | GitHub 로그인 세션 적용 후 재검증 |
 | 공개 GitHub 저장소 등록 | `INTEGRATION_TESTED` | 실제 GitHub 주소 HTTP·Postman 확인 이력 | GitHub 로그인 세션·CSRF 적용 후 재검증 |
 
@@ -67,8 +68,6 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 ## 통합 차단 요소
 
 - 실제 GitHub OAuth App의 Client ID·Secret 발급과 로컬 callback 등록
-- Java의 Python 내부 토큰 헤더 전송 구현
-- 문서 추출 API 라우트 구현
 - Java–Python 공통 예제 JSON 계약 테스트
 - PDF 업로드부터 분석 결과까지 연결된 브라우저 흐름
 
@@ -78,3 +77,4 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 | --- | --- | --- | --- | --- |
 | 2026-07-29 | Python 내부 분석 기능 | 구현 완료로 통칭 | `UNIT_TESTED` | 원격 Python 브랜치의 코드·테스트·README 확인 |
 | 2026-07-29 | Java GitHub OAuth | 구현 완료로 통칭 | `UNIT_TESTED` | 자동 테스트와 로컬 HTTP 확인, 실제 GitHub 브라우저 로그인 미실행 |
+| 2026-07-29 | Java Python 문서 추출 클라이언트 | `IMPLEMENTED` | `UNIT_TESTED` | Java 21에서 대상 클라이언트 테스트와 전체 89개 테스트를 캐시 없이 실행해 통과 |

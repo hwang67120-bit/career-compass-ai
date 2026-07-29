@@ -343,6 +343,7 @@ SESSION_COOKIE_SECURE=false
 GITHUB_API_CONNECT_TIMEOUT=<duration>
 GITHUB_API_READ_TIMEOUT=<duration>
 PYTHON_WORKER_BASE_URL=http://localhost:8000
+INTERNAL_SERVICE_TOKEN=<long-random-shared-secret>
 ```
 
 GitHub OAuth App에는 브라우저에서 접속할 Java 서버 주소와 일치하는 callback을 등록해야 합니다.

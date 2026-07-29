@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 public class PythonHealthClient {
 
     private final RestClient restClient;
+    private final String internalServiceToken;
 
     public PythonHealthClient(
             RestClient.Builder builder,
@@ -17,11 +18,13 @@ public class PythonHealthClient {
         this.restClient = builder
                 .baseUrl(properties.baseUrl())
                 .build();
+        this.internalServiceToken = properties.internalToken();
     }
 
     public PythonHealthResponse getHealth() {
         return restClient.get()
                 .uri("/internal/v1/health")
+                .header(PythonWorkerRequestHeaders.INTERNAL_TOKEN, internalServiceToken)
                 .retrieve()
                 .body(PythonHealthResponse.class);
     }
