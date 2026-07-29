@@ -1,9 +1,13 @@
+import httpx
 from fpdf import FPDF
 from fastapi.testclient import TestClient
 
 from app.documents.settings import get_document_extraction_settings
 from app.guardrails.settings import get_internal_auth_settings
 from app.main import app
+from app.providers.ollama import OllamaProvider
+from app.providers.ollama_client import get_ollama_provider
+from app.providers.settings import OllamaSettings
 
 client = TestClient(app)
 
@@ -11,6 +15,17 @@ KOREAN_FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
 
 VALID_DOCUMENT_ID = "11111111-1111-1111-1111-111111111111"
 VALID_EXTRACTION_TASK_ID = "22222222-2222-2222-2222-222222222222"
+
+FAKE_EMAIL = "hong.gildong.secret@example-fake.com"
+FAKE_PHONE = "010-9999-8888"
+FAKE_RRN = "901231-1234567"
+PII_SECRETS = [FAKE_EMAIL, FAKE_PHONE, FAKE_RRN]
+
+RESUME_TEXT_WITH_PII = (
+    f"백엔드 개발자 김철수. 이메일: {FAKE_EMAIL}. 전화번호: {FAKE_PHONE}. "
+    f"주민등록번호: {FAKE_RRN}. Java, Spring Boot 3년 경력. "
+    "ABC회사에서 결제 시스템을 개발했다."
+)
 
 
 def _valid_token() -> str:
@@ -134,73 +149,115 @@ def test_extract_rejects_pdf_without_extractable_text() -> None:
     assert response.json()["error"]["errorType"] == "NO_EXTRACTABLE_TEXT"
 
 
-def test_extract_never_leaks_pii_or_internal_token_into_logs_or_response(caplog) -> None:
-    """Gate 1 요건: 개인정보·내부 토큰·모델 원문 응답이 로그나 응답에 남지 않아야 한다."""
-    fake_email = "hong.gildong.secret@example-fake.com"
-    fake_phone = "010-9999-8888"
-    fake_rrn = "901231-1234567"
-    token = _valid_token()
+def test_extract_succeeds_with_real_ollama_and_leaks_no_pii(caplog) -> None:
+    """실제 로컬 Ollama를 호출한다(mock 아님). 반드시 200을 기대한다.
 
-    text = (
-        f"홍길동. 이메일: {fake_email}. 전화번호: {fake_phone}. "
-        f"주민등록번호: {fake_rrn}. Java, Spring Boot 3년 경력. "
-        "ABC회사에서 결제 시스템을 개발했다."
-    )
+    이 테스트는 Ollama가 꺼져 있거나 채택 모델(OLLAMA_RESUME_MODEL,
+    exaone3.5:latest)이 설치되어 있지 않으면 실패해야 한다 — 실행 환경
+    문제를 조용히 통과시키지 않는다.
+    """
+    request_id = "41a89594-09f8-45ca-a558-3f4e84ca838e"
+    token = _valid_token()
 
     with caplog.at_level("DEBUG"):
         response = client.post(
             "/internal/v1/documents/extract",
-            headers={"X-Internal-Token": token, "X-Request-Id": "log-leak-test"},
+            headers={"X-Internal-Token": token, "X-Request-Id": request_id},
             data=_valid_form_data(),
-            files={"file": ("resume.pdf", _make_pdf_bytes([text]), "application/pdf")},
+            files={"file": ("resume.pdf", _make_pdf_bytes([RESUME_TEXT_WITH_PII]), "application/pdf")},
         )
 
-    assert response.status_code in (200, 502, 503)
+    assert response.status_code == 200, (
+        "실제 Ollama 성공을 기대했다. Ollama 실행 여부와 OLLAMA_RESUME_MODEL "
+        f"설치 여부를 확인해라. 응답: {response.text}"
+    )
 
-    secrets = [fake_email, fake_phone, fake_rrn, token]
-    for secret in secrets:
+    body = response.json()
+    assert body["requestId"] == request_id
+    data = body["data"]
+    assert data["documentId"] == VALID_DOCUMENT_ID
+    assert data["extractionTaskId"] == VALID_EXTRACTION_TASK_ID
+    assert data["status"] == "EXTRACTED"
+    assert data["modelProvider"] == "ollama"
+    assert data["piiRemoved"] is True
+    assert "skills" in data["candidate"]
+    assert "evidence" in data["candidate"]
+
+    for secret in [*PII_SECRETS, token]:
         assert secret not in response.text
         assert secret not in caplog.text
 
 
-def test_extract_calls_real_ollama_and_honestly_reports_the_outcome() -> None:
-    """실제 로컬 Ollama를 호출한다(mock 아님). Ollama가 꺼져 있으면 실패한다.
+def test_extract_reports_model_unavailable_and_leaks_no_pii(caplog) -> None:
+    """Ollama에 연결할 수 없을 때 503 MODEL_UNAVAILABLE을 반환하고, 이때도 PII·토큰이 안 새는지 확인한다.
 
-    확인 필요: 지금 임시로 설정된 모델(OLLAMA_MODEL)은 근거(evidence) 연결
-    규칙을 매번 만족시키지는 못한다 — 성공(200)하거나, 근거 검증 실패로
-    502 MODEL_RESPONSE_INVALID를 정직하게 반환하는 경우가 둘 다 실제로
-    관찰된다. 둘 다 "가짜 성공"이 아니라 정상적인 계약 동작이므로 둘 다
-    허용하되, 완전히 다른 실패(요청 오류 등)는 여전히 실패로 처리한다.
+    실제 mock 없이, 존재하지 않는 포트로 실제 연결을 시도해 진짜 연결
+    실패를 유도한다.
     """
-    request_id = "41a89594-09f8-45ca-a558-3f4e84ca838e"
+    token = _valid_token()
 
-    response = client.post(
-        "/internal/v1/documents/extract",
-        headers={"X-Internal-Token": _valid_token(), "X-Request-Id": request_id},
-        data=_valid_form_data(),
-        files={
-            "file": (
-                "resume.pdf",
-                _make_pdf_bytes(
-                    ["백엔드 개발자 김철수. Java, Spring Boot 3년 경력. ABC회사에서 결제 시스템을 개발했다."]
-                ),
-                "application/pdf",
+    async def unreachable_ollama_provider():
+        settings = OllamaSettings()
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:1", timeout=httpx.Timeout(connect=1, read=1, write=1, pool=1)
+        ) as broken_client:
+            yield OllamaProvider(client=broken_client, model_name=settings.ollama_resume_model)
+
+    app.dependency_overrides[get_ollama_provider] = unreachable_ollama_provider
+    try:
+        with caplog.at_level("DEBUG"):
+            response = client.post(
+                "/internal/v1/documents/extract",
+                headers={"X-Internal-Token": token, "X-Request-Id": "model-unavailable-test"},
+                data=_valid_form_data(),
+                files={"file": ("resume.pdf", _make_pdf_bytes([RESUME_TEXT_WITH_PII]), "application/pdf")},
             )
-        },
-    )
+    finally:
+        app.dependency_overrides.pop(get_ollama_provider, None)
 
-    assert response.status_code in (200, 502)
-    body = response.json()
-    assert body["requestId"] == request_id
+    assert response.status_code == 503
+    assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
 
-    if response.status_code == 200:
-        data = body["data"]
-        assert data["documentId"] == VALID_DOCUMENT_ID
-        assert data["extractionTaskId"] == VALID_EXTRACTION_TASK_ID
-        assert data["status"] == "EXTRACTED"
-        assert data["modelProvider"] == "ollama"
-        assert data["piiRemoved"] is True
-        assert "skills" in data["candidate"]
-        assert "evidence" in data["candidate"]
-    else:
-        assert body["error"]["errorType"] == "MODEL_RESPONSE_INVALID"
+    for secret in [*PII_SECRETS, token]:
+        assert secret not in response.text
+        assert secret not in caplog.text
+
+
+def test_extract_reports_model_unavailable_when_model_not_installed(caplog) -> None:
+    """실제 Ollama 서버는 살아있지만, 설정된 모델이 설치돼 있지 않은 경우다.
+
+    실제 로컬 Ollama에 이 이름의 모델이 설치돼 있으면 안 된다(임의 이름).
+    """
+    token = _valid_token()
+
+    async def provider_with_missing_model():
+        settings = OllamaSettings()
+        timeout = httpx.Timeout(
+            connect=settings.ollama_connect_timeout_seconds,
+            read=settings.ollama_read_timeout_seconds,
+            write=10.0,
+            pool=5.0,
+        )
+        async with httpx.AsyncClient(
+            base_url=str(settings.ollama_base_url).rstrip("/"), timeout=timeout
+        ) as real_client:
+            yield OllamaProvider(client=real_client, model_name="this-model-does-not-exist:latest")
+
+    app.dependency_overrides[get_ollama_provider] = provider_with_missing_model
+    try:
+        with caplog.at_level("DEBUG"):
+            response = client.post(
+                "/internal/v1/documents/extract",
+                headers={"X-Internal-Token": token, "X-Request-Id": "model-not-installed-test"},
+                data=_valid_form_data(),
+                files={"file": ("resume.pdf", _make_pdf_bytes([RESUME_TEXT_WITH_PII]), "application/pdf")},
+            )
+    finally:
+        app.dependency_overrides.pop(get_ollama_provider, None)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
+
+    for secret in [*PII_SECRETS, token]:
+        assert secret not in response.text
+        assert secret not in caplog.text

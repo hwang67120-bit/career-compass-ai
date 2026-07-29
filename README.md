@@ -53,7 +53,7 @@ flowchart LR
 | Java | 공개 GitHub 저장소 검증·등록 | `INTEGRATION_TESTED` | 기본 브랜치와 현재 커밋 SHA 저장 |
 | Python | PDF 텍스트 추출 | `UNIT_TESTED` | Java 업로드 흐름과 미연결 |
 | Python | 개인정보 제거(이메일·전화·주민등록번호) | `UNIT_TESTED` | 정규식 기반. 이름 등은 LLM 프롬프트 지시에만 의존, 완전한 보장 아님 |
-| Python | 이력서 LLM 구조화 추출·근거 검증 | `UNIT_TESTED` | 실제 PDF·실제 Ollama로 검증. 임시 모델 신뢰성 낮음 — 근거 검증 실패 시 502 반환 |
+| Python | 이력서 LLM 구조화 추출·근거 검증 | `UNIT_TESTED` | 실제 PDF·실제 Ollama로 검증. `OLLAMA_RESUME_MODEL=exaone3.5:latest` 평가 채택(1차 결과, 최종 확정 아님), 근거 없는 항목은 응답에서 제외 |
 | Python | 채용공고 구조화 추출·임베딩·유사도·재정렬 | `UNIT_TESTED` | 제공자 및 서비스 단위 검증 |
 | 통합 | 이력서 입력부터 분석 결과까지 | 미구현 | Java–Python 분석 계약과 화면 필요 |
 

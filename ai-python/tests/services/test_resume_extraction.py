@@ -5,6 +5,7 @@ from app.schemas.profile_candidate import CandidateEvidence, CandidateSkill, Pro
 from app.services.resume_extraction import (
     EvidenceValidationError,
     build_page_marked_text,
+    filter_unevidenced_candidates,
     validate_evidence,
 )
 
@@ -77,18 +78,8 @@ def test_validate_evidence_rejects_unknown_page_number() -> None:
         validate_evidence(payload, pages)
 
 
-def test_validate_evidence_allows_candidate_item_with_no_evidence() -> None:
-    """제안(코덱스 확인 필요): 근거를 못 만든 항목은 빈 evidenceIds로 허용한다."""
-    pages = [PageText(page_number=1, text="Java, Spring Boot 3년 경력")]
-    payload = ProfileCandidatePayload(
-        skills=[CandidateSkill(raw_name="Java", evidence_ids=[])],
-    )
-
-    validate_evidence(payload, pages)
-
-
 def test_validate_evidence_still_rejects_dangling_evidence_reference() -> None:
-    """근거가 없는 건 허용하지만, 존재하지 않는 근거를 참조하는 건 여전히 막는다."""
+    """존재하지 않는 근거를 참조하는 항목은 여전히 계약 위반으로 막는다."""
     pages = [PageText(page_number=1, text="Java, Spring Boot 3년 경력")]
     payload = ProfileCandidatePayload(
         skills=[CandidateSkill(raw_name="Java", evidence_ids=["ghost-id"])],
@@ -96,3 +87,58 @@ def test_validate_evidence_still_rejects_dangling_evidence_reference() -> None:
 
     with pytest.raises(EvidenceValidationError):
         validate_evidence(payload, pages)
+
+
+def test_filter_unevidenced_candidates_removes_items_without_evidence() -> None:
+    """계약 5절: 근거 없는 후보는 응답에서 제거한다(근거 없는 값을 사실처럼 반환하지 않음)."""
+    payload = ProfileCandidatePayload(
+        evidence=[
+            CandidateEvidence(
+                evidence_id="e1",
+                field_path="skills[0].rawName",
+                value="Java",
+                source_text="Java 3년 경력",
+                page_number=1,
+            )
+        ],
+        skills=[
+            CandidateSkill(raw_name="Java", evidence_ids=["e1"]),
+            CandidateSkill(raw_name="Python", evidence_ids=[]),
+        ],
+    )
+
+    filtered = filter_unevidenced_candidates(payload)
+
+    assert [s.raw_name for s in filtered.skills] == ["Java"]
+
+
+def test_filter_unevidenced_candidates_filters_project_technologies() -> None:
+    """프로젝트 자체는 근거가 있어도, 근거 없는 개별 기술은 따로 제거한다."""
+    from app.schemas.profile_candidate import CandidateProject
+
+    payload = ProfileCandidatePayload(
+        evidence=[
+            CandidateEvidence(
+                evidence_id="e1",
+                field_path="projects[0].projectName",
+                value="사내 툴",
+                source_text="사내 툴 개발",
+                page_number=1,
+            )
+        ],
+        projects=[
+            CandidateProject(
+                project_name="사내 툴",
+                evidence_ids=["e1"],
+                technologies=[
+                    CandidateSkill(raw_name="Java", evidence_ids=["e1"]),
+                    CandidateSkill(raw_name="Python", evidence_ids=[]),
+                ],
+            )
+        ],
+    )
+
+    filtered = filter_unevidenced_candidates(payload)
+
+    assert len(filtered.projects) == 1
+    assert [t.raw_name for t in filtered.projects[0].technologies] == ["Java"]

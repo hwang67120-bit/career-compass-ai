@@ -9,6 +9,7 @@ Python 서버는 PDF 문서에서 텍스트와 개인정보가 제거된 구조�
 | 영역 | 기능 | Method | Endpoint | 성공 상태 |
 |---|---|---|---|---:|
 | 운영 | 상태 확인 | `GET` | `/internal/v1/health` | 200 |
+| 문서 처리 | 이력서·포트폴리오 PDF 추출·구조화 | `POST` | `/internal/v1/documents/extract` | 200 |
 
 모든 `/internal/v1/*` 요청은 `X-Internal-Token` 헤더를 요구한다 (아래 "내부 서비스 인증" 참고).
 
@@ -26,6 +27,14 @@ X-Internal-Token: {shared-secret}
 }
 ```
 
+### 문서 추출
+
+계약: [PDF 문서 추출 계약](../contracts/document-extraction.md). 파이프라인: 요청 검증 → 내부 인증 → PDF 텍스트 추출 → 개인정보 제거(이메일·전화번호·주민등록번호 정규식 치환) → Ollama 구조화 추출(`OLLAMA_RESUME_MODEL`) → 근거 검증(할루시네이션·중복·유령 참조 차단) → 근거 없는 후보 항목 제거 → 응답.
+
+- 성공(`200`)과 실패(`401`/`413`/`415`/`422`/`502`/`503`) 모두 계약 봉투(`requestId`/`data`/`error`/`timestamp`) 형식이다.
+- 근거(evidenceIds)가 없는 후보 항목은 사실처럼 반환하지 않고 응답에서 제거한다(계약 5절).
+- 실제 검증: `tests/documents/test_documents_extract.py` — 실제 PDF와 실제 Ollama 호출(mock 아님), PII·내부 토큰이 응답·로그에 안 남는 것까지 확인.
+
 ## 내부 서비스 인증 (2차 방어선)
 
 네트워크 격리(Python 포트를 외부에 노출하지 않는 것)가 1차 방어선이고, 이 토큰 검증은 그게 뚫렸을 때를 대비한 2차 방어선이다. 최종 사용자 인증(Java GitHub OAuth)과는 무관한 별개의 값이다.
@@ -41,13 +50,12 @@ X-Internal-Token: {shared-secret}
 
 | 영역 | 기능 | 위치 |
 |---|---|---|
-| 문서 처리 | PDF 페이지별 텍스트 추출 | `app/services/pdf_extraction.py` |
 | 모델 제공자 | Ollama·Gemini 구조화 추출 (채용공고 예시) | `app/providers/ollama.py`, `app/providers/gemini.py` |
 | 모델 제공자 | Ollama·Gemini 임베딩 생성 | `app/providers/embedding.py` |
 | 서비스 | 코사인 유사도 계산 | `app/services/similarity.py` |
 | 서비스 | 후보 재정렬(최소 유사도 필터·동점 처리) | `app/services/reranking.py` |
 
-`POST /internal/v1/documents/extract`는 [PDF 문서 추출 계약](../contracts/document-extraction.md)에 MVP 확정됐으나, 실제 라우트·개인정보 제거 로직은 다음 작업이다.
+채용공고-확정 프로필 비교 실행 API가 이 기능들을 실제 요청에 연결하는 다음 작업이다.
 
 ## `ai-python` 구조
 
@@ -64,16 +72,29 @@ app/
 
 ## 현재 미구현
 
-- `POST /internal/v1/documents/extract` 실제 라우트 (multipart 수신, 계약 검증)
-- 개인정보 제거(PII sanitization) — 텍스트 추출 직후, LLM 호출 전 단계
-- 이력서 구조화 추출 스키마·프롬프트 (`JobPostingExtraction`과 동일한 패턴, 이력서용)
 - 채용공고-확정 프로필 비교 실행 API (임베딩·유사도·재정렬을 실제 요청에 연결)
 - 오차 범위 계산·보정 (충분한 검증 데이터가 쌓이기 전까지는 설계만 존재, [docs/architecture/error-calibration.md](../docs/architecture/error-calibration.md) 참고)
 
+## 필수 환경변수
+
+`app/config.py`, `app/guardrails/settings.py`, `app/providers/settings.py`, `app/documents/settings.py`가 `pydantic-settings`로 읽는다. **필수값이 하나라도 없으면 서버 시작 자체가 실패한다**(`ValidationError`, 기본값 없는 필드는 생략 불가).
+
+| 변수 | 용도 | 확인 상태 |
+|---|---|---|
+| `INTERNAL_SERVICE_TOKEN` | Java-Python 내부 인증 공유 비밀값 | 확인 필요 — 실제 채택 값 |
+| `OLLAMA_MODEL` | 채용공고 구조화 추출용 Ollama 모델 | 확인 필요 — 임시값(`qwen2.5:latest`) |
+| `OLLAMA_RESUME_MODEL` | 이력서 구조화 추출 전용 Ollama 모델 | `evaluation/model_comparison.py`로 평가해 `exaone3.5:latest` 채택(1차 결과, 최종 확정 아님) |
+| `OLLAMA_EMBEDDING_MODEL` | Ollama 임베딩 모델 | 확인 필요 |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Gemini 연동 | 확인 필요 |
+| `DOCUMENT_EXTRACTION_MAX_PDF_SIZE_BYTES` | PDF 업로드 최대 크기 | 확인 필요 — Java 설정과 맞춰야 함 |
+
+`OLLAMA_MODEL`(채용공고용)과 `OLLAMA_RESUME_MODEL`(이력서용)은 서로 다른 설정이며 섞이면 안 된다 — `tests/providers/test_ollama_client.py`가 이걸 검증한다. 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).
+
 ## 확인 필요
 
-- 실제 채택할 Ollama·Gemini·임베딩 모델 이름 (지금 `.env`의 값은 전부 연동 코드 검증용 임시값)
+- 실제 채택할 Ollama(채용공고)·Gemini·임베딩 모델 이름 (지금 `.env`의 값은 전부 연동 코드 검증용 임시값)
 - PDF 전송 방식과 후보 스키마 세부 필드는 계약 문서 기준, 구현 시 재확인
+- Ollama에 설정된 모델이 설치돼 있지 않으면 `OllamaUnavailableError` → `503 MODEL_UNAVAILABLE`로 처리됨을 확인함(`tests/documents/test_documents_extract.py::test_extract_reports_model_unavailable_when_model_not_installed`) — 실제 배포 환경에도 해당 모델이 설치돼 있는지는 별도 확인 필요
 
 ## 구현 근거
 
