@@ -52,7 +52,9 @@ flowchart LR
 | Java | 이력서·포트폴리오 텍스트 등록 | `INTEGRATION_TESTED` | 원문과 개인정보 제거 분석문 저장 |
 | Java | 공개 GitHub 저장소 검증·등록 | `INTEGRATION_TESTED` | 기본 브랜치와 현재 커밋 SHA 저장 |
 | Python | PDF 텍스트 추출 | `UNIT_TESTED` | Java 업로드 흐름과 미연결 |
-| Python | 구조화 추출·임베딩·유사도·재정렬 | `UNIT_TESTED` | 제공자 및 서비스 단위 검증 |
+| Python | 개인정보 제거(이메일·전화·주민등록번호) | `UNIT_TESTED` | 정규식 기반. 이름 등은 LLM 프롬프트 지시에만 의존, 완전한 보장 아님 |
+| Python | 이력서 LLM 구조화 추출·근거 검증 | `UNIT_TESTED` | 실제 PDF·실제 Ollama로 검증. 임시 모델 신뢰성 낮음 — 근거 검증 실패 시 502 반환 |
+| Python | 채용공고 구조화 추출·임베딩·유사도·재정렬 | `UNIT_TESTED` | 제공자 및 서비스 단위 검증 |
 | 통합 | 이력서 입력부터 분석 결과까지 | 미구현 | Java–Python 분석 계약과 화면 필요 |
 
 `INTEGRATION_TESTED` 이상이더라도 인증 변경 이후 다시 검증해야 하는 기능이 있습니다. Mock은 "예상된 응답이 오면 코드가 처리하는지"만 증명하며 네트워크·multipart·환경변수·외부 서비스(Ollama 등)·파일 권한 문제는 검증하지 못하므로, `UNIT_TESTED`에도 실제 파일과 실제 외부 서비스를 사용하는 호출을 포함하고 실제 통합 테스트를 별도 필수 단계로 거칩니다. 완료 상태의 정의와 근거는 [현재 작업 상태](docs/current-work.md)를 기준으로 합니다.
@@ -75,12 +77,14 @@ flowchart TB
 
 점선은 아직 분석 실행 흐름으로 완전히 연결되지 않은 구간입니다.
 
+Python(`8000` 포트)은 외부에 노출하지 않고 Java 서버만 내부망에서 접근합니다. 이 격리가 1차 방어선이고, 요청마다 검증하는 내부 서비스 토큰(`X-Internal-Token`)이 뚫렸을 때를 대비한 2차 방어선입니다.
+
 ### 책임 분리
 
 | 구성 요소 | 책임 |
 | --- | --- |
 | `backend-java` | 인증·인가, 사용자 소유권, API, 저장, 명확한 조건 판정, Python 작업 제어와 최종 결과 조립 |
-| `ai-python` | PDF 처리, 정보 추출, 개인정보 제거 보조, 임베딩, 의미 유사도와 LLM 실행 |
+| `ai-python` | PDF 처리, 정보 추출, **개인정보 제거·검증 책임**, 임베딩, 의미 유사도와 LLM 실행 |
 | `contracts` | Java–Python 요청·응답 JSON 계약과 공통 예제 |
 | `deploy` | Docker Compose와 배포 설정 |
 | `docs` | API·정책·설계·현재 검증 상태 |
@@ -300,6 +304,8 @@ erDiagram
 
 `external_identity.user_id`에는 실제 외래 키가 있습니다. `user_document.user_id`와 `project_source.user_id`는 애플리케이션에서 사용자 소유권을 적용하지만 현재 DB 외래 키는 없으므로 데이터 무결성 보완이 필요합니다.
 
+**주의**: `user_document.original_text`는 사용자가 등록한 원문을 그대로 저장합니다. 보관 동의 여부와 보관 기간이 아직 확정되지 않아 개인정보 정책과 충돌할 수 있습니다 — 정책 확정 전까지 원문 보관을 최종 사양으로 취급하지 않습니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -357,6 +363,8 @@ GITHUB_API_READ_TIMEOUT=<duration>
 PYTHON_WORKER_BASE_URL=http://localhost:8000
 INTERNAL_SERVICE_TOKEN=<long-random-shared-secret>
 ```
+
+`SESSION_COOKIE_SECURE=false`는 로컬 개발 전용입니다. 운영 환경에서는 반드시 `true`로 설정해야 합니다.
 
 GitHub OAuth App에는 브라우저에서 접속할 Java 서버 주소와 일치하는 callback을 등록해야 합니다.
 
