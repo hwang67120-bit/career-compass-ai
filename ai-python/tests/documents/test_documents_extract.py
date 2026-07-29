@@ -16,13 +16,16 @@ KOREAN_FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
 VALID_DOCUMENT_ID = "11111111-1111-1111-1111-111111111111"
 VALID_EXTRACTION_TASK_ID = "22222222-2222-2222-2222-222222222222"
 
+FAKE_NAME = "김철수"
 FAKE_EMAIL = "hong.gildong.secret@example-fake.com"
 FAKE_PHONE = "010-9999-8888"
 FAKE_RRN = "901231-1234567"
-PII_SECRETS = [FAKE_EMAIL, FAKE_PHONE, FAKE_RRN]
+PII_SECRETS = [FAKE_NAME, FAKE_EMAIL, FAKE_PHONE, FAKE_RRN]
 
+# 이름을 맨 앞에 둔다 — 실제 이력서 관례("이름 - 직무")와 같은 위치라야
+# personal_information_sanitizer의 이름 마스킹(첫 토큰만 검사)이 실제로 걸린다.
 RESUME_TEXT_WITH_PII = (
-    f"백엔드 개발자 김철수. 이메일: {FAKE_EMAIL}. 전화번호: {FAKE_PHONE}. "
+    f"{FAKE_NAME} - 백엔드 개발자. 이메일: {FAKE_EMAIL}. 전화번호: {FAKE_PHONE}. "
     f"주민등록번호: {FAKE_RRN}. Java, Spring Boot 3년 경력. "
     "ABC회사에서 결제 시스템을 개발했다."
 )

@@ -79,22 +79,42 @@ def _filter_project(project: CandidateProject) -> CandidateProject:
 
 
 def filter_unevidenced_candidates(payload: ProfileCandidatePayload) -> ProfileCandidatePayload:
-    """근거(evidenceIds)가 없는 후보 항목을 응답에서 제거한다.
+    """근거(evidenceIds)가 없는 후보 항목을 응답에서 제거하고, 그 결과 어떤
+    후보 항목도 참조하지 않게 된 근거(evidence)도 함께 제거한다.
 
-    계약 5절: 모든 후보 항목은 근거를 가져야 한다. 모델이 근거를 연결하지
-    못한 항목을 관대하게 통과시키지 않고, 사실처럼 보이는 값을 응답에
-    남기지 않도록 조용히 제거한다(evidence 배열 자체는 그대로 둔다 —
-    다른 항목이 참조 중일 수 있어서).
+    계약 5절(최소 근거): 모든 후보 항목은 근거를 가져야 하고, Python이
+    반환하는 근거는 후보 값을 확인하는 최소 범위로 제한한다. 후보 항목을
+    제거하고 나서 아무도 참조하지 않는 근거를 응답에 그대로 남기면 이
+    최소 범위 원칙을 어기고, sourceText에 남아있는 개인정보(예: 이름)가
+    불필요하게 노출될 위험도 커진다.
     """
+    filtered_skills = [s for s in payload.skills if s.evidence_ids]
+    filtered_work_experiences = [w for w in payload.work_experiences if w.evidence_ids]
+    filtered_projects = [_filter_project(p) for p in payload.projects if p.evidence_ids]
+    filtered_education = [e for e in payload.education if e.evidence_ids]
+    filtered_certifications = [c for c in payload.certifications if c.evidence_ids]
+
+    referenced_ids: set[str] = set()
+    for item in [
+        *filtered_skills,
+        *filtered_work_experiences,
+        *filtered_education,
+        *filtered_certifications,
+    ]:
+        referenced_ids.update(item.evidence_ids)
+    for project in filtered_projects:
+        referenced_ids.update(project.evidence_ids)
+        for technology in project.technologies:
+            referenced_ids.update(technology.evidence_ids)
+
     return payload.model_copy(
         update={
-            "skills": [s for s in payload.skills if s.evidence_ids],
-            "work_experiences": [w for w in payload.work_experiences if w.evidence_ids],
-            "projects": [
-                _filter_project(p) for p in payload.projects if p.evidence_ids
-            ],
-            "education": [e for e in payload.education if e.evidence_ids],
-            "certifications": [c for c in payload.certifications if c.evidence_ids],
+            "skills": filtered_skills,
+            "work_experiences": filtered_work_experiences,
+            "projects": filtered_projects,
+            "education": filtered_education,
+            "certifications": filtered_certifications,
+            "evidence": [e for e in payload.evidence if e.evidence_id in referenced_ids],
         }
     )
 

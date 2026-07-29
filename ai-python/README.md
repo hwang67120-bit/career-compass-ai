@@ -88,7 +88,7 @@ app/
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Gemini 연동 | 확인 필요 |
 | `DOCUMENT_EXTRACTION_MAX_PDF_SIZE_BYTES` | PDF 업로드 최대 크기 | 확인 필요 — Java 설정과 맞춰야 함 |
 
-`OLLAMA_MODEL`(채용공고용)과 `OLLAMA_RESUME_MODEL`(이력서용)은 서로 다른 설정이며 섞이면 안 된다 — `tests/providers/test_ollama_client.py`가 이걸 검증한다. 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).
+`OLLAMA_MODEL`(채용공고용)과 `OLLAMA_RESUME_MODEL`(이력서용)은 서로 다른 설정 필드다 — 같은 모델명을 써도 되지만, `documents/extract` 라우터는 반드시 `OLLAMA_RESUME_MODEL`을 읽어야 하며 실수로 다른 필드를 읽으면 안 된다(`tests/providers/test_ollama_client.py`가 이 설정 경계를 검증한다). 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).
 
 ## 확인 필요
 
