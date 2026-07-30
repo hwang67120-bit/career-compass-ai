@@ -505,5 +505,5 @@
     elements.backToDashboardButton.addEventListener("click", () => showOnly(elements.dashboardView));
 
     updateAnalysisAvailability();
-    loadSession();
+    window.addEventListener("pageshow", loadSession);
 })();

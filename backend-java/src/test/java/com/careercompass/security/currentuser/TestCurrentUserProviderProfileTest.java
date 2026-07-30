@@ -13,9 +13,9 @@ class TestCurrentUserProviderProfileTest {
     private static final UUID TEST_USER_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
 
     @Test
-    void testCurrentUserProvider_withDevelopmentProfile_usesConfiguredUser() {
+    void testCurrentUserProvider_withTestProfile_usesConfiguredUser() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
-            context.getEnvironment().setActiveProfiles("dev");
+            context.getEnvironment().setActiveProfiles("test");
             TestPropertySourceUtils.addInlinedPropertiesToEnvironment(
                     context, "test.user-id=" + TEST_USER_ID);
             context.register(TestCurrentUserProvider.class);
@@ -25,9 +25,9 @@ class TestCurrentUserProviderProfileTest {
     }
 
     @Test
-    void testCurrentUserProvider_withProductionProfile_isNotCreated() {
+    void testCurrentUserProvider_withDevelopmentProfile_isNotCreated() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
-            context.getEnvironment().setActiveProfiles("prod");
+            context.getEnvironment().setActiveProfiles("dev");
             context.register(TestCurrentUserProvider.class);
             context.refresh();
             assertThat(context.getBeansOfType(TestCurrentUserProvider.class)).isEmpty();

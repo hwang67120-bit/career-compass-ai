@@ -32,7 +32,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AuthController.class)
-@ActiveProfiles("prod")
+@ActiveProfiles("dev")
 @TestPropertySource(properties = {
         "spring.security.oauth2.client.registration.github.client-id=test-client",
         "spring.security.oauth2.client.registration.github.client-secret=test-secret",

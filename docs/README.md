@@ -68,8 +68,8 @@ SESSION_COOKIE_SECURE=true
 2. 응답의 `headerName`과 `token`을 확인한다.
 3. `POST`, `PATCH`, `DELETE` 요청에 `X-CSRF-TOKEN: {token}` 헤더를 보낸다.
 
-`dev`, `test` 프로필은 기존 Postman·단위 테스트 흐름을 유지하기 위해 OAuth 로그인을 요구하지 않고
-`TEST_USER_ID`에 설정된 고정 사용자 UUID를 사용한다.
+`dev`, `prod` 프로필은 GitHub OAuth 로그인을 사용한다.
+`test` 프로필만 테스트 설정의 고정 UUID를 사용하며 `TEST_USER_ID` 환경변수는 요구하지 않는다.
 
 - 로그인 세션이 없으면 `401 UNAUTHORIZED`
 - 인증됐지만 허용되지 않은 경로이면 `403 FORBIDDEN`
@@ -82,14 +82,14 @@ SESSION_COOKIE_SECURE=true
 
 Java 서버의 `/` 경로에서 로그인과 자료 등록 상태를 브라우저로 확인할 수 있다.
 
-- 운영 프로필: 첫 화면에서 GitHub OAuth 로그인을 시작하고, 성공하면 `/`로 돌아온다.
-- 개발·테스트 프로필: `TEST_USER_ID`의 고정 사용자로 바로 자료 등록 화면을 연다.
+- 개발·운영 프로필: 첫 화면에서 GitHub OAuth 로그인을 시작하고, 성공하면 `/`로 돌아온다.
+- 테스트 프로필: 테스트 설정의 고정 사용자로 자료 등록 화면을 검증한다.
 - 문서 등록: 현재 도메인 API 범위에 맞춰 이력서·포트폴리오 텍스트를 등록한다. PDF 업로드 UI는 파일 업로드 API 구현 후 추가한다.
 - GitHub 등록: 공개 저장소 URL을 실제 GitHub API로 검증하고 저장소명, 기본 브랜치, 커밋 SHA를 표시한다.
 - 상태 표시: 서버 응답에 따라 등록 전, 등록 중, 등록 완료, 등록 실패를 구분한다.
 
 화면은 별도 프론트 서버 없이 Spring Boot 정적 리소스로 제공되므로 Java 서버와 같은 출처에서 API를 호출한다.
-운영 프로필의 변경 요청은 `/api/v1/auth/csrf`에서 받은 CSRF 토큰을 요청 헤더에 포함한다.
+개발·운영 프로필의 변경 요청은 `/api/v1/auth/csrf`에서 받은 CSRF 토큰을 요청 헤더에 포함한다.
 
 ### 공통 응답
 

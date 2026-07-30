@@ -13,7 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@Profile("prod")
+@Profile({"dev", "prod"})
 @EnableWebSecurity
 public class OAuthSessionSecurityConfig {
 
