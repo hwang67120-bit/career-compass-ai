@@ -53,3 +53,18 @@ def test_sanitize_does_not_mask_name_pattern_when_not_at_start() -> None:
     result = sanitize_personal_information(text)
 
     assert "김철수" in result  # 알려진 한계: 맨 앞이 아니면 검출 못 함
+
+
+def test_sanitize_masks_name_after_explicit_label() -> None:
+    """'이름:', '성명' 같은 명시적 라벨 뒤의 이름은 문서 어디에 있어도 잡는다."""
+    assert sanitize_personal_information("이름: 김철수") == "이름: [NAME]"
+    assert sanitize_personal_information("성명 김영희") == "성명 [NAME]"
+    assert sanitize_personal_information("이름:김철수님") == "이름:[NAME]"
+
+
+def test_sanitize_does_not_mask_label_words_themselves() -> None:
+    """'이름'·'이력서'·'전공'처럼 성씨 글자로 시작하는 이 도메인의 흔한
+    단어는 맨 앞에 와도 이름으로 오인하지 않는다."""
+    assert sanitize_personal_information("이름표를 착용하세요") == "이름표를 착용하세요"
+    assert sanitize_personal_information("이력서\n경력 3년차") == "이력서\n경력 3년차"
+    assert sanitize_personal_information("전공: 컴퓨터공학") == "전공: 컴퓨터공학"
