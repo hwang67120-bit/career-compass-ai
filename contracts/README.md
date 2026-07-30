@@ -17,6 +17,7 @@
 | 기능 | 문서 | 상태 |
 |---|---|---|
 | PDF 문서 추출 | [document-extraction.md](document-extraction.md) | MVP 확정 |
+| 채용공고 구조화 추출 | [job-posting-extraction.md](job-posting-extraction.md) | 제안 — 코덱스 확인 필요 |
 
 ## PDF 문서 추출 요약
 

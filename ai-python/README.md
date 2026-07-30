@@ -10,6 +10,7 @@ Python 서버는 PDF 문서에서 텍스트와 개인정보가 제거된 구조�
 |---|---|---|---|---:|
 | 운영 | 상태 확인 | `GET` | `/internal/v1/health` | 200 |
 | 문서 처리 | 이력서·포트폴리오 PDF 추출·구조화 | `POST` | `/internal/v1/documents/extract` | 200 |
+| 채용공고 | 채용공고 텍스트 구조화 (제안 — 계약 미확정) | `POST` | `/internal/v1/job-postings/extract` | 200 |
 
 모든 `/internal/v1/*` 요청은 `X-Internal-Token` 헤더를 요구한다 (아래 "내부 서비스 인증" 참고).
 
@@ -34,6 +35,14 @@ X-Internal-Token: {shared-secret}
 - 성공(`200`)과 실패(`401`/`413`/`415`/`422`/`502`/`503`) 모두 계약 봉투(`requestId`/`data`/`error`/`timestamp`) 형식이다.
 - 근거(evidenceIds)가 없는 후보 항목은 사실처럼 반환하지 않고 응답에서 제거한다(계약 5절).
 - 실제 검증: `tests/documents/test_documents_extract.py` — 실제 PDF와 실제 Ollama 호출(mock 아님), PII·내부 토큰이 응답·로그에 안 남는 것까지 확인.
+
+### 채용공고 추출 (제안 — 코덱스 확인 필요)
+
+계약: [채용공고 구조화 추출 계약](../contracts/job-posting-extraction.md), 상태 "제안". PDF가 아니라 JSON 본문(`jobPostingId`, `extractionTaskId`, `sourceText`)을 받는다. 채용공고는 공개 정보라 개인정보 제거 단계가 없다 — PDF 파이프라인과 달리 텍스트 추출→개인정보 제거를 건너뛰고 바로 Ollama 구조화 추출(`OLLAMA_MODEL`)로 간다.
+
+- 근거 검증·필터링은 문서 추출과 같은 원칙(`app/services/job_posting_extraction.py`).
+- 실제 검증: `tests/job_postings/test_job_postings_extract.py` — 실제 Ollama 호출(mock 아님).
+- `qwen2.5:latest`로는 `requiredSkills`·`evidence`는 안정적으로 채우지만 `jobTitle`은 채우지 않는 경우가 실제로 있었다(계약 문서 8절 참고) — 아직 모델 평가·프롬프트 튜닝을 안 했다.
 
 ## 내부 서비스 인증 (2차 방어선)
 
@@ -72,7 +81,7 @@ app/
 
 ## 현재 미구현
 
-- 채용공고-확정 프로필 비교 실행 API (임베딩·유사도·재정렬을 실제 요청에 연결)
+- 채용공고-확정 프로필 비교 실행 API (채용공고 구조화 자체는 됨 — 임베딩·유사도·재정렬을 실제 비교 요청에 연결하는 부분이 남음)
 - 오차 범위 계산·보정 (충분한 검증 데이터가 쌓이기 전까지는 설계만 존재, [docs/architecture/error-calibration.md](../docs/architecture/error-calibration.md) 참고)
 
 ## 필수 환경변수
@@ -86,6 +95,7 @@ app/
 | `OLLAMA_RESUME_MODEL` | 이력서 구조화 추출 전용 Ollama 모델 | `evaluation/model_comparison.py`로 평가해 `exaone3.5:latest` 채택(1차 결과, 최종 확정 아님) |
 | `OLLAMA_EMBEDDING_MODEL` | Ollama 임베딩 모델 | 확인 필요 |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Gemini 연동 | 확인 필요 |
+| `JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH` | 채용공고 텍스트 최대 길이(문자 수) | 확인 필요 — 계약이 제안 상태라 임시값, Java 설정과 맞춰야 함 |
 | `DOCUMENT_EXTRACTION_MAX_PDF_SIZE_BYTES` | PDF 업로드 최대 크기 | 확인 필요 — Java 설정과 맞춰야 함 |
 
 `OLLAMA_MODEL`(채용공고용)과 `OLLAMA_RESUME_MODEL`(이력서용)은 서로 다른 설정 필드다 — 같은 모델명을 써도 되지만, `documents/extract` 라우터는 반드시 `OLLAMA_RESUME_MODEL`을 읽어야 하며 실수로 다른 필드를 읽으면 안 된다(`tests/providers/test_ollama_client.py`가 이 설정 경계를 검증한다). 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).

@@ -16,6 +16,11 @@ def provider(settings: GeminiSettings) -> GeminiProvider:
     return GeminiProvider(client=client, model_name=settings.gemini_model)
 
 
+def test_provider_name_is_gemini() -> None:
+    """라우터가 modelProvider 응답 필드를 여기서 가져온다 — 리터럴로 박아두지 않는다."""
+    assert GeminiProvider.provider_name == "gemini"
+
+
 @pytest.mark.asyncio
 async def test_extract_job_posting_returns_evidence_linked_result(
     provider: GeminiProvider,

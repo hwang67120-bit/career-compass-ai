@@ -13,21 +13,32 @@ from app.providers.ollama import OllamaProvider
 from app.providers.settings import OllamaSettings
 
 
-async def get_ollama_provider():
-    """FastAPI 의존성으로 주입할 `OllamaProvider`를 만든다.
-
-    요청이 끝나면 클라이언트를 닫는다(`async with`) — 연결을 프로세스
-    전체에서 들고 있지 않는다.
-    """
-    settings = OllamaSettings()
+def _build_client(settings: OllamaSettings) -> httpx.AsyncClient:
     timeout = httpx.Timeout(
         connect=settings.ollama_connect_timeout_seconds,
         read=settings.ollama_read_timeout_seconds,
         write=10.0,
         pool=5.0,
     )
-    async with httpx.AsyncClient(
+    return httpx.AsyncClient(
         base_url=str(settings.ollama_base_url).rstrip("/"),
         timeout=timeout,
-    ) as client:
+    )
+
+
+async def get_ollama_resume_provider():
+    """`documents/extract`가 쓰는, 이력서 전용 모델(`OLLAMA_RESUME_MODEL`) provider다.
+
+    요청이 끝나면 클라이언트를 닫는다(`async with`) — 연결을 프로세스
+    전체에서 들고 있지 않는다.
+    """
+    settings = OllamaSettings()
+    async with _build_client(settings) as client:
         yield OllamaProvider(client=client, model_name=settings.ollama_resume_model)
+
+
+async def get_ollama_job_posting_provider():
+    """`job-postings/extract`가 쓰는, 채용공고용 모델(`OLLAMA_MODEL`) provider다."""
+    settings = OllamaSettings()
+    async with _build_client(settings) as client:
+        yield OllamaProvider(client=client, model_name=settings.ollama_model)
