@@ -148,7 +148,7 @@ async def extract_document(
                 "extractionTaskId": extraction_task_id,
                 "status": "EXTRACTED",
                 "candidate": candidate.model_dump(by_alias=True),
-                "modelProvider": "ollama",
+                "modelProvider": ollama_provider.provider_name,
                 "modelName": ollama_provider.model_name,
                 "piiRemoved": True,
             },

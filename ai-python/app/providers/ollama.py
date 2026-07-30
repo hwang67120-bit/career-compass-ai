@@ -51,6 +51,8 @@ class OllamaResponseError(RuntimeError):
 class OllamaProvider:
     """로컬 Ollama 모델을 호출한다."""
 
+    provider_name = "ollama"
+
     def __init__(self, client: httpx.AsyncClient, model_name: str) -> None:
         self.client = client
         self.model_name = model_name

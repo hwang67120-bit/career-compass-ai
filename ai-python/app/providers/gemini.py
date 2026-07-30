@@ -51,6 +51,8 @@ class GeminiResponseError(RuntimeError):
 class GeminiProvider:
     """Gemini API를 호출한다."""
 
+    provider_name = "gemini"
+
     def __init__(self, client: genai.Client, model_name: str) -> None:
         self.client = client
         self.model_name = model_name

@@ -114,7 +114,7 @@ async def extract_job_posting(
                 "extractionTaskId": request.extraction_task_id,
                 "status": "EXTRACTED",
                 "extraction": extraction.model_dump(by_alias=True),
-                "modelProvider": "ollama",
+                "modelProvider": ollama_provider.provider_name,
                 "modelName": ollama_provider.model_name,
             },
         ),

@@ -26,6 +26,11 @@ async def provider(settings: OllamaSettings):
         yield OllamaProvider(client=client, model_name=settings.ollama_model)
 
 
+def test_provider_name_is_ollama() -> None:
+    """라우터가 modelProvider 응답 필드를 여기서 가져온다 — 리터럴로 박아두지 않는다."""
+    assert OllamaProvider.provider_name == "ollama"
+
+
 @pytest.mark.asyncio
 async def test_verify_model_passes_when_model_installed(provider: OllamaProvider) -> None:
     await provider.verify_model()
