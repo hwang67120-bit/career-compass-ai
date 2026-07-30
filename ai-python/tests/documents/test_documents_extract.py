@@ -6,7 +6,7 @@ from app.documents.settings import get_document_extraction_settings
 from app.guardrails.settings import get_internal_auth_settings
 from app.main import app
 from app.providers.ollama import OllamaProvider
-from app.providers.ollama_client import get_ollama_provider
+from app.providers.ollama_client import get_ollama_resume_provider
 from app.providers.settings import OllamaSettings
 
 client = TestClient(app)
@@ -206,7 +206,7 @@ def test_extract_reports_model_unavailable_and_leaks_no_pii(caplog) -> None:
         ) as broken_client:
             yield OllamaProvider(client=broken_client, model_name=settings.ollama_resume_model)
 
-    app.dependency_overrides[get_ollama_provider] = unreachable_ollama_provider
+    app.dependency_overrides[get_ollama_resume_provider] = unreachable_ollama_provider
     try:
         with caplog.at_level("DEBUG"):
             response = client.post(
@@ -216,7 +216,7 @@ def test_extract_reports_model_unavailable_and_leaks_no_pii(caplog) -> None:
                 files={"file": ("resume.pdf", _make_pdf_bytes([RESUME_TEXT_WITH_PII]), "application/pdf")},
             )
     finally:
-        app.dependency_overrides.pop(get_ollama_provider, None)
+        app.dependency_overrides.pop(get_ollama_resume_provider, None)
 
     assert response.status_code == 503
     assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
@@ -246,7 +246,7 @@ def test_extract_reports_model_unavailable_when_model_not_installed(caplog) -> N
         ) as real_client:
             yield OllamaProvider(client=real_client, model_name="this-model-does-not-exist:latest")
 
-    app.dependency_overrides[get_ollama_provider] = provider_with_missing_model
+    app.dependency_overrides[get_ollama_resume_provider] = provider_with_missing_model
     try:
         with caplog.at_level("DEBUG"):
             response = client.post(
@@ -256,7 +256,7 @@ def test_extract_reports_model_unavailable_when_model_not_installed(caplog) -> N
                 files={"file": ("resume.pdf", _make_pdf_bytes([RESUME_TEXT_WITH_PII]), "application/pdf")},
             )
     finally:
-        app.dependency_overrides.pop(get_ollama_provider, None)
+        app.dependency_overrides.pop(get_ollama_resume_provider, None)
 
     assert response.status_code == 503
     assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"

@@ -8,6 +8,18 @@ from pydantic import ValidationError
 from app.schemas.job_posting import JobPostingExtraction
 from app.schemas.profile_candidate import ProfileCandidatePayload
 
+_JOB_POSTING_EXTRACTION_SYSTEM_PROMPT = (
+    "제공된 채용 공고에 직접 존재하는 정보만 추출한다. "
+    "확인할 수 없는 값은 만들지 않고 null 또는 빈 배열로 남긴다. "
+    "반드시 evidence 배열부터 먼저 전부 채운 다음 jobTitle, requiredSkills, "
+    "preferredSkills를 채운다. "
+    "sourceText는 반드시 원문에서 이어져 있는 부분을 글자 하나까지 그대로 복사한 것이어야 한다. "
+    "요약·재구성하지 않는다. 정확히 이어 붙여 복사할 수 없으면 그 항목은 만들지 않는다. "
+    "requiredSkills, preferredSkills의 모든 항목은 evidenceIds에 evidence 배열에 "
+    "실제로 존재하는 evidenceId를 하나 이상 채워 넣는다. jobTitle을 채웠으면 "
+    "jobTitleEvidenceIds도 채운다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
+)
+
 _RESUME_EXTRACTION_SYSTEM_PROMPT = (
     "제공된 이력서·포트폴리오에 직접 존재하는 정보만 추출한다. "
     "확인할 수 없는 값은 만들지 않고 null 또는 빈 배열로 남긴다. "
@@ -82,11 +94,7 @@ class OllamaProvider:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "제공된 채용 공고에 직접 존재하는 정보만 추출한다. "
-                    "모든 추출값에는 원문 근거를 연결한다. "
-                    "자료에 없는 값은 만들지 않는다."
-                ),
+                "content": _JOB_POSTING_EXTRACTION_SYSTEM_PROMPT,
             },
             {
                 "role": "user",

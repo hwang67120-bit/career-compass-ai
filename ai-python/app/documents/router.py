@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from app.documents.settings import DocumentExtractionSettings, get_document_extraction_settings
 from app.guardrails.internal_auth import verify_internal_token
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
-from app.providers.ollama_client import get_ollama_provider
+from app.providers.ollama_client import get_ollama_resume_provider
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
 from app.services.pdf_extraction import (
     PdfNoExtractableTextError,
@@ -48,7 +48,7 @@ async def extract_document(
     file: UploadFile = File(...),
     x_request_id: str | None = Header(default=None),
     settings: DocumentExtractionSettings = Depends(get_document_extraction_settings),
-    ollama_provider: OllamaProvider = Depends(get_ollama_provider),
+    ollama_provider: OllamaProvider = Depends(get_ollama_resume_provider),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
 
