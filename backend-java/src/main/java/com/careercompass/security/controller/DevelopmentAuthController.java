@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-@Profile({"dev", "test"})
+@Profile("test")
 public class DevelopmentAuthController {
 
     private final CurrentUserProvider currentUserProvider;
