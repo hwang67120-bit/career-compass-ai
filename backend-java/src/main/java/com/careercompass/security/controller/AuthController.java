@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-@Profile("prod")
+@Profile({"dev", "prod"})
 public class AuthController {
 
     private final ApiResponseFactory responseFactory;

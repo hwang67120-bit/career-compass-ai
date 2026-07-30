@@ -35,7 +35,7 @@ GET /oauth2/authorization/github
 
 ### 개발·테스트 프로필
 
-`dev`, `test`는 OAuth 로그인을 요구하지 않고 환경변수 `TEST_USER_ID`의 고정 UUID를 사용한다. 이 우회는 운영 프로필에서 활성화되지 않는다.
+`dev`, `prod`는 GitHub OAuth 로그인을 사용한다. `test`만 테스트 설정의 고정 UUID를 사용하며 `TEST_USER_ID` 환경변수는 요구하지 않는다.
 
 ## 공통 응답
 

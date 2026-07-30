@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@Profile("prod")
+@Profile({"dev", "prod"})
 public class GitHubOAuth2UserService
         implements OAuth2UserService<OAuth2UserRequest, OAuth2User> {
 
