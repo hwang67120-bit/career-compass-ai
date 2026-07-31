@@ -41,3 +41,8 @@ python:
   worker:
     base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
     internal-token: ${INTERNAL_SERVICE_TOKEN}
+
+technology-tag:
+  policy:
+    max-query-length: ${TECHNOLOGY_TAG_MAX_QUERY_LENGTH:50}
+    max-search-results: ${TECHNOLOGY_TAG_MAX_SEARCH_RESULTS:30}
