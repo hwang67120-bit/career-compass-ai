@@ -8,14 +8,11 @@
 상태다. 알려진 기술만 인식하며, 목록에 없는 기술은 근거가 있어도 놓친다.
 """
 
-from dataclasses import dataclass, field
-
 from app.providers.github_repository import GitHubRepositoryClient
-from app.schemas.repository_evidence import (
-    RepositoryEvidence,
-    RepositoryEvidenceExtraction,
-    RepositorySkill,
-)
+from app.schemas.technical_evidence import EvidenceSource, TechnicalEvidenceExtraction
+from app.services.technical_evidence_builder import TechnicalEvidenceBuilder
+
+_ID_PREFIX = "repo-evidence"
 
 # 벤더·생성물 디렉터리는 사용자가 직접 작성한 코드가 아니므로 제외한다.
 _EXCLUDED_PATH_SEGMENTS = {
@@ -116,37 +113,17 @@ def select_manifest_paths(tree_paths: list[str]) -> list[str]:
     return candidates[:_MAX_MANIFEST_FILES_TO_FETCH]
 
 
-@dataclass
-class _EvidenceBuilder:
-    evidence: list[RepositoryEvidence] = field(default_factory=list)
-    skill_evidence_ids: dict[str, list[str]] = field(default_factory=dict)
-    _next_id: int = 1
-
-    def add(self, skill_name: str, file_path: str, detail: str) -> None:
-        evidence_id = f"repo-evidence-{self._next_id}"
-        self._next_id += 1
-        self.evidence.append(
-            RepositoryEvidence(evidence_id=evidence_id, file_path=file_path, detail=detail)
-        )
-        self.skill_evidence_ids.setdefault(skill_name, []).append(evidence_id)
-
-    def build(self) -> RepositoryEvidenceExtraction:
-        skills = [
-            RepositorySkill(skill_name=skill_name, evidence_ids=evidence_ids)
-            for skill_name, evidence_ids in self.skill_evidence_ids.items()
-        ]
-        return RepositoryEvidenceExtraction(evidence=self.evidence, skills=skills)
-
-
-def _extract_manifest_evidence(builder: _EvidenceBuilder, file_path: str, content: str) -> None:
+def _extract_manifest_evidence(
+    builder: TechnicalEvidenceBuilder, file_path: str, content: str
+) -> None:
     for line in content.splitlines():
         lowered = line.lower()
         for keyword, skill_name in _MANIFEST_KEYWORD_SKILLS.items():
             if keyword in lowered:
-                builder.add(skill_name, file_path, line.strip())
+                builder.add(skill_name, detail=line.strip(), file_path=file_path)
 
 
-def _extract_language_evidence(builder: _EvidenceBuilder, tree_paths: list[str]) -> None:
+def _extract_language_evidence(builder: TechnicalEvidenceBuilder, tree_paths: list[str]) -> None:
     paths_by_language: dict[str, list[str]] = {}
     for path in tree_paths:
         if _is_excluded(path):
@@ -160,12 +137,16 @@ def _extract_language_evidence(builder: _EvidenceBuilder, tree_paths: list[str])
         if len(paths) < _MIN_LANGUAGE_FILE_COUNT:
             continue
         for example_path in paths[:_MAX_LANGUAGE_EVIDENCE_FILES]:
-            builder.add(language, example_path, f"{language} 소스 파일 {len(paths)}개 중 하나")
+            builder.add(
+                language,
+                detail=f"{language} 소스 파일 {len(paths)}개 중 하나",
+                file_path=example_path,
+            )
 
 
 def extract_repository_evidence(
     tree_paths: list[str], manifest_contents: dict[str, str]
-) -> RepositoryEvidenceExtraction:
+) -> TechnicalEvidenceExtraction:
     """파일 경로 목록과 매니페스트 파일 내용만으로 근거를 만든다(순수 함수, 네트워크 없음).
 
     입력:
@@ -173,9 +154,10 @@ def extract_repository_evidence(
         manifest_contents: `select_manifest_paths`로 고른 경로별 파일 원문.
 
     반환:
-        근거(evidence)와 근거로 뒷받침되는 기술(skills) 목록.
+        근거(evidence)와 근거로 뒷받침되는 기술(skills) 목록. 모든 근거의
+        `evidenceSource`는 `REPOSITORY`다.
     """
-    builder = _EvidenceBuilder()
+    builder = TechnicalEvidenceBuilder(evidence_source=EvidenceSource.REPOSITORY, id_prefix=_ID_PREFIX)
     for file_path, content in manifest_contents.items():
         _extract_manifest_evidence(builder, file_path, content)
     _extract_language_evidence(builder, tree_paths)
@@ -184,7 +166,7 @@ def extract_repository_evidence(
 
 async def analyze_repository(
     client: GitHubRepositoryClient, owner: str, repository: str, commit_sha: str
-) -> RepositoryEvidenceExtraction:
+) -> TechnicalEvidenceExtraction:
     """저장소를 조회하고 근거를 추출하는 전체 과정을 수행한다.
 
     입력:

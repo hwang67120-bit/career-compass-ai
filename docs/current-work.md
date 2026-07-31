@@ -41,26 +41,27 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 | Gemini 임베딩 | `app/providers/embedding.py` | `UNIT_TESTED` | `tests/providers/test_gemini_embedding.py` 존재 | 분석 실행 API에서 호출 |
 | 코사인 유사도 | `app/services/similarity.py` | `UNIT_TESTED` | `tests/services/test_similarity.py` 존재 | 확정 프로필·채용공고 계약으로 연결 |
 | 후보 재정렬 | `app/services/reranking.py` | `UNIT_TESTED` | 단위 테스트와 실제 임베딩 기반 테스트 존재 | 분석 실행 API와 결과 계약으로 연결 |
-| 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 8건 + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 4건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 매니페스트·키워드·언어 확장자 목록은 확인 필요 |
+| 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 9건 + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 5건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 매니페스트·키워드·언어 확장자 목록은 확인 필요 |
+| 수기 입력 기술과 저장소 근거 분리 | `app/schemas/technical_evidence.py`, `app/services/manual_skill_evidence.py`, `app/services/technical_profile.py` | `UNIT_TESTED` | 단위 테스트 9건 통과 | Java가 사용자 수기 입력 기술 목록을 넘기는 API 라우트로 연결 |
 
 ## Python 다음 작업
 
 2026-07-30 사용자 확인: 비교 범위를 줄였다. 비교 근거는 **이력서 PDF가 아니라 GitHub 저장소 코드와
 수기 입력 기술 키워드**를 사용한다 — 이 두 출처는 개인정보를 포함하지 않기 때문이다.
-아래 10개가 Python이 구현할 전체 범위다(사용자 확정, 우선순위 순서).
+아래는 Python이 구현할 전체 범위 10개 중 남은 항목이다(사용자 확정, 우선순위 순서). 1·2번(저장소
+근거 추출, 수기 입력 분리)은 구현·단위 테스트를 마쳐 위 검증 상태 표로 옮겼다 — Java API 라우트
+연결 전까지는 완료로 보지 않는다.
 
 | 우선순위 | 작업 | 계약 상태 | 시작 조건 |
 | ---: | --- | --- | --- |
-| 1 | GitHub 저장소 코드에서 기술·프로젝트 근거 추출 | 확인 필요 | 저장소 코드 접근 방식(클론 대상 파일 범위, 언어별 분석 방법), 근거 스키마 확정 |
-| 2 | 수기 입력 기술과 저장소 근거 분리 | 확인 필요 | 수기 입력 스키마, 두 근거를 구분해서 저장·표시하는 규칙 확정 |
-| 3 | 희망 직무 기반 채용공고 검색어 생성 | 확인 필요 | 생성한 검색어의 용도(사용자에게 노출만 하는지, 다른 조회 API에 전달하는지) 확정 |
-| 4 | 채용공고 구조화 추출 API 확정 | `contracts/job-posting-extraction.md` 제안 | 계약 MVP 확정 |
-| 5 | 사용자 경험·주요 업무 임베딩(저장소+수기 키워드 기준) | 확인 필요 | 1·2번 결과 스키마 확정 |
-| 6 | 기술·프로젝트 의미 유사도 계산 | 기존 `app/services/similarity.py` 재사용 가능 | 5번 임베딩 결과 |
-| 7 | 적합한 채용공고 재정렬 | 기존 `app/services/reranking.py` 재사용 가능 | 6번 결과 |
-| 8 | 부족 기술과 추천 이유 생성 | 확인 필요 | 근거 있는 값만 생성하는 규칙(`AGENTS.md` "사실, 추정과 미확인 구분") 적용 |
-| 9 | 근거 없는 기술·경력 제거 | 확인 필요 | 8번과 함께 근거 검증 규칙 확정 |
-| 10 | 모델 성능·토큰·단계별 처리시간 측정 | 확인 필요 | 측정할 단계 범위와 기록 위치(로그·별도 저장소) 확정 |
+| 1 | 희망 직무 기반 채용공고 검색어 생성 | 확인 필요 | 생성한 검색어의 용도(사용자에게 노출만 하는지, 다른 조회 API에 전달하는지) 확정 |
+| 2 | 채용공고 구조화 추출 API 확정 | `contracts/job-posting-extraction.md` 제안 | 계약 MVP 확정 |
+| 3 | 사용자 경험·주요 업무 임베딩(저장소+수기 키워드 기준) | 확인 필요 | 위 두 검증된 근거 추출 결과(`TechnicalEvidenceExtraction`)를 입력으로 사용 |
+| 4 | 기술·프로젝트 의미 유사도 계산 | 기존 `app/services/similarity.py` 재사용 가능 | 3번 임베딩 결과 |
+| 5 | 적합한 채용공고 재정렬 | 기존 `app/services/reranking.py` 재사용 가능 | 4번 결과 |
+| 6 | 부족 기술과 추천 이유 생성 | 확인 필요 | 근거 있는 값만 생성하는 규칙(`AGENTS.md` "사실, 추정과 미확인 구분") 적용 |
+| 7 | 근거 없는 기술·경력 제거 | 확인 필요 | 6번과 함께 근거 검증 규칙 확정 |
+| 8 | 모델 성능·토큰·단계별 처리시간 측정 | 확인 필요 | 측정할 단계 범위와 기록 위치(로그·별도 저장소) 확정 |
 
 Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 모델은 확인이 필요하다.
 
@@ -69,7 +70,7 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 아니면 다른 용도로 남겨두고 비교 기능만 저장소+수기 키워드로 가는 것인지 아직 확정되지 않았다.
 확정 전까지 이 파이프라인의 기존 구현·테스트는 유지하고 삭제하지 않는다.
 
-4번은 아래 "채용공고 외부 조회"에서 채용공고 원문(`sourceText`)을 확보하는 방법과 맞물려 있다.
+2번(채용공고 구조화 추출 API 확정)은 아래 "채용공고 외부 조회"에서 채용공고 원문(`sourceText`)을 확보하는 방법과 맞물려 있다.
 그 원문 확보 방법(Java 서버사이드 조회)이 끝나기 전까지 Python은 임시 샘플 채용공고 텍스트로
 임베딩·유사도·재정렬을 연결해 두고, 모델 정확도(어떤 모델·프롬프트가 근거 있는 결과를 내는지)를
 계속 검증한다. 이 임시 연결은 `제안` 상태이며 실제 Java 요청으로 계약 검증을 마치기 전까지
