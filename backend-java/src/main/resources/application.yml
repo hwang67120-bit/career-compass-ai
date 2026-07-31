@@ -46,3 +46,6 @@ technology-tag:
   policy:
     max-query-length: ${TECHNOLOGY_TAG_MAX_QUERY_LENGTH:50}
     max-search-results: ${TECHNOLOGY_TAG_MAX_SEARCH_RESULTS:30}
+  resolution:
+    max-names: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAMES:30}
+    max-name-length: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAME_LENGTH:100}

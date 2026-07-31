@@ -187,6 +187,7 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 | 공개 GitHub 저장소 등록 | `INTEGRATION_TESTED` | 실제 GitHub 주소 HTTP·Postman 확인 이력 | GitHub 로그인 세션·CSRF 적용 후 재검증 |
 | 사용자 프로젝트 출처 목록 API(`GET /api/v1/project-sources`) | `UNIT_TESTED` | Service·Controller 테스트 + PostgreSQL/Testcontainers 통합 테스트 통과(PR #31) | Python이 저장소 근거 추출(1번) 대상 저장소를 고를 때 이 목록을 실제로 쓰도록 연결 |
 | 표준 기술 태그 검색 API(`GET /api/v1/technology-tags`) | `UNIT_TESTED` | Controller·정규화 단위 테스트 + Testcontainers 통합 테스트, Java 전체 테스트 107개 통과(PR #33) | Python `match_skill_tag`가 이 API의 고정 태그 목록(과 캐시된 임베딩)을 받아 쓰도록 연결 — 아직 Java–Python 계약 없음. 채용공고에서 발견한 새 `rawName`은 후보로만 저장되고 자동 표준 등록되지 않음(사용자·관리 확인 후 승격) |
+| 내부 기술 태그 정규화 API(`POST /internal/v1/technology-tags/resolve`) | `UNIT_TESTED` | Java 21 컴파일, Service 테스트, 내부 토큰·API·PostgreSQL 16 통합 테스트와 Java 전체 114개 테스트 통과 | Python이 같은 계약 예제로 실제 HTTP 호출해 `INTEGRATION_TESTED` 확인 |
 
 인증 변경은 아직 `java` 작업 트리에 커밋되지 않았다. 다른 담당자는 전달 커밋이 생기기 전
 `backend-java` 인증 파일과 공통 인증 문서를 수정하지 않는다.

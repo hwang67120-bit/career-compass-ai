@@ -1,6 +1,7 @@
 package com.careercompass.technologytag.repository;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.careercompass.technologytag.domain.TechnologyTag;
@@ -32,5 +33,24 @@ public interface TechnologyTagRepository extends JpaRepository<TechnologyTag, UU
     List<TechnologyTag> searchActiveTechnologyTags(
             @Param("normalizedQuery") String normalizedQuery,
             Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "aliases")
+    @Query("""
+            SELECT DISTINCT technologyTag
+            FROM TechnologyTag technologyTag
+            WHERE technologyTag.active = true
+              AND (
+                    technologyTag.normalizedKey IN :normalizedNames
+                    OR EXISTS (
+                        SELECT alias.id
+                        FROM TechnologyTagAlias alias
+                        WHERE alias.technologyTag = technologyTag
+                          AND alias.normalizedAlias IN :normalizedNames
+                    )
+              )
+            """)
+    List<TechnologyTag> findActiveResolutionMatches(
+            @Param("normalizedNames") Set<String> normalizedNames
     );
 }
