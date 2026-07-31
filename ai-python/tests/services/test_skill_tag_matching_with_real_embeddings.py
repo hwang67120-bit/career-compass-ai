@@ -14,6 +14,9 @@ def provider() -> GeminiEmbeddingProvider:
     return GeminiEmbeddingProvider(client=client, model_name=settings.gemini_embedding_model)
 
 
+# 이 테스트 파일에서만 쓰는 예시 목록이다 — 실제 관리되는 고정 태그 목록이 아니다.
+# 그 목록의 저장·관리는 Java 책임이고(docs/current-work.md 참고), Python은
+# match_skill_tag 호출마다 태그 목록을 인자로 받을 뿐 직접 들고 있지 않는다.
 _CANONICAL_TAGS = [
     "Spring Boot",
     "Kubernetes",
