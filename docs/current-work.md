@@ -44,6 +44,30 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 | 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 9건 + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 5건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 매니페스트·키워드·언어 확장자 목록은 확인 필요 |
 | 수기 입력 기술과 저장소 근거 분리 | `app/schemas/technical_evidence.py`, `app/services/manual_skill_evidence.py`, `app/services/technical_profile.py` | `UNIT_TESTED` | 단위 테스트 9건 통과 | Java가 사용자 수기 입력 기술 목록을 넘기는 API 라우트로 연결 |
 | 희망 직무 기반 채용공고 검색어 생성 | `app/services/job_search_keywords.py`, `app/providers/ollama.py`·`gemini.py`의 `generate_job_search_keyword_suggestions` | `UNIT_TESTED` | 순수 로직 8건 + 실제 Gemini 호출 1건 통과. 실제 Ollama 호출 1건은 로컬 Ollama 미실행으로 미확인(코드 문제 아님) | Java가 희망 직무·기술 목록을 넘기는 API 라우트로 연결. 검색어는 사용자에게 보여주기만 하고 다른 조회 API에 자동 전달하지 않음(2026-07-30 확정) |
+| 기술 태그 유사도 판단(오타·표기 차이 감지) | `app/schemas/skill_tag_match.py`, `app/services/skill_tag_matching.py` | `UNIT_TESTED` | 순수 로직 9건(네트워크 없음) + 실제 Gemini 임베딩 호출 2건 통과 | Java가 고정 태그 목록·후보 태그를 넘기는 API 라우트로 연결. 임계값(0.72)은 예시 7쌍만 확인한 값이라 확인 필요 |
+
+## 기술 태그 정규화 (2026-07-31 사용자 확인)
+
+자기소개(수기 입력·이력서)에 적힌 표현은 추상적이고, 채용공고에 적힌 표현은 구체적이라 그냥
+자유 텍스트로 비교하면 정확하지 않다. 고정 태그 목록을 두고 그 목록 기준으로 비교하기로 했다.
+
+- **고정 태그 목록 출처**: 새로 수집하거나 별도 목록을 만들지 않고, 지금까지·앞으로 채용공고
+  구조화 추출(`contracts/job-posting-extraction.md`)이 실제로 뽑아낸 `rawName`을 모아서 만든다.
+  즉 채용 시장에서 실제로 쓰이는 표현이 곧 고정 태그가 된다. 목록 저장·관리는 Java 책임.
+- **오타·표기 차이 판단은 Python이 임베딩으로 한다**: 문자열 거리(Levenshtein 등)가 아니라
+  의미 임베딩 유사도로 판단한다 — "JS"/"JavaScript"처럼 글자로는 멀어도 뜻은 같은 경우를 잡기
+  위해서다. `app/services/skill_tag_matching.py`의 `match_skill_tag`가 후보 태그 하나를 받아
+  `EXACT_MATCH`/`SUGGEST_CORRECTION`/`NO_MATCH`를 반환한다.
+- **Python은 값을 직접 안 바꾼다**: `SUGGEST_CORRECTION`은 권고일 뿐이고, 실제 정규화는 사용자
+  확인(수정 허락)을 받은 뒤 Java·사용자가 처리한다(`AGENTS.md` "AI 추출 결과는 사용자가 확인하기
+  전까지 확정 프로필로 사용하지 않는다").
+- **대응하는 고정 태그가 없으면**(`NO_MATCH`) 그 기술은 조건 판정·유사도 비교에서 제외를 권고한다.
+  사용자가 입력한 값 자체를 지우지는 않는다.
+- 임계값 0.72는 실제 Gemini 임베딩으로 오타·번역 표기 쌍(0.76~0.83)과 실제로 다른 기술 쌍
+  (0.56~0.66) 사이 간격에 놓은 값이다(표본 7쌍, 확인 필요 — 더 많은 예시·다른 모델로 재평가 필요).
+
+이 기능은 아직 Java–Python 계약이 없다. Java가 고정 태그 목록과 후보 태그를 넘기는 API 라우트를
+설계할 때 계약을 함께 작성한다.
 
 ## Python 다음 작업
 
