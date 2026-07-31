@@ -41,12 +41,28 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 | Gemini 임베딩 | `app/providers/embedding.py` | `UNIT_TESTED` | `tests/providers/test_gemini_embedding.py` 존재 | 분석 실행 API에서 호출 |
 | 코사인 유사도 | `app/services/similarity.py` | `UNIT_TESTED` | `tests/services/test_similarity.py` 존재 | 확정 프로필·채용공고 계약으로 연결 |
 | 후보 재정렬 | `app/services/reranking.py` | `UNIT_TESTED` | 단위 테스트와 실제 임베딩 기반 테스트 존재 | 분석 실행 API와 결과 계약으로 연결 |
-| 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 9건 + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 5건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 매니페스트·키워드·언어 확장자 목록은 확인 필요 |
+| 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/services/manifest_parsers.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 21건(매니페스트 파서 12건 포함) + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 5건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 키워드·언어 확장자 목록은 확인 필요 |
 | 수기 입력 기술과 저장소 근거 분리 | `app/schemas/technical_evidence.py`, `app/services/manual_skill_evidence.py`, `app/services/technical_profile.py` | `UNIT_TESTED` | 단위 테스트 9건 통과 | Java가 사용자 수기 입력 기술 목록을 넘기는 API 라우트로 연결 |
 | 희망 직무 기반 채용공고 검색어 생성 | `app/services/job_search_keywords.py`, `app/providers/ollama.py`·`gemini.py`의 `generate_job_search_keyword_suggestions` | `UNIT_TESTED` | 순수 로직 8건 + 실제 Gemini 호출 1건 통과. 실제 Ollama 호출 1건은 로컬 Ollama 미실행으로 미확인(코드 문제 아님) | Java가 희망 직무·기술 목록을 넘기는 API 라우트로 연결. 검색어는 사용자에게 보여주기만 하고 다른 조회 API에 자동 전달하지 않음(2026-07-30 확정) |
 | 기술 태그 유사도 판단(오타·표기 차이 감지) | `app/schemas/skill_tag_match.py`, `app/services/skill_tag_matching.py` | `UNIT_TESTED` | 순수 로직 10건(네트워크 없음) + 실제 Gemini 임베딩 호출 3건 통과(단독 실행 시). 스위트 전체를 한 번에 돌리면 Gemini 무료 등급 요청 제한으로 이따금 실패(코드 문제 아님) | Java가 고정 태그 목록(캐시된 임베딩 포함)·후보 태그를 넘기는 API 라우트로 연결. 임계값(0.72)·margin(0.05)은 표본이 작아 확인 필요 |
 | 저장소 README 조회 | `app/services/repository_readme.py` | `UNIT_TESTED` | 순수 로직 6건(네트워크 없음) + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 2건 통과 | Java API 라우트로 연결 시 `repository_evidence`와 트리 조회를 공유하도록 배선 |
 | 사용자 경험·주요 업무 임베딩(README+검증된 기술) | `app/services/user_profile_embedding.py` | `UNIT_TESTED` | 순수 로직 6건 + 오케스트레이션 2건(가짜 provider, 네트워크 없음) 통과 | Java API 라우트로 연결. README 문자 상한(4000자)은 임시값이라 확인 필요 |
+| 채용공고 임베딩 + 사용자·채용공고 의미 유사도 계산 | `app/services/job_posting_embedding.py`, 기존 `app/services/similarity.py` 재사용 | `UNIT_TESTED` | 순수 로직 3건 + 오케스트레이션 2건(네트워크 없음) + 실제 Gemini 임베딩으로 사용자 경험 vs 채용공고 유사도 첫 end-to-end 검증(백엔드 공고 0.821 > 프론트엔드 공고 0.627) | Java API 라우트로 연결(1번 계약 확정 후 실제 채용공고 데이터로 재검증) |
+
+**2026-08-01 리팩터링 — 매니페스트 파싱에 표준 파서 도입**: 저장소 근거 추출이 매니페스트 파일을
+파일 형식과 무관하게 문자열 검색(줄 단위 키워드 매칭)하던 방식은 이미 있는 표준 파서를 안 쓰고
+있었다는 문제 제기(2026-08-01)에 따라, 형식에 맞는 파서로 교체했다(`app/services/manifest_parsers.py`).
+
+- `package.json` → `json.loads` (표준 라이브러리)
+- `pom.xml` → `defusedxml.ElementTree`(공격 가능한 외부 저장소 내용을 파싱하므로 표준
+  `xml.etree.ElementTree`보다 안전한 버전을 선택)
+- `requirements.txt`, `pyproject.toml`의 PEP 621 의존성 → `packaging.requirements.Requirement`
+- `pyproject.toml`, `Cargo.toml` → `tomli`(Python 3.11 미만, 3.11부터는 표준 `tomllib`로 자동 전환)
+- `build.gradle`(.kts), `go.mod`는 표준 파서가 없어 정규식으로 좌표·모듈 경로만 뽑는 방식을 유지
+  (여전히 확인 필요 — 전체 줄이 아니라 실제 좌표 문자열만 대상으로 해서 이전보다 오탐은 줄었다)
+
+문자열 검색 방식이 실제로 오탐을 만들 수 있었다는 것도 테스트로 확인했다 — `package.json`의
+`scripts` 필드에 `"react-scripts build"`가 있으면 이전 방식은 React를 근거로 오인했을 것이다.
 
 ## 기술 태그 정규화 (2026-07-31 사용자 확인)
 
@@ -98,21 +114,24 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 2026-07-30 사용자 확인: 비교 범위를 줄였다. 비교 근거는 **이력서 PDF가 아니라 GitHub 저장소 코드와
 수기 입력 기술 키워드**를 사용한다 — 이 두 출처는 개인정보를 포함하지 않기 때문이다.
 아래는 Python이 구현할 전체 범위 10개 중 남은 항목이다(사용자 확정, 우선순위 순서). 1~3번(저장소
-근거 추출, 수기 입력 분리, 검색어 생성)과 사용자 경험 임베딩(README+검증된 기술)은 구현·단위
-테스트를 마쳐 위 검증 상태 표로 옮겼다 — Java API 라우트 연결 전까지는 완료로 보지 않는다.
+근거 추출, 수기 입력 분리, 검색어 생성), 사용자 경험 임베딩(README+검증된 기술), 채용공고
+임베딩+의미 유사도 계산은 구현·단위 테스트를 마쳐 위 검증 상태 표로 옮겼다 — Java API 라우트
+연결 전까지는 완료로 보지 않는다.
 
 2026-07-31 확인: 이력서 PDF가 없어 "사용자 경험" 서술형 텍스트가 없던 문제는, 저장소 README를
 새로 조회해서(`app/services/repository_readme.py`) 검증된 기술 목록과 합쳐 임베딩하는 것으로
-해결했다(`app/services/user_profile_embedding.py`).
+해결했다(`app/services/user_profile_embedding.py`). 이어서 채용공고도 같은 방식(직무명+기술
+목록)으로 임베딩(`app/services/job_posting_embedding.py`)해, 실제 Gemini 임베딩으로 "사용자
+경험 vs 채용공고" 유사도 비교를 처음 end-to-end로 검증했다 — 관련 있는 공고(백엔드, 0.821)가
+무관한 공고(프론트엔드, 0.627)보다 뚜렷이 높게 나왔다(둘 다 예시 데이터, 표본 1건).
 
 | 우선순위 | 작업 | 계약 상태 | 시작 조건 |
 | ---: | --- | --- | --- |
 | 1 | 채용공고 구조화 추출 API 확정 | `contracts/job-posting-extraction.md` 제안 | 계약 MVP 확정. `contracts/job-search-tool.md`가 넘기는 `jobPostings[].sourceText`를 그대로 입력으로 쓸 수 있는지 확인 |
-| 2 | 기술·프로젝트 의미 유사도 계산 | 기존 `app/services/similarity.py` 재사용 가능 | 사용자 경험 임베딩과 채용공고 임베딩(1번 완료 후) |
-| 3 | 적합한 채용공고 재정렬 | 기존 `app/services/reranking.py` 재사용 가능 | 2번 결과 |
-| 4 | 부족 기술과 추천 이유 생성 | 확인 필요 | 근거 있는 값만 생성하는 규칙(`AGENTS.md` "사실, 추정과 미확인 구분") 적용 |
-| 5 | 근거 없는 기술·경력 제거 | 확인 필요 | 4번과 함께 근거 검증 규칙 확정 |
-| 6 | 모델 성능·토큰·단계별 처리시간 측정 | 확인 필요 | 측정할 단계 범위와 기록 위치(로그·별도 저장소) 확정 |
+| 2 | 적합한 채용공고 재정렬 | 기존 `app/services/reranking.py` 재사용 가능 | 실제 채용공고 다건으로 위 유사도 계산을 재실행 |
+| 3 | 부족 기술과 추천 이유 생성 | 확인 필요 | 근거 있는 값만 생성하는 규칙(`AGENTS.md` "사실, 추정과 미확인 구분") 적용 |
+| 4 | 근거 없는 기술·경력 제거 | 확인 필요 | 3번과 함께 근거 검증 규칙 확정 |
+| 5 | 모델 성능·토큰·단계별 처리시간 측정 | 확인 필요 | 측정할 단계 범위와 기록 위치(로그·별도 저장소) 확정 |
 
 **확인 필요 — Gemini에 실제 사용자 값 전달**: `generate_job_search_keyword_suggestions`는 Gemini
 무료 등급 데이터 제한 정책 적용 대상이다. 희망 직무·기술명이 이력서 원문만큼 민감하지는 않지만,
