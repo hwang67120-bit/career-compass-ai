@@ -4,7 +4,9 @@
 
 이 계약은 MVP 흐름(`PDF 등록 → 추출·수정·확정 → 채용공고 등록 → 조건 판정+의미 분석 → 결과 화면 → 테스트 배포`) 중 "채용공고 등록"의 Java–Python 내부 API를 정의한다. [`document-extraction.md`](document-extraction.md)와 같은 원칙(계약 공동·실행 Java·AI 처리 Python)을 따르되, 다음 차이가 있다.
 
-- 입력이 PDF가 아니라 **사용자가 입력한 텍스트**다 — 파일 업로드, PII 제거 단계가 없다.
+- 입력이 PDF가 아니라 **텍스트**다 — 파일 업로드, PII 제거 단계가 없다. 이 텍스트는 사용자가
+  직접 입력하지 않고, [`job-search-tool.md`](job-search-tool.md) 계약으로 Java가 공식 채용 API
+  (사람인·고용24)에서 받아온다.
 - 채용공고는 공개된 회사 정보이므로 개인정보 가드레일(계약 7절 상당)이 적용되지 않는다.
 
 함께 적용하는 문서:
@@ -14,7 +16,8 @@
 
 ## 1. 실행 경계
 
-1. Java가 사용자에게서 채용공고 텍스트를 받는다.
+1. Java가 [`job-search-tool.md`](job-search-tool.md) 계약으로 사람인·고용24 공식 API에서
+   채용공고 원문(`sourceText`)을 받는다.
 2. Java가 텍스트 길이와 기본 검증을 수행한다.
 3. Java가 `JobPosting`을 등록하고 별도의 `ExtractionTask`를 생성한다.
 4. Java는 사용자 요청과 분리된 실행 흐름에서 이 계약의 Python API를 호출한다.

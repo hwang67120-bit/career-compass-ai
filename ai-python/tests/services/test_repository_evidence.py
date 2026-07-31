@@ -1,3 +1,4 @@
+from app.schemas.technical_evidence import EvidenceSource
 from app.services.repository_evidence import (
     extract_repository_evidence,
     select_manifest_paths,
@@ -87,6 +88,17 @@ def test_extract_repository_evidence_requires_minimum_file_count_for_language() 
     skill_names = {skill.skill_name for skill in result.skills}
     assert "Java" in skill_names
     assert "Ruby" not in skill_names
+
+
+def test_extract_repository_evidence_tags_all_evidence_as_repository_source() -> None:
+    manifest_contents = {"frontend/package.json": '{"dependencies": {"react": "18.0.0"}}'}
+    tree_paths = list(manifest_contents) + ["app/Main.java", "app/Helper.java"]
+
+    result = extract_repository_evidence(tree_paths=tree_paths, manifest_contents=manifest_contents)
+
+    assert len(result.evidence) > 0
+    assert all(evidence.evidence_source == EvidenceSource.REPOSITORY for evidence in result.evidence)
+    assert all(evidence.file_path is not None for evidence in result.evidence)
 
 
 def test_extract_repository_evidence_language_evidence_caps_example_files() -> None:
