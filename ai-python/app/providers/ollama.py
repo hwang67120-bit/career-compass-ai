@@ -6,7 +6,18 @@ import httpx
 from pydantic import ValidationError
 
 from app.schemas.job_posting import JobPostingExtraction
+from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
 from app.schemas.profile_candidate import ProfileCandidatePayload
+
+_JOB_SEARCH_KEYWORD_SYSTEM_PROMPT = (
+    "제공된 희망 직무와 기술 목록에 대한 동의어, 영문 표기, 채용 사이트에서 실제로 "
+    "흔히 쓰는 다른 표현만 만든다. "
+    "제공되지 않은 새로운 직무, 기술, 회사명, 연차, 지역, 고용 형태, 연봉 조건을 "
+    "만들지 않는다. "
+    "입력에 있는 문자열과 대소문자만 다르거나 완전히 같은 표현은 다시 만들지 않는다. "
+    "결과는 keywords 배열에 문자열만 담는다. 만들 수 있는 표현이 없으면 빈 배열을 "
+    "반환한다."
+)
 
 _JOB_POSTING_EXTRACTION_SYSTEM_PROMPT = (
     "제공된 채용 공고에 직접 존재하는 정보만 추출한다. "
@@ -121,6 +132,63 @@ class OllamaProvider:
             response.raise_for_status()
             content = response.json()["message"]["content"]
             return JobPostingExtraction.model_validate_json(content)
+        except httpx.TimeoutException as error:
+            raise OllamaUnavailableError(
+                "Ollama 응답 제한시간을 초과했습니다."
+            ) from error
+        except httpx.HTTPError as error:
+            raise OllamaUnavailableError(
+                "Ollama 요청에 실패했습니다."
+            ) from error
+        except (KeyError, TypeError, ValueError, ValidationError) as error:
+            raise OllamaResponseError(
+                "Ollama 응답이 프로젝트 스키마와 일치하지 않습니다."
+            ) from error
+
+    async def generate_job_search_keyword_suggestions(
+        self, desired_role: str, skill_names: list[str]
+    ) -> GeneratedKeywordSuggestions:
+        """희망 직무·기술에 대한 동의어·영문 표기 제안을 만든다.
+
+        입력:
+            desired_role: 사용자가 입력한 희망 직무.
+            skill_names: 검증된 기술명 목록(저장소 근거·수기 입력 병합 결과).
+
+        반환:
+            아직 출처 태그가 없는 원시 제안 목록. 서비스 계층
+            (`app/services/job_search_keywords.py`)이 최종 응답으로 조립한다.
+
+        예외:
+            OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
+            OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
+        """
+        schema = GeneratedKeywordSuggestions.model_json_schema()
+        messages = [
+            {"role": "system", "content": _JOB_SEARCH_KEYWORD_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
+                    f"\n\n희망 직무: {desired_role}"
+                    f"\n기술 목록: {', '.join(skill_names) if skill_names else '(없음)'}"
+                ),
+            },
+        ]
+
+        try:
+            response = await self.client.post(
+                "/api/chat",
+                json={
+                    "model": self.model_name,
+                    "stream": False,
+                    "format": schema,
+                    "options": {"temperature": 0},
+                    "messages": messages,
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["message"]["content"]
+            return GeneratedKeywordSuggestions.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
                 "Ollama 응답 제한시간을 초과했습니다."

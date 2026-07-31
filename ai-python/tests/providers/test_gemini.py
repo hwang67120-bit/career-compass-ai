@@ -32,3 +32,15 @@ async def test_extract_job_posting_returns_evidence_linked_result(
 
     assert result.job_title
     assert result.evidence
+
+
+@pytest.mark.asyncio
+async def test_generate_job_search_keyword_suggestions_returns_list(
+    provider: GeminiProvider,
+) -> None:
+    # 실제 사용자 값이 아닌 직접 만든 가상의 희망 직무·기술만 사용한다(Gemini 무료 등급 데이터 정책).
+    result = await provider.generate_job_search_keyword_suggestions(
+        "백엔드 개발자", ["Spring Boot", "Java"]
+    )
+
+    assert isinstance(result.keywords, list)
