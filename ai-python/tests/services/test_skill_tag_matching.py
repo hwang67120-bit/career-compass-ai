@@ -1,11 +1,12 @@
 import pytest
 
 from app.schemas.embedding import EmbeddingVector
+from app.schemas.reranking import RankedCandidate
 from app.schemas.skill_tag_match import TagMatchRecommendation
 from app.services.skill_tag_matching import (
+    MARGIN_THRESHOLD,
     SUGGESTION_SIMILARITY_THRESHOLD,
     decide_skill_tag_match,
-    find_best_canonical_match,
     match_skill_tag,
 )
 
@@ -26,55 +27,65 @@ class _FakeEmbeddingProvider:
         return [self._vectors_by_text[text] for text in texts]
 
 
-def test_find_best_canonical_match_picks_highest_similarity() -> None:
-    candidate = make_vector([1.0, 0.0])
-    result = find_best_canonical_match(
-        candidate_vector=candidate,
-        canonical_tags=["orthogonal", "identical"],
-        canonical_vectors=[make_vector([0.0, 1.0]), make_vector([1.0, 0.0])],
-    )
-
-    assert result == ("identical", pytest.approx(1.0))
-
-
-def test_find_best_canonical_match_returns_none_for_empty_list() -> None:
-    candidate = make_vector([1.0, 0.0])
-    result = find_best_canonical_match(candidate, [], [])
-
-    assert result is None
-
-
 def test_decide_skill_tag_match_returns_exact_match_case_insensitive() -> None:
-    result = decide_skill_tag_match("spring boot", ["Spring Boot", "Java"], best_match=None)
+    result = decide_skill_tag_match("spring boot", ["Spring Boot", "Java"], ranked=[])
 
     assert result.recommendation == TagMatchRecommendation.EXACT_MATCH
     assert result.best_match_tag == "Spring Boot"
     assert result.similarity == 1.0
+    assert result.margin is None
 
 
-def test_decide_skill_tag_match_suggests_correction_above_threshold() -> None:
-    result = decide_skill_tag_match(
-        "스프링부트",
-        ["Spring Boot"],
-        best_match=("Spring Boot", SUGGESTION_SIMILARITY_THRESHOLD + 0.01),
-    )
+def test_decide_skill_tag_match_suggests_correction_when_threshold_and_margin_met() -> None:
+    ranked = [
+        RankedCandidate(candidate_id="Spring Boot", similarity=SUGGESTION_SIMILARITY_THRESHOLD + 0.1),
+        RankedCandidate(candidate_id="Java", similarity=SUGGESTION_SIMILARITY_THRESHOLD - 0.1),
+    ]
+
+    result = decide_skill_tag_match("스프링부트", ["Spring Boot", "Java"], ranked=ranked)
 
     assert result.recommendation == TagMatchRecommendation.SUGGEST_CORRECTION
     assert result.best_match_tag == "Spring Boot"
+    assert result.margin == pytest.approx(0.2)
 
 
-def test_decide_skill_tag_match_returns_no_match_below_threshold() -> None:
-    result = decide_skill_tag_match(
-        "우쿨렐레",
-        ["Spring Boot"],
-        best_match=("Spring Boot", SUGGESTION_SIMILARITY_THRESHOLD - 0.2),
-    )
+def test_decide_skill_tag_match_rejects_when_below_similarity_threshold() -> None:
+    ranked = [
+        RankedCandidate(candidate_id="Spring Boot", similarity=SUGGESTION_SIMILARITY_THRESHOLD - 0.01),
+        RankedCandidate(candidate_id="Java", similarity=0.1),
+    ]
+
+    result = decide_skill_tag_match("우쿨렐레", ["Spring Boot", "Java"], ranked=ranked)
 
     assert result.recommendation == TagMatchRecommendation.NO_MATCH
 
 
+def test_decide_skill_tag_match_rejects_when_margin_too_small_despite_high_similarity() -> None:
+    """고정 태그가 많아 1위·2위 유사도가 우연히 둘 다 높은 경우 — margin으로 걸러낸다."""
+    top_similarity = SUGGESTION_SIMILARITY_THRESHOLD + 0.1
+    ranked = [
+        RankedCandidate(candidate_id="Spring Boot", similarity=top_similarity),
+        RankedCandidate(candidate_id="Spring Framework", similarity=top_similarity - (MARGIN_THRESHOLD - 0.01)),
+    ]
+
+    result = decide_skill_tag_match("스프링", ["Spring Boot", "Spring Framework"], ranked=ranked)
+
+    assert result.recommendation == TagMatchRecommendation.NO_MATCH
+    assert result.best_match_tag == "Spring Boot"
+    assert result.margin < MARGIN_THRESHOLD
+
+
+def test_decide_skill_tag_match_ignores_margin_with_single_canonical_tag() -> None:
+    ranked = [RankedCandidate(candidate_id="Spring Boot", similarity=SUGGESTION_SIMILARITY_THRESHOLD + 0.05)]
+
+    result = decide_skill_tag_match("스프링부트", ["Spring Boot"], ranked=ranked)
+
+    assert result.recommendation == TagMatchRecommendation.SUGGEST_CORRECTION
+    assert result.margin is None
+
+
 def test_decide_skill_tag_match_returns_no_match_when_canonical_list_empty() -> None:
-    result = decide_skill_tag_match("Rust", [], best_match=None)
+    result = decide_skill_tag_match("Rust", [], ranked=[])
 
     assert result.recommendation == TagMatchRecommendation.NO_MATCH
     assert result.best_match_tag is None
@@ -85,7 +96,9 @@ def test_decide_skill_tag_match_returns_no_match_when_canonical_list_empty() -> 
 async def test_match_skill_tag_skips_embedding_call_on_exact_match() -> None:
     provider = _FakeEmbeddingProvider({})
 
-    result = await match_skill_tag(provider, "Java", ["Java", "Python"])
+    result = await match_skill_tag(
+        provider, "Java", ["Java", "Python"], [make_vector([1.0]), make_vector([0.0])]
+    )
 
     assert result.recommendation == TagMatchRecommendation.EXACT_MATCH
     assert provider.received_texts is None
@@ -95,23 +108,27 @@ async def test_match_skill_tag_skips_embedding_call_on_exact_match() -> None:
 async def test_match_skill_tag_skips_embedding_call_when_canonical_list_empty() -> None:
     provider = _FakeEmbeddingProvider({})
 
-    result = await match_skill_tag(provider, "Java", [])
+    result = await match_skill_tag(provider, "Java", [], [])
 
     assert result.recommendation == TagMatchRecommendation.NO_MATCH
     assert provider.received_texts is None
 
 
 @pytest.mark.asyncio
-async def test_match_skill_tag_calls_embedding_provider_for_fuzzy_case() -> None:
-    provider = _FakeEmbeddingProvider(
-        {
-            "스프링부트": make_vector([1.0, 0.0]),
-            "Spring Boot": make_vector([0.99, 0.01]),
-        }
-    )
+async def test_match_skill_tag_rejects_mismatched_list_lengths() -> None:
+    provider = _FakeEmbeddingProvider({})
 
-    result = await match_skill_tag(provider, "스프링부트", ["Spring Boot"])
+    with pytest.raises(ValueError, match="개수"):
+        await match_skill_tag(provider, "Java", ["Java", "Python"], [make_vector([1.0])])
 
-    assert provider.received_texts == ["스프링부트", "Spring Boot"]
+
+@pytest.mark.asyncio
+async def test_match_skill_tag_only_embeds_candidate_using_cached_canonical_vectors() -> None:
+    provider = _FakeEmbeddingProvider({"스프링부트": make_vector([1.0, 0.0])})
+    canonical_vectors = [make_vector([0.99, 0.01]), make_vector([0.0, 1.0])]
+
+    result = await match_skill_tag(provider, "스프링부트", ["Spring Boot", "React"], canonical_vectors)
+
+    assert provider.received_texts == ["스프링부트"]
     assert result.recommendation == TagMatchRecommendation.SUGGEST_CORRECTION
     assert result.best_match_tag == "Spring Boot"

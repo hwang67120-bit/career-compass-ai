@@ -44,7 +44,7 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 | 저장소 코드 근거 추출(결정론적, LLM 없음) | `app/services/repository_evidence.py`, `app/providers/github_repository.py` | `UNIT_TESTED` | 순수 로직 단위 테스트 9건 + 실제 GitHub API 호출 테스트(`octocat/Hello-World`) 5건 통과 | Java가 owner·repository·commitSha를 넘기는 API 라우트로 연결. 매니페스트·키워드·언어 확장자 목록은 확인 필요 |
 | 수기 입력 기술과 저장소 근거 분리 | `app/schemas/technical_evidence.py`, `app/services/manual_skill_evidence.py`, `app/services/technical_profile.py` | `UNIT_TESTED` | 단위 테스트 9건 통과 | Java가 사용자 수기 입력 기술 목록을 넘기는 API 라우트로 연결 |
 | 희망 직무 기반 채용공고 검색어 생성 | `app/services/job_search_keywords.py`, `app/providers/ollama.py`·`gemini.py`의 `generate_job_search_keyword_suggestions` | `UNIT_TESTED` | 순수 로직 8건 + 실제 Gemini 호출 1건 통과. 실제 Ollama 호출 1건은 로컬 Ollama 미실행으로 미확인(코드 문제 아님) | Java가 희망 직무·기술 목록을 넘기는 API 라우트로 연결. 검색어는 사용자에게 보여주기만 하고 다른 조회 API에 자동 전달하지 않음(2026-07-30 확정) |
-| 기술 태그 유사도 판단(오타·표기 차이 감지) | `app/schemas/skill_tag_match.py`, `app/services/skill_tag_matching.py` | `UNIT_TESTED` | 순수 로직 9건(네트워크 없음) + 실제 Gemini 임베딩 호출 2건 통과 | Java가 고정 태그 목록·후보 태그를 넘기는 API 라우트로 연결. 임계값(0.72)은 예시 7쌍만 확인한 값이라 확인 필요 |
+| 기술 태그 유사도 판단(오타·표기 차이 감지) | `app/schemas/skill_tag_match.py`, `app/services/skill_tag_matching.py` | `UNIT_TESTED` | 순수 로직 10건(네트워크 없음) + 실제 Gemini 임베딩 호출 3건 통과(단독 실행 시). 스위트 전체를 한 번에 돌리면 Gemini 무료 등급 요청 제한으로 이따금 실패(코드 문제 아님) | Java가 고정 태그 목록(캐시된 임베딩 포함)·후보 태그를 넘기는 API 라우트로 연결. 임계값(0.72)·margin(0.05)은 표본이 작아 확인 필요 |
 
 ## 기술 태그 정규화 (2026-07-31 사용자 확인)
 
@@ -66,8 +66,27 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 - 임계값 0.72는 실제 Gemini 임베딩으로 오타·번역 표기 쌍(0.76~0.83)과 실제로 다른 기술 쌍
   (0.56~0.66) 사이 간격에 놓은 값이다(표본 7쌍, 확인 필요 — 더 많은 예시·다른 모델로 재평가 필요).
 
-이 기능은 아직 Java–Python 계약이 없다. Java가 고정 태그 목록과 후보 태그를 넘기는 API 라우트를
-설계할 때 계약을 함께 작성한다.
+**2026-07-31 추가 문제 제기와 대응 — 고정 태그가 많아질수록 정확도가 떨어지는 문제**:
+고정 태그가 계속 쌓이면(채용공고를 처리할 때마다 늘어남) 절대 유사도 임계값만으로는 오탐이
+늘어난다 — 후보가 많을수록 "그 많은 것 중 우연히 가장 비슷한 것"의 유사도 자체가 통계적으로
+올라가는 경향이 있기 때문이다. 세 가지로 대응했다.
+
+1. **캐시 구조**: `match_skill_tag`가 고정 태그들의 임베딩(`canonical_vectors`)을 매번 다시
+   계산하지 않고 캐시된 값을 그대로 받도록 바꿨다 — 후보 태그 하나만 새로 임베딩한다. 고정
+   태그가 새로 생길 때 한 번만 임베딩해서 저장해두는 건 Java 책임이다.
+2. **재정렬 재사용**: 새 정렬 로직을 만들지 않고 이미 검증된 `app/services/reranking.py`의
+   `rerank_candidates`를 그대로 재사용해 후보 태그 대 고정 태그 전체를 순위 매긴다.
+3. **1·2위 유사도 차이(margin) 추가**: 절대 임계값(0.72)뿐 아니라 1위와 2위의 유사도 차이가
+   `MARGIN_THRESHOLD`(0.05) 이상일 때만 `SUGGEST_CORRECTION`을 준다. 실제 Gemini 임베딩으로
+   확인한 결과, 진짜 오타 쌍(스프링부트→Spring Boot, Postgre→PostgreSQL)은 margin이 0.148~0.156인
+   반면 대응 태그가 없거나 무관한 경우(JS, 우쿨렐레, Node.js)는 0.002~0.021로 훨씬 작았다(표본
+   5건). `SkillTagMatch.margin` 필드로 이 값을 같이 반환해 Java가 확신 정도를 볼 수 있게 했다.
+
+이 margin 값도 고정 태그 15개짜리 목록으로만 확인한 것이라, 실제로 수백~수천 개로 늘어난
+뒤에는 재평가가 필요하다(확인 필요로 남김 — 실제 데이터 없이는 완전히 검증할 수 없다).
+
+이 기능은 아직 Java–Python 계약이 없다. Java가 고정 태그 목록(과 캐시된 임베딩)·후보 태그를
+넘기는 API 라우트를 설계할 때 계약을 함께 작성한다.
 
 ## Python 다음 작업
 

@@ -38,3 +38,13 @@ class SkillTagMatch(BaseModel):
     recommendation: TagMatchRecommendation
     best_match_tag: str | None = Field(default=None, alias="bestMatchTag")
     similarity: float | None = Field(default=None, ge=-1.0, le=1.0)
+    margin: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description=(
+            "1위와 2위 후보의 유사도 차이. 고정 태그가 많아질수록 우연히 1위가 "
+            "된 후보를 걸러내기 위한 값 — 절대 유사도만으로는 태그 수가 늘어날수록 "
+            "오탐이 늘어날 수 있다. 고정 태그가 1개뿐이거나 EXACT_MATCH면 None."
+        ),
+    )
