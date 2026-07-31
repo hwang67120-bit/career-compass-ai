@@ -4,31 +4,25 @@
 개수만 사용한다. LLM 요약을 쓰지 않으므로 모든 근거는 실제로 그 파일에
 있는 문자열이다 — 근거 없는 기술을 만들어내지 않는다(`AGENTS.md`).
 
+매니페스트 파일은 각 형식에 맞는 파서(`app/services/manifest_parsers.py`)로
+실제 의존성 식별자만 뽑는다 — 파일 전체를 문자열 검색하지 않는다(오탐
+위험, 2026-08-01 문제 제기로 교체).
+
 이 휴리스틱(매니페스트 목록, 키워드 매핑, 언어 확장자 매핑)은 확인 필요
 상태다. 알려진 기술만 인식하며, 목록에 없는 기술은 근거가 있어도 놓친다.
 """
 
 from app.providers.github_repository import GitHubRepositoryClient
 from app.schemas.technical_evidence import EvidenceSource, TechnicalEvidenceExtraction
+from app.services.manifest_parsers import MANIFEST_DEPENDENCY_EXTRACTORS
 from app.services.repository_paths import is_excluded
 from app.services.technical_evidence_builder import TechnicalEvidenceBuilder
 
 _ID_PREFIX = "repo-evidence"
 
-# 매니페스트 파일명(대소문자 무시) — 이 파일들의 내용만 실제로 조회한다.
-_MANIFEST_FILENAMES = {
-    "package.json",
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "requirements.txt",
-    "pyproject.toml",
-    "go.mod",
-    "cargo.toml",
-}
-
-# 매니페스트 파일 한 줄에서 이 키워드가 보이면(대소문자 무시) 오른쪽 기술명을
-# 근거로 채택한다. 확장할수록 더 많은 기술을 인식한다(확인 필요 — 목록 확정 전).
+# 매니페스트 의존성 식별자(예: "org.springframework.boot:spring-boot-starter-web",
+# "react")에 이 키워드가 보이면(대소문자 무시) 오른쪽 기술명을 근거로 채택한다.
+# 확장할수록 더 많은 기술을 인식한다(확인 필요 — 목록 확정 전).
 _MANIFEST_KEYWORD_SKILLS: dict[str, str] = {
     "spring-boot": "Spring Boot",
     "springframework": "Spring Framework",
@@ -90,7 +84,8 @@ def select_manifest_paths(tree_paths: list[str]) -> list[str]:
     candidates = [
         path
         for path in tree_paths
-        if not is_excluded(path) and path.rsplit("/", 1)[-1].lower() in _MANIFEST_FILENAMES
+        if not is_excluded(path)
+        and path.rsplit("/", 1)[-1].lower() in MANIFEST_DEPENDENCY_EXTRACTORS
     ]
     candidates.sort(key=lambda path: path.count("/"))
     return candidates[:_MAX_MANIFEST_FILES_TO_FETCH]
@@ -99,11 +94,16 @@ def select_manifest_paths(tree_paths: list[str]) -> list[str]:
 def _extract_manifest_evidence(
     builder: TechnicalEvidenceBuilder, file_path: str, content: str
 ) -> None:
-    for line in content.splitlines():
-        lowered = line.lower()
+    filename = file_path.rsplit("/", 1)[-1].lower()
+    extractor = MANIFEST_DEPENDENCY_EXTRACTORS.get(filename)
+    if extractor is None:
+        return
+
+    for identifier in extractor(content):
+        lowered = identifier.lower()
         for keyword, skill_name in _MANIFEST_KEYWORD_SKILLS.items():
             if keyword in lowered:
-                builder.add(skill_name, detail=line.strip(), file_path=file_path)
+                builder.add(skill_name, detail=identifier, file_path=file_path)
 
 
 def _extract_language_evidence(builder: TechnicalEvidenceBuilder, tree_paths: list[str]) -> None:
