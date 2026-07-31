@@ -10,22 +10,10 @@
 
 from app.providers.github_repository import GitHubRepositoryClient
 from app.schemas.technical_evidence import EvidenceSource, TechnicalEvidenceExtraction
+from app.services.repository_paths import is_excluded
 from app.services.technical_evidence_builder import TechnicalEvidenceBuilder
 
 _ID_PREFIX = "repo-evidence"
-
-# 벤더·생성물 디렉터리는 사용자가 직접 작성한 코드가 아니므로 제외한다.
-_EXCLUDED_PATH_SEGMENTS = {
-    "node_modules",
-    "vendor",
-    ".venv",
-    "venv",
-    "dist",
-    "build",
-    "target",
-    ".git",
-    "__pycache__",
-}
 
 # 매니페스트 파일명(대소문자 무시) — 이 파일들의 내용만 실제로 조회한다.
 _MANIFEST_FILENAMES = {
@@ -93,11 +81,6 @@ _MAX_LANGUAGE_EVIDENCE_FILES = 3
 _MAX_MANIFEST_FILES_TO_FETCH = 20
 
 
-def _is_excluded(file_path: str) -> bool:
-    segments = set(file_path.split("/"))
-    return bool(segments & _EXCLUDED_PATH_SEGMENTS)
-
-
 def select_manifest_paths(tree_paths: list[str]) -> list[str]:
     """전체 파일 경로 중 실제로 내용을 조회할 매니페스트 파일만 고른다.
 
@@ -107,7 +90,7 @@ def select_manifest_paths(tree_paths: list[str]) -> list[str]:
     candidates = [
         path
         for path in tree_paths
-        if not _is_excluded(path) and path.rsplit("/", 1)[-1].lower() in _MANIFEST_FILENAMES
+        if not is_excluded(path) and path.rsplit("/", 1)[-1].lower() in _MANIFEST_FILENAMES
     ]
     candidates.sort(key=lambda path: path.count("/"))
     return candidates[:_MAX_MANIFEST_FILES_TO_FETCH]
@@ -126,7 +109,7 @@ def _extract_manifest_evidence(
 def _extract_language_evidence(builder: TechnicalEvidenceBuilder, tree_paths: list[str]) -> None:
     paths_by_language: dict[str, list[str]] = {}
     for path in tree_paths:
-        if _is_excluded(path):
+        if is_excluded(path):
             continue
         for extension, language in _EXTENSION_LANGUAGES.items():
             if path.lower().endswith(extension):
