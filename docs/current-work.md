@@ -3,7 +3,7 @@
 이 문서는 Java·Python·공통 계약 작업의 현재 위치와 검증 수준을 공유한다.
 `구현 완료`라는 표현 대신 실제로 통과한 가장 높은 검증 상태를 기록한다.
 
-- 마지막 확인일: 2026-07-31
+- 마지막 확인일: 2026-08-03
 - Python 기준: `origin/python` 커밋 `42dd375`
 - Java 기준: `java` 브랜치 작업 트리
 - 상태 정의: 루트 `AGENTS.md`의 완료 판정 기준
@@ -67,6 +67,176 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 
 문자열 검색 방식이 실제로 오탐을 만들 수 있었다는 것도 테스트로 확인했다 — `package.json`의
 `scripts` 필드에 `"react-scripts build"`가 있으면 이전 방식은 React를 근거로 오인했을 것이다.
+
+## 채용공고 구조화 추출 모델 비교 — jobTitle 미채움 문제 조사 (2026-08-03)
+
+`contracts/job-posting-extraction.md` 8절이 재현한 문제(원문에 직무가 명확해도 모델이
+`jobTitle`을 채우지 않는 경우)를 이력서용과 같은 방식(`evaluation/model_comparison.py`)으로
+재평가했다. 채용공고용 fixture 7개(제목 헤딩으로 명시 5개 + 문장 속에만 언급 1개 + 언급 없음
+1개, `tests/fixtures/job_postings/`)를 준비하고, 스키마·근거 검증 외에 "근거는 있는데
+`jobTitle`이 `null`인 경우"를 구분하는 `job_title_missing` 결과 종류를 추가한
+`evaluation/job_posting_model_comparison.py`로 후보 모델 3개(qwen2.5, exaone3.5, llama3.2) ×
+fixture 7개 × 반복 3회(총 63회)를 실제 로컬 Ollama로 호출해 확인했다(1회차 실행, 로그
+`evaluation/job_posting_model_comparison_raw.log`).
+
+| 모델 | 통과율 | 평균 시간 |
+| --- | ---: | ---: |
+| `qwen2.5:latest` | 86%(18/21) | 32.0s |
+| `exaone3.5:latest` | 67%(14/21) | 46.7s |
+| `llama3.2:latest` | 14%(3/21) | 11.8s |
+
+- **이력서에서 100% 통과로 채택된 `exaone3.5`가 채용공고에서는 67%로 떨어졌다** — 이력서용
+  모델 선정 결과가 채용공고 추출에 그대로 적용되지 않는다는 걸 실제로 확인했다
+  (`llm-providers.md`의 이력서 채택 절차를 채용공고에도 별도로 적용해야 함).
+- **반복 3회 중 결과 종류(성공/실패)가 갈린(flaky) 조합은 1개뿐**이다 — `exaone3.5` +
+  `frontend_react.txt`(3회 중 1회만 `job_title_missing`, 나머지 2회는 성공). 나머지 20개
+  조합은 3회 내내 결과가 동일했다.
+- **2026-08-03 원인 확인(정정)**: `qwen2.5`가 `title_in_sentence_only.txt`에서 보인 근거 검증
+  실패의 원인을 추가로 조사했다. 처음엔 "다른 fixture를 먼저 처리한 뒤에만 나타나는 순서
+  의존적 현상"으로 추정했으나, "선행 호출 있음"과 "선행 호출 없이 단독 호출"을 같은 스크립트
+  안에서 바로 이어 비교했더니 **둘 다 똑같이 실패**해서 이 가설은 틀렸다고 확인했다. 이어서
+  `ollama ps`로 로드 상태를 확인하고 `ollama stop`으로 4회 강제 재로드해 같은 fixture를
+  매번 첫 요청으로 호출했는데 **4회 모두 성공**했다 — "재로드마다 결과가 랜덤하게 고정된다"는
+  가설도 틀렸다. 지금까지 모은 데이터 15건을 종합하면 원인은 둘 다가 아니라 **"같은 모델
+  로드 세션 안에서 이 fixture 전에 다른 내용의 요청을 이미 처리했는가"**였다 — 갓 로드된
+  모델에 이 fixture가 첫 요청이면 9/9 성공(단독 디버그 호출 5회 + 강제 재로드 4회), 같은
+  세션에서 다른 채용공고를 먼저 처리한 뒤 호출하면 6/6 실패(1차 비교·3-repeat 비교·순서
+  테스트 A·B)였다. 표본이 15건이라 완전히 확정된 규칙은 아니지만(확인 필요), 재현성 있는
+  패턴이다.
+  **운영 영향**: 이건 평가 스크립트만의 문제가 아니라 **실제 서비스에서도 재현될 수 있다** —
+  같은 Ollama 모델을 내리지 않고 채용공고를 연속 처리하면 이후 요청의 근거 검증이 앞선
+  요청들의 영향으로 계속 실패할 수 있다. 매 요청마다 모델을 내렸다 올리는 건 성능상
+  비현실적이고, 같은 오염된 세션 안에서는 재시도해도 다시 실패할 수 있어 단순 재시도만으로는
+  해결이 안 될 수 있다.
+- **2026-08-03 추가 확인**: 같은 세션 오염 패턴이 `exaone3.5`에도 있는지 문제 fixture
+  3개(세션 내내 계속 실패한 `backend_java_spring.txt`·`no_job_title_stated.txt`, 세션 안에서
+  결과가 갈렸던 `frontend_react.txt`)를 각각 강제 재로드 후 첫 요청으로 3회씩 호출해 확인했다.
+  결과는 fixture마다 달랐다 — **세션 오염이 모델의 실패를 전부 설명하지는 않는다.**
+  - `backend_java_spring.txt`: 재로드 후 첫 요청 3/3 성공 — `qwen2.5`와 같은 세션 오염 패턴
+    (다른 요청을 먼저 처리한 뒤에만 실패)
+  - `no_job_title_stated.txt`: 재로드 후에도 3/3 똑같이 실패(매번 같은 근거 ID `E002`
+    불일치) — 세션과 무관하게 **이 모델·이 입력 조합의 진짜 결함**으로 보인다
+  - `frontend_react.txt`: 재로드 후 3/3 성공 — 원래 세션에서 봤던 1회 실패는 세션 오염이
+    아니라 빈도 낮은 잔여 비결정성으로 보이며, 정확한 원인은 미확인
+- **2026-08-03 추가 확인 — `llama3.2`는 세션 오염 패턴이 없다**: 실패 fixture 중 하나
+  (`ai_ml_engineer.txt`, 원래 세션에서도 llama3.2로는 첫 호출부터 실패했었음)와 유일하게
+  통과한 `title_in_sentence_only.txt`를 강제 재로드 후 첫 요청으로 각각 3회씩 호출했다.
+  `ai_ml_engineer.txt`는 재로드 후에도 3/3 완전히 같은 오류(근거 `E2` 유령 참조)로 실패했고,
+  `title_in_sentence_only.txt`는 3/3 그대로 성공했다 — 둘 다 원래 세션의 결과와 정확히
+  같아서 세션 상태와 무관함을 확인했다. `llama3.2`의 낮은 통과율(14%)은 세션 오염이 아니라
+  이력서 평가 때부터 봤던 것과 같은 **순수 모델 결함**(근거 유령 참조를 반복 생성)이다.
+
+**세 모델의 실패 원인 요약**: `qwen2.5`는 순수 세션 오염, `exaone3.5`는 세션 오염·진짜
+모델 결함·저빈도 잔여 비결정성이 혼재, `llama3.2`는 세션 오염 없이 순수 모델 결함이다.
+- `jobTitle`이 없는 게 정답인 fixture(`no_job_title_stated.txt`)를 올바르게 처리한 건
+  `qwen2.5`뿐이었다. `exaone3.5`·`llama3.2`는 둘 다 근거를 지어내다 검증에 걸렸다
+  (`evidence_invalid`) — "제목이 없으면 조용히 `null`" 대신 "억지로 근거를 만듦" 쪽이었다.
+  `exaone3.5`는 위 확인대로 세션과 무관하게 이 입력에서 매번 같은 방식으로 실패한다.
+- `llama3.2`는 이력서 평가와 마찬가지로 근거 유령 참조가 압도적이라 후보에서 사실상 제외.
+
+**다음 단계(확인 필요, Python이 임의로 결정할 수 없음)**
+
+- 세션 오염 패턴(순수 모델 결함과 구분)을 더 큰 표본으로 재확인 — 몇 번째 요청부터 실패로
+  바뀌는지, 다른 fixture·다른 모델에서도 같은 구분이 나오는지
+- `exaone3.5` + `no_job_title_stated.txt`처럼 세션과 무관한 진짜 모델 결함은 프롬프트·스키마
+  조정으로 고칠 여지가 있는지 별도로 시도해볼 것(세션 오염 완화책과는 다른 해법이 필요)
+- **2026-08-03 사용자 확인·구현 완료 — 완화책 방향 결정**: 매 요청 재로드(비용이 너무 큼)와
+  `num_parallel` 등 Ollama 설정 조정(효과 검증 안 됨, 새 리스크)은 채택하지 않는다. 대신
+  **근거 검증(`validate_evidence`)이 실패했을 때만 Python이 모델을 강제로 언로드하고 1회만
+  재시도**하는 방식으로 갔다 — 재로드 직후 첫 요청은 이번 조사에서 9/9 성공했으므로 딱 필요한
+  경우에만 비용을 쓴다. `exaone3.5` + `no_job_title_stated.txt`처럼 세션과 무관한 진짜 모델
+  결함은 재로드해도 그대로 재현되므로, 이 방식이 진짜 결함을 감추지 않는다는 것도 확인된 사실로
+  뒷받침된다. `app/providers/ollama.py`의 `unload_model()` + `app/services/job_posting_extraction.py`의
+  `extract_job_posting_profile`(검증 실패 시 재시도)로 구현했고, 실제 Ollama 호출 테스트와
+  가짜 provider 단위 테스트로 검증했다(`UNIT_TESTED`).
+- `contracts/job-posting-extraction.md` 5절 `MODEL_RESPONSE_INVALID`의 `retryable: false`는
+  이 완화책이 Python 내부에서만 처리되면(Java에 실패가 아예 안 넘어감) 그대로 유지해도 될 수
+  있다 — Python이 내부 재시도까지 실패한 뒤에만 Java가 502를 받으므로, Java 쪽 재시도 정책은
+  별개 논의로 남는다(확인 필요, Java·사용자 확인 없이 변경하지 않음).
+- 표본 1회차(3-repeat) 실행만으로는 최종 모델 채택 근거로 부족하다 — 이력서 채택 때처럼 더 큰
+  fixture 세트·반복 재평가가 필요.
+
+## 채용공고 "담당 업무"(responsibilities) 필드 추가와 실제 회귀 (2026-08-03, 제안·코덱스 확인 필요)
+
+**문제 제기**: 사용자 경험 임베딩(`user_profile_embedding.py`)은 README 서술형 텍스트를 쓰는데,
+채용공고 임베딩(`job_posting_embedding.py`)은 직무명+기술명뿐이라 서술형 텍스트가 전혀 없는
+비대칭이 있었다. 원문에 "담당 업무:" 문장이 있어도 `JobPostingExtraction` 스키마에 받을
+필드가 없어 추출 단계에서 통째로 버려지고 있었다.
+
+**대응**: `JobPostingResponsibility` 스키마와 `responsibilities` 필드를 추가하고, 프롬프트에
+지시를 넣고, `build_job_posting_text`가 "담당 업무: ..." 섹션을 포함하도록 고쳤다.
+
+**실제 검증에서 발견한 심각한 회귀**: `JobPostingExtraction`에 `responsibilities` 필드를
+추가한 것만으로(프롬프트 문구와 무관하게, 필드를 스키마 어디에 둬도) qwen2.5의 `evidence`
+배열 생성이 **통째로 비어버리는** 회귀가 실제 fixture(`backend_java_spring.txt`,
+`game_server_developer.txt`)로 재현됐다. `jobTitle`·기술·담당 업무 **값 자체는 정확하게**
+채워지는데 `evidenceIds`가 전부 빈 배열이라, `filter_unevidenced_candidates`를 거치면
+**최종 결과가 통째로 빈 채용공고**가 된다(`jobTitle`까지 포함). 근거가 비어 있으면
+`validate_evidence`도 에러를 안 던져서(위조도 유령 참조도 없으므로) 조용히 실패한다 — 방금
+만든 재시도 로직도 이 케이스는 안 잡는다.
+
+**2026-08-03 사용자 확인 — 대응 방향**: 매 요청 재로드·Ollama 설정 조정과 마찬가지로, 임시
+패치보다 구조적으로 격리하는 방향을 택했다. **직무명·기술 추출과 담당 업무 추출을 완전히
+분리된 두 호출로 나눴다**:
+
+- `JobPostingCoreExtraction`(직무명·필수/우대 기술, `responsibilities` 없음) — 원래
+  프롬프트·스키마를 그대로 복원. `OllamaProvider.extract_job_posting`이 이 스키마로 호출한다.
+- `JobPostingResponsibilityExtraction`(담당 업무만) — 완전히 별도 프롬프트·스키마·호출.
+  `OllamaProvider.extract_job_posting_responsibilities`.
+- `job_posting_extraction.py`의 `extract_job_posting_profile`이 두 호출을 각각 독립적으로
+  실행·검증·(실패 시) 재시도한 뒤 `_merge_core_and_responsibilities`로 합친다. 두 호출은
+  독립된 LLM 요청이라 evidenceId가 우연히 겹칠 수 있어(둘 다 "e1"부터 시작하는 식), 담당
+  업무 쪽에 `r_` 접두사를 붙여 재배정한다.
+
+**검증 결과**: 분리 후 `JobPostingCoreExtraction`(직무명·기술) 쪽 회귀는 실제 fixture로
+고쳐졌음을 확인했다(`evidence` 정상 생성). 그런데 **분리해도 `extract_job_posting_responsibilities`
+자체는 evidence를 계속 안 채운다** — 완전히 격리된 좁은 스키마로도 4회 이상 반복 확인해
+매번 재현됐다(우연한 flaky 아님, 값은 정확하지만 evidenceIds만 비움). 이건 스키마를 합친
+게 원인이 아니라 **qwen2.5가 "담당 업무" 추출 자체에서 근거를 잘 안 만드는 모델 고유의
+약점**으로 보인다(원인 미확인). 이 사실을 `tests/providers/test_ollama.py`의
+`test_extract_job_posting_responsibilities_returns_evidence_linked_result`에 `xfail`로
+명시해서 상태를 정직하게 남겨뒀다 — 모델이 개선되면 이 테스트가 예상외로 통과해서 알 수 있다.
+
+**운영 안전성**: `filter_unevidenced_candidates`가 근거 없는 항목을 조용히 제거하므로,
+이 한계는 서비스를 깨뜨리지 않는다 — 담당 업무가 그냥 빈 배열로 나오고, `build_job_posting_text`는
+빈 섹션을 건너뛰어 기존(직무명+기술만) 임베딩 텍스트로 자연스럽게 돌아간다. 근거 없는 값을
+지어내지 않는다는 원칙은 지켜지지만, **이 필드가 지금 후보 모델로는 실질적인 가치를 못 낸다.**
+
+**검증 상태**: 스키마·병합·필터링·임베딩 텍스트 조합 로직은 `UNIT_TESTED`(가짜 provider,
+네트워크 없음, 총 6건 신규). `JobPostingCoreExtraction` 회귀 수정은 실제 Ollama 호출로
+검증(`UNIT_TESTED`). `JobPostingResponsibilityExtraction`은 실제 Ollama 호출 테스트가
+`xfail`로 실패를 예상하는 상태 — **qwen2.5로는** 이 필드를 실사용 가능하다고 볼 수 없다.
+
+**2026-08-03 추가 확인 — exaone3.5는 담당 업무 추출에서 정상 동작, 혼합 provider로 전환**:
+qwen2.5 대신 exaone3.5로 담당 업무 전용 호출을 실제 fixture 3개(`backend_java_spring.txt`,
+`game_server_developer.txt`, `llm_rag_backend.txt`) × 2회씩 테스트했더니 **6/6 전부 성공**했다
+(값·근거 모두 정확). 사용자 확인 후 **직무명·기술(core)은 `OLLAMA_MODEL`(qwen2.5)을 그대로
+쓰고, 담당 업무만 새 설정 `OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL`(exaone3.5)로 별도
+호출**하는 혼합 provider 구조로 바꿨다.
+
+- `extract_job_posting_profile(source_text, core_provider, responsibility_provider=None)` —
+  두 번째 provider를 생략하면 첫 번째를 그대로 재사용(하위 호환).
+- `app/providers/ollama_client.py`에 `get_ollama_job_posting_responsibility_provider` 추가,
+  라우터(`app/job_postings/router.py`)가 두 provider를 모두 주입해 넘긴다.
+- 실제 라우터까지 포함한 end-to-end 테스트(`test_extract_succeeds_with_real_ollama`)가
+  두 모델을 함께 호출하는 이 경로로 통과했다(`UNIT_TESTED`).
+- 표본이 3 fixture × 2회로 작아 `확인 필요` — 이력서 채택 때 수준(4개 자료 × 3모델)의
+  재평가가 필요하다.
+- **확인 필요(계약 영향)**: 계약 성공 응답의 `modelProvider`/`modelName`은 필드가 하나뿐인데
+  이제 모델이 2개(core·responsibility) 쓰인다. 지금은 core 모델 이름만 응답에 담기고
+  담당 업무 쪽 모델 정보는 응답에 드러나지 않는다 — Java·사용자 확인 필요.
+- 이 fixture 테스트 중 core(qwen2.5) 쪽에서 이미 알던 세션 플레이키니스가 그대로 재현됐다
+  (`backend_java_spring.txt`는 core가 조용히 비었고, `game_server_developer.txt`는 재시도까지
+  실패). 오늘 담당 업무 작업과는 무관한, 기존에 문서화된 한계다.
+
+**다음 단계(확인 필요)**
+
+- 3 fixture × 2회보다 큰 표본으로 exaone3.5의 담당 업무 추출 재평가 필요
+- 이 필드는 아직 `contracts/job-posting-extraction.md`에 없다 — 스키마 변경(계약 변경)이자
+  이제 모델 2개를 쓰는 구조 변경이라 Java·사용자 확인 전까지 실사용 기준으로 쓰지 않는다
+- "값은 정확한데 evidence만 빈 경우"를 `validate_evidence`가 놓친다는 것도 이번에 드러났다 —
+  후보 항목이 있는데 evidence 배열 전체가 비어 있으면 재시도 대상으로 볼지는 별도 결정 필요
+  (지금은 조용히 필터링만 됨)
 
 ## 기술 태그 정규화 (2026-07-31 사용자 확인)
 
@@ -169,10 +339,14 @@ placeholder가 이미 체크리스트 형태로 표현하도록 되어 있어 �
 
 Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 모델은 확인이 필요하다.
 
-**확인 필요 — 이력서 PDF 파이프라인 처리**: 기존에 구현한 이력서 PDF 업로드·추출·개인정보 제거
-(`contracts/document-extraction.md`, `app/documents/`)가 이 비교 기능에서 완전히 빠지는 것인지,
-아니면 다른 용도로 남겨두고 비교 기능만 저장소+수기 키워드로 가는 것인지 아직 확정되지 않았다.
-확정 전까지 이 파이프라인의 기존 구현·테스트는 유지하고 삭제하지 않는다.
+**2026-08-03 해결 — 이력서 PDF 파이프라인 처리**: PR #41(병합됨)로 확정됐다. Java가
+`document-extraction.md`를 **폐기**로 표시하고 `DocumentController` 등 PDF 업로드 관련
+Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 없이 기술 태그+공개 GitHub
+저장소만으로 간다. `contracts/document-extraction.md`는 이력 확인용으로만 남는다.
+**Python 쪽 PDF 구현(`app/documents/`, `app/services/pdf_extraction.py`,
+`app/services/resume_extraction.py`, 개인정보 제거 등)은 Java가 더 이상 호출하지 않지만,
+아직 삭제하지 않았다** — Python 담당이 별도로 정리 범위·시점을 정할 때까지 코드·테스트를
+유지한다(`Python 다음 작업` 참고).
 
 1번(채용공고 구조화 추출 API 확정)은 채용공고 원문(`sourceText`)을 어떻게 확보하는지와 맞물려 있다.
 그 원문 확보 방법이 끝나기 전까지 Python은 임시 샘플 채용공고 텍스트로 임베딩·유사도·재정렬을

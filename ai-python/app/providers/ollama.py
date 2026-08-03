@@ -5,7 +5,7 @@ import json
 import httpx
 from pydantic import ValidationError
 
-from app.schemas.job_posting import JobPostingExtraction
+from app.schemas.job_posting import JobPostingCoreExtraction, JobPostingResponsibilityExtraction
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
 from app.schemas.profile_candidate import ProfileCandidatePayload
 
@@ -29,6 +29,17 @@ _JOB_POSTING_EXTRACTION_SYSTEM_PROMPT = (
     "requiredSkills, preferredSkills의 모든 항목은 evidenceIds에 evidence 배열에 "
     "실제로 존재하는 evidenceId를 하나 이상 채워 넣는다. jobTitle을 채웠으면 "
     "jobTitleEvidenceIds도 채운다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
+)
+
+_JOB_POSTING_RESPONSIBILITY_EXTRACTION_SYSTEM_PROMPT = (
+    "제공된 채용 공고에서 '담당 업무'·'주요 업무'처럼 이 직무가 실제로 하는 일을 "
+    "서술한 부분만 추출한다. 자격 요건·기술·우대 사항·근무 조건·회사 소개는 담당 "
+    "업무가 아니다. 확인할 수 없으면 만들지 않고 빈 배열로 남긴다. "
+    "반드시 evidence 배열부터 먼저 전부 채운 다음 responsibilities를 채운다. "
+    "sourceText는 반드시 원문에서 이어져 있는 부분을 글자 하나까지 그대로 복사한 것이어야 한다. "
+    "요약·재구성하지 않는다. 정확히 이어 붙여 복사할 수 없으면 그 항목은 만들지 않는다. "
+    "responsibilities의 모든 항목은 evidenceIds에 evidence 배열에 실제로 존재하는 "
+    "evidenceId를 하나 이상 채워 넣는다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
 )
 
 _RESUME_EXTRACTION_SYSTEM_PROMPT = (
@@ -90,8 +101,13 @@ class OllamaProvider:
                 "설정된 Ollama 모델이 설치되어 있지 않습니다."
             )
 
-    async def extract_job_posting(self, source_text: str) -> JobPostingExtraction:
-        """채용 공고를 프로젝트 JSON 스키마로 추출한다.
+    async def extract_job_posting(self, source_text: str) -> JobPostingCoreExtraction:
+        """채용 공고에서 직무명·필수/우대 기술을 프로젝트 JSON 스키마로 추출한다.
+
+        담당 업무(`responsibilities`)는 여기 없다 — 같은 스키마에 넣으면
+        qwen2.5의 evidence 배열 생성이 통째로 비어버리는 회귀가 실제로
+        재현돼(2026-08-03), `extract_job_posting_responsibilities`로 완전히
+        별도 호출한다.
 
         입력:
             source_text: 텍스트 추출과 안전 검사가 끝난 채용 공고 원문.
@@ -103,7 +119,7 @@ class OllamaProvider:
             OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
             OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
         """
-        schema = JobPostingExtraction.model_json_schema()
+        schema = JobPostingCoreExtraction.model_json_schema()
         messages = [
             {
                 "role": "system",
@@ -131,7 +147,7 @@ class OllamaProvider:
             )
             response.raise_for_status()
             content = response.json()["message"]["content"]
-            return JobPostingExtraction.model_validate_json(content)
+            return JobPostingCoreExtraction.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
                 "Ollama 응답 제한시간을 초과했습니다."
@@ -143,6 +159,94 @@ class OllamaProvider:
         except (KeyError, TypeError, ValueError, ValidationError) as error:
             raise OllamaResponseError(
                 "Ollama 응답이 프로젝트 스키마와 일치하지 않습니다."
+            ) from error
+
+    async def extract_job_posting_responsibilities(
+        self, source_text: str
+    ) -> JobPostingResponsibilityExtraction:
+        """채용 공고에서 담당 업무만 별도 스키마로 추출한다.
+
+        `extract_job_posting`과 완전히 분리된 호출이다 — 하나로 합쳤을 때
+        생긴 회귀(위 참고) 때문에 서비스 계층(`job_posting_extraction.py`의
+        `extract_job_posting_profile`)이 두 결과를 합친다.
+
+        입력:
+            source_text: 텍스트 추출과 안전 검사가 끝난 채용 공고 원문.
+
+        반환:
+            담당 업무와 원문 근거가 포함된 구조화 결과.
+
+        예외:
+            OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
+            OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
+        """
+        schema = JobPostingResponsibilityExtraction.model_json_schema()
+        messages = [
+            {
+                "role": "system",
+                "content": _JOB_POSTING_RESPONSIBILITY_EXTRACTION_SYSTEM_PROMPT,
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
+                    f"\n\n채용 공고 원문:\n{source_text}"
+                ),
+            },
+        ]
+
+        try:
+            response = await self.client.post(
+                "/api/chat",
+                json={
+                    "model": self.model_name,
+                    "stream": False,
+                    "format": schema,
+                    "options": {"temperature": 0},
+                    "messages": messages,
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["message"]["content"]
+            return JobPostingResponsibilityExtraction.model_validate_json(content)
+        except httpx.TimeoutException as error:
+            raise OllamaUnavailableError(
+                "Ollama 응답 제한시간을 초과했습니다."
+            ) from error
+        except httpx.HTTPError as error:
+            raise OllamaUnavailableError(
+                "Ollama 요청에 실패했습니다."
+            ) from error
+        except (KeyError, TypeError, ValueError, ValidationError) as error:
+            raise OllamaResponseError(
+                "Ollama 응답이 프로젝트 스키마와 일치하지 않습니다."
+            ) from error
+
+    async def unload_model(self) -> None:
+        """모델을 즉시 메모리에서 내려 다음 요청이 새로 로드하게 만든다.
+
+        같은 모델 로드 세션에서 다른 요청을 먼저 처리한 뒤에만 특정 입력의
+        근거 검증이 실패하는 현상(세션 오염, 2026-08-03 확인)에 대한 완화책 —
+        `extract_job_posting_profile`이 근거 검증 실패 후 재시도 전에 호출한다.
+        `keep_alive: 0`만 보내고 `prompt`를 비우면 Ollama가 생성 없이 즉시
+        언로드한다(`done_reason: "unload"`로 실제 확인함).
+
+        예외:
+            OllamaUnavailableError: Ollama 연결 실패 또는 요청 실패.
+        """
+        try:
+            response = await self.client.post(
+                "/api/generate",
+                json={"model": self.model_name, "keep_alive": 0},
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as error:
+            raise OllamaUnavailableError(
+                "Ollama 모델 언로드 요청 제한시간을 초과했습니다."
+            ) from error
+        except httpx.HTTPError as error:
+            raise OllamaUnavailableError(
+                "Ollama 모델 언로드 요청에 실패했습니다."
             ) from error
 
     async def generate_job_search_keyword_suggestions(

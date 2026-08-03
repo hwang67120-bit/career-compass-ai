@@ -1,13 +1,85 @@
 import pytest
 
-from app.schemas.job_posting import JobPostingEvidence, JobPostingExtraction, JobPostingSkill
+from app.schemas.job_posting import (
+    JobPostingCoreExtraction,
+    JobPostingEvidence,
+    JobPostingExtraction,
+    JobPostingResponsibility,
+    JobPostingResponsibilityExtraction,
+    JobPostingSkill,
+)
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
+    _merge_core_and_responsibilities,
+    extract_job_posting_profile,
     filter_unevidenced_candidates,
     validate_evidence,
 )
 
 SOURCE_TEXT = "백엔드 개발자를 채용합니다. 필수 조건: Python 3년 이상."
+
+_HALLUCINATED_CORE = JobPostingCoreExtraction(
+    evidence=[
+        JobPostingEvidence(
+            evidence_id="e1",
+            field_path="requiredSkills[0].rawName",
+            value="Python",
+            source_text="원문에 없는 문장",
+        )
+    ],
+    required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["e1"])],
+)
+
+_VALID_CORE = JobPostingCoreExtraction(
+    evidence=[
+        JobPostingEvidence(
+            evidence_id="e1",
+            field_path="requiredSkills[0].rawName",
+            value="Python",
+            source_text="Python 3년 이상",
+        )
+    ],
+    required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["e1"])],
+)
+
+_EMPTY_RESPONSIBILITIES = JobPostingResponsibilityExtraction()
+
+
+class _RetryFakeProvider:
+    """근거 검증 실패 후 재시도 로직만 검증하는 가짜 provider(네트워크 없음).
+
+    직무명·기술 추출(`extract_job_posting`)과 담당 업무 추출
+    (`extract_job_posting_responsibilities`)이 독립 호출이라, 각각 별도
+    응답 큐와 호출 횟수를 갖는다.
+    """
+
+    provider_name = "fake"
+
+    def __init__(
+        self,
+        core_responses: list[JobPostingCoreExtraction],
+        responsibility_responses: list[JobPostingResponsibilityExtraction] | None = None,
+    ) -> None:
+        self._core_responses = core_responses
+        self._responsibility_responses = responsibility_responses or [_EMPTY_RESPONSIBILITIES] * 5
+        self.core_call_count = 0
+        self.responsibility_call_count = 0
+        self.unload_call_count = 0
+
+    async def extract_job_posting(self, source_text: str) -> JobPostingCoreExtraction:
+        response = self._core_responses[self.core_call_count]
+        self.core_call_count += 1
+        return response
+
+    async def extract_job_posting_responsibilities(
+        self, source_text: str
+    ) -> JobPostingResponsibilityExtraction:
+        response = self._responsibility_responses[self.responsibility_call_count]
+        self.responsibility_call_count += 1
+        return response
+
+    async def unload_model(self) -> None:
+        self.unload_call_count += 1
 
 
 def test_validate_evidence_rejects_hallucinated_source_text() -> None:
@@ -28,6 +100,17 @@ def test_validate_evidence_rejects_hallucinated_source_text() -> None:
 
 def test_validate_evidence_rejects_dangling_reference() -> None:
     payload = JobPostingExtraction(
+        required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["ghost"])],
+    )
+
+    with pytest.raises(JobPostingEvidenceValidationError):
+        validate_evidence(payload, SOURCE_TEXT)
+
+
+def test_validate_evidence_works_on_core_extraction_without_responsibilities_field() -> None:
+    """`JobPostingCoreExtraction`에는 `responsibilities` 속성이 없다 — getattr
+    기본값으로 건너뛰고 나머지(직무명·기술) 검증은 그대로 동작해야 한다."""
+    payload = JobPostingCoreExtraction(
         required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["ghost"])],
     )
 
@@ -57,6 +140,37 @@ def test_filter_unevidenced_candidates_removes_skill_without_evidence() -> None:
     assert [e.evidence_id for e in filtered.evidence] == ["e1"]
 
 
+def test_validate_evidence_rejects_dangling_responsibility_reference() -> None:
+    payload = JobPostingExtraction(
+        responsibilities=[JobPostingResponsibility(raw_text="백엔드 API 운영", evidence_ids=["ghost"])],
+    )
+
+    with pytest.raises(JobPostingEvidenceValidationError):
+        validate_evidence(payload, SOURCE_TEXT)
+
+
+def test_filter_unevidenced_candidates_removes_responsibility_without_evidence() -> None:
+    payload = JobPostingExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="e1",
+                field_path="responsibilities[0].rawText",
+                value="백엔드 개발자를 채용합니다",
+                source_text="백엔드 개발자를 채용합니다",
+            )
+        ],
+        responsibilities=[
+            JobPostingResponsibility(raw_text="백엔드 개발자를 채용합니다", evidence_ids=["e1"]),
+            JobPostingResponsibility(raw_text="근거 없는 업무", evidence_ids=[]),
+        ],
+    )
+
+    filtered = filter_unevidenced_candidates(payload)
+
+    assert [r.raw_text for r in filtered.responsibilities] == ["백엔드 개발자를 채용합니다"]
+    assert [e.evidence_id for e in filtered.evidence] == ["e1"]
+
+
 def test_filter_unevidenced_candidates_clears_job_title_without_evidence() -> None:
     payload = JobPostingExtraction(
         job_title="백엔드 개발자",
@@ -66,3 +180,104 @@ def test_filter_unevidenced_candidates_clears_job_title_without_evidence() -> No
     filtered = filter_unevidenced_candidates(payload)
 
     assert filtered.job_title is None
+
+
+def test_merge_core_and_responsibilities_remaps_colliding_evidence_ids() -> None:
+    """두 호출은 독립된 LLM 요청이라 evidenceId가 우연히 겹칠 수 있다(둘 다 "e1"부터
+    시작하는 식) — 담당 업무 쪽에 `r_` 접두사를 붙여 병합 후 충돌을 막는다."""
+    core = JobPostingCoreExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="e1",
+                field_path="requiredSkills[0].rawName",
+                value="Python",
+                source_text="Python 3년 이상",
+            )
+        ],
+        required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["e1"])],
+    )
+    responsibilities = JobPostingResponsibilityExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="e1",
+                field_path="responsibilities[0].rawText",
+                value="백엔드 개발",
+                source_text="백엔드 개발자를 채용합니다",
+            )
+        ],
+        responsibilities=[JobPostingResponsibility(raw_text="백엔드 개발", evidence_ids=["e1"])],
+    )
+
+    merged = _merge_core_and_responsibilities(core, responsibilities)
+
+    assert [e.evidence_id for e in merged.evidence] == ["e1", "r_e1"]
+    assert merged.responsibilities[0].evidence_ids == ["r_e1"]
+    assert merged.required_skills[0].evidence_ids == ["e1"]
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_retries_core_once_after_unload_on_evidence_failure() -> None:
+    """세션 오염 완화책(2026-08-03 결정) — 근거 검증 실패 시 언로드 후 1회 재시도해
+    재시도에서 성공하면 그 결과를 돌려준다."""
+    provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _VALID_CORE])
+
+    result = await extract_job_posting_profile(SOURCE_TEXT, provider)
+
+    assert provider.unload_call_count == 1
+    assert provider.core_call_count == 2
+    assert provider.responsibility_call_count == 1
+    assert [s.raw_name for s in result.required_skills] == ["Python"]
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_raises_when_core_retry_also_fails() -> None:
+    """재시도까지 실패하면(세션과 무관한 진짜 모델 결함) 예외를 그대로 전달한다 —
+    재시도가 진짜 결함을 감추지 않는다. 담당 업무 호출은 core가 실패했으니
+    아예 실행되지 않아야 한다."""
+    provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _HALLUCINATED_CORE])
+
+    with pytest.raises(JobPostingEvidenceValidationError):
+        await extract_job_posting_profile(SOURCE_TEXT, provider)
+
+    assert provider.unload_call_count == 1
+    assert provider.core_call_count == 2
+    assert provider.responsibility_call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_retries_responsibilities_independently() -> None:
+    """담당 업무 추출의 검증 실패는 core 추출과 별개로 재시도된다 — core가 이미
+    성공했어도 담당 업무 쪽만 다시 언로드+재시도한다."""
+    hallucinated_responsibility = JobPostingResponsibilityExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="r1",
+                field_path="responsibilities[0].rawText",
+                value="백엔드 개발",
+                source_text="원문에 없는 문장",
+            )
+        ],
+        responsibilities=[JobPostingResponsibility(raw_text="백엔드 개발", evidence_ids=["r1"])],
+    )
+    valid_responsibility = JobPostingResponsibilityExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="r1",
+                field_path="responsibilities[0].rawText",
+                value="백엔드 개발",
+                source_text="백엔드 개발자를 채용합니다",
+            )
+        ],
+        responsibilities=[JobPostingResponsibility(raw_text="백엔드 개발", evidence_ids=["r1"])],
+    )
+    provider = _RetryFakeProvider(
+        core_responses=[_VALID_CORE],
+        responsibility_responses=[hallucinated_responsibility, valid_responsibility],
+    )
+
+    result = await extract_job_posting_profile(SOURCE_TEXT, provider)
+
+    assert provider.core_call_count == 1
+    assert provider.responsibility_call_count == 2
+    assert provider.unload_call_count == 1
+    assert [r.raw_text for r in result.responsibilities] == ["백엔드 개발"]

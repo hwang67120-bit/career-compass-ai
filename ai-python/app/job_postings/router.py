@@ -17,7 +17,10 @@ from app.job_postings.settings import (
     get_job_posting_extraction_settings,
 )
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
-from app.providers.ollama_client import get_ollama_job_posting_provider
+from app.providers.ollama_client import (
+    get_ollama_job_posting_provider,
+    get_ollama_job_posting_responsibility_provider,
+)
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
@@ -53,6 +56,9 @@ async def extract_job_posting(
     x_request_id: str | None = Header(default=None),
     settings: JobPostingExtractionSettings = Depends(get_job_posting_extraction_settings),
     ollama_provider: OllamaProvider = Depends(get_ollama_job_posting_provider),
+    ollama_responsibility_provider: OllamaProvider = Depends(
+        get_ollama_job_posting_responsibility_provider
+    ),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
 
@@ -84,7 +90,9 @@ async def extract_job_posting(
         )
 
     try:
-        extraction = await extract_job_posting_profile(request.source_text, ollama_provider)
+        extraction = await extract_job_posting_profile(
+            request.source_text, ollama_provider, ollama_responsibility_provider
+        )
     except OllamaUnavailableError:
         return JSONResponse(
             status_code=503,

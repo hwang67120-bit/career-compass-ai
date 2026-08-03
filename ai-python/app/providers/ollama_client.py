@@ -38,7 +38,22 @@ async def get_ollama_resume_provider():
 
 
 async def get_ollama_job_posting_provider():
-    """`job-postings/extract`가 쓰는, 채용공고용 모델(`OLLAMA_MODEL`) provider다."""
+    """`job-postings/extract`가 쓰는, 채용공고 직무명·기술용 모델(`OLLAMA_MODEL`) provider다."""
     settings = OllamaSettings()
     async with _build_client(settings) as client:
         yield OllamaProvider(client=client, model_name=settings.ollama_model)
+
+
+async def get_ollama_job_posting_responsibility_provider():
+    """`job-postings/extract`가 쓰는, 담당 업무 추출 전용 모델
+    (`OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL`) provider다.
+
+    직무명·기술(`OLLAMA_MODEL`)과 다른 모델을 쓴다 — 2026-08-03 확인:
+    qwen2.5는 담당 업무 추출에서 evidence를 계속 못 채웠고 exaone3.5는
+    성공했다(`docs/current-work.md` 참고).
+    """
+    settings = OllamaSettings()
+    async with _build_client(settings) as client:
+        yield OllamaProvider(
+            client=client, model_name=settings.ollama_job_posting_responsibility_model
+        )
