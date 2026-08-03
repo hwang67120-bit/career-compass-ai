@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import com.careercompass.common.observability.RequestCorrelationContext;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,10 +17,14 @@ public class ApiResponseFactory {
     }
 
     public <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(UUID.randomUUID(), data, null, OffsetDateTime.now(clock));
+        return new ApiResponse<>(requestId(), data, null, OffsetDateTime.now(clock));
     }
 
     public ApiResponse<Void> failure(ApiError error) {
-        return new ApiResponse<>(UUID.randomUUID(), null, error, OffsetDateTime.now(clock));
+        return new ApiResponse<>(requestId(), null, error, OffsetDateTime.now(clock));
+    }
+
+    private UUID requestId() {
+        return RequestCorrelationContext.currentOrCreate();
     }
 }

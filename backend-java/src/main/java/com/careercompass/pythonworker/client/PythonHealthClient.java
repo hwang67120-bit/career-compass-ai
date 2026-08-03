@@ -1,5 +1,6 @@
 package com.careercompass.pythonworker.client;
 
+import com.careercompass.common.observability.RequestCorrelationContext;
 import com.careercompass.pythonworker.config.PythonWorkerProperties;
 import com.careercompass.pythonworker.dto.PythonHealthResponse;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,8 @@ public class PythonHealthClient {
         return restClient.get()
                 .uri("/internal/v1/health")
                 .header(PythonWorkerRequestHeaders.INTERNAL_TOKEN, internalServiceToken)
+                .header(PythonWorkerRequestHeaders.REQUEST_ID,
+                        RequestCorrelationContext.currentOrCreate().toString())
                 .retrieve()
                 .body(PythonHealthResponse.class);
     }

@@ -1042,3 +1042,50 @@ select:focus {
         transition-duration: 0.01ms !important;
     }
 }
+
+.technology-search-form {
+    margin-bottom: 16px;
+}
+
+.technology-tag-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 32px;
+}
+
+.technology-tag-button {
+    padding: 7px 12px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    font-size: 0.78rem;
+}
+
+.technology-tag-button:hover,
+.technology-tag-button.is-selected {
+    color: var(--accent-text);
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.selected-technology {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.selected-technology > strong {
+    font-size: 0.78rem;
+}
+
+.empty-tag-message {
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.progress-back-button {
+    margin-top: 20px;
+}
