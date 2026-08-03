@@ -8,7 +8,7 @@
 """
 
 from app.providers.github_repository import GitHubRepositoryClient
-from app.services.performance_tracking import measure_stage
+from app.services.performance_tracking import StageOperation, measure_stage
 from app.services.repository_paths import is_excluded
 
 # README로 인정하는 파일명(대소문자 무시). 확장자 없는 README도 허용한다
@@ -65,7 +65,7 @@ async def fetch_repository_readmes(
 
     contents: dict[str, str] = {}
     async with client.open_session() as http_client:
-        with measure_stage("github.fetch_readme_files"):
+        with measure_stage("github", StageOperation.GITHUB_FETCH_README_FILES):
             for path in readme_paths:
                 contents[path] = await client.fetch_file_text(
                     owner, repository, commit_sha, path, http_client=http_client

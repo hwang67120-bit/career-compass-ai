@@ -15,7 +15,7 @@
 from app.providers.github_repository import GitHubRepositoryClient
 from app.schemas.technical_evidence import EvidenceSource, TechnicalEvidenceExtraction
 from app.services.manifest_parsers import MANIFEST_DEPENDENCY_EXTRACTORS
-from app.services.performance_tracking import measure_stage
+from app.services.performance_tracking import StageOperation, measure_stage
 from app.services.repository_paths import is_excluded
 from app.services.technical_evidence_builder import TechnicalEvidenceBuilder
 
@@ -164,14 +164,14 @@ async def analyze_repository(
         `GitHubRepositoryClient`가 던지는 예외를 그대로 전달한다.
     """
     async with client.open_session() as http_client:
-        with measure_stage("github.fetch_tree"):
+        with measure_stage("github", StageOperation.GITHUB_FETCH_TREE):
             tree_paths = await client.fetch_tree(
                 owner, repository, commit_sha, http_client=http_client
             )
         manifest_paths = select_manifest_paths(tree_paths)
 
         manifest_contents: dict[str, str] = {}
-        with measure_stage("github.fetch_manifest_files"):
+        with measure_stage("github", StageOperation.GITHUB_FETCH_MANIFEST_FILES):
             for file_path in manifest_paths:
                 manifest_contents[file_path] = await client.fetch_file_text(
                     owner, repository, commit_sha, file_path, http_client=http_client

@@ -11,7 +11,7 @@ from typing import Protocol
 
 from app.schemas.embedding import EmbeddingVector
 from app.schemas.job_posting import JobPostingExtraction
-from app.services.performance_tracking import measure_stage
+from app.services.performance_tracking import StageOperation, measure_stage
 
 
 class JobPostingTextEmpty(ValueError):
@@ -20,6 +20,8 @@ class JobPostingTextEmpty(ValueError):
 
 class EmbeddingProvider(Protocol):
     """`OllamaEmbeddingProvider`·`GeminiEmbeddingProvider`가 공통으로 구현하는 부분이다."""
+
+    provider_name: str
 
     async def embed(self, texts: list[str]) -> list[EmbeddingVector]: ...
 
@@ -78,6 +80,6 @@ async def embed_job_posting(
         provider가 던지는 예외(예: `EmbeddingUnavailableError`)를 그대로 전달한다.
     """
     text = build_job_posting_text(extraction)
-    with measure_stage("embedding.embed_job_posting"):
+    with measure_stage(provider.provider_name, StageOperation.EMBED_JOB_POSTING):
         vectors = await provider.embed([text])
     return vectors[0]

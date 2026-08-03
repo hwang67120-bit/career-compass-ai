@@ -51,7 +51,7 @@ Java와 Python 서버를 함께 실행한 계약 테스트가 없으므로 `INTE
 | 적합한 채용공고 재정렬 | `app/services/job_posting_ranking.py`, 기존 `app/services/reranking.py` 재사용 | `UNIT_TESTED` | 가짜 provider 오케스트레이션 2건(네트워크 없음) + 실제 채용공고 5건(백엔드 Java/Spring 0.821, 백엔드 Python/FastAPI 0.706, 게임 서버 Java 0.671, 프론트엔드·카페 매니저는 최소 유사도 0.65 미달로 제외)으로 실제 Gemini 임베딩 순위 검증 | Java API 라우트로 연결(1번 계약 확정 후). 최소 유사도(0.65)는 이번 예시로 확인한 값이라 실제 서비스 값은 확인 필요 |
 | 부족 기술과 추천 이유 생성(결정론적, LLM 없음) | `app/schemas/job_fit_summary.py`, `app/services/job_fit_summary.py` | `UNIT_TESTED` | 순수 로직 7건(네트워크 없음) 통과 | Java API 라우트로 연결. 자연어 문장은 안 만들고 일치·유사도 구조화 데이터만 반환 — 문장화는 프론트엔드·Java 몫(2026-08-01 확정). 기술명 일치는 정확 문자열 비교라 동의어·오타는 놓침(확인 필요, `skill_tag_matching.py` 연결 전까지) |
 | 근거 없는 기술·경력 제거 | `app/services/job_posting_extraction.py`(`validate_evidence`·`filter_unevidenced_candidates`), `app/services/resume_extraction.py`(동일 이름 함수) | `UNIT_TESTED` | `test_job_posting_extraction.py`, `test_resume_extraction.py`에 이미 테스트 존재(오늘 세션 이전부터 구현·검증됨, 2026-08-01 확인만 함) | 이미 구현 완료 — 새로 할 일 없음 |
-| 모델 성능·토큰·단계별 처리시간 측정(시간만, 로그만) | `app/services/performance_tracking.py` | `UNIT_TESTED` | 순수 로직 3건(네트워크 없음, 로그 내용·예외 전파 검증) 통과. 기존 함수 시그니처를 안 바꾸고 `measure_stage` context manager로 감싸는 방식 — LLM 호출(`job_posting_extraction.py`, `resume_extraction.py`, `job_search_keywords.py`), 임베딩 호출(`user_profile_embedding.py`, `job_posting_embedding.py`, `skill_tag_matching.py`), GitHub 조회(`repository_evidence.py`, `repository_readme.py`) 실제 호출 지점에 계측 완료(2026-08-01 확정) | 토큰 수 측정과 로그 외 저장(응답 포함 등)은 범위 밖으로 확정(2026-08-01) — 필요해지면 provider 반환값 변경이 필요한 별도 작업 |
+| Python 개별 호출부 처리시간 기초 계측 | `app/services/performance_tracking.py` | 타이머 자체: `UNIT_TESTED`(순수 로직 4건, 네트워크 없음). 개별 함수 적용: `UNIT_TESTED`(기존 테스트가 계측 삽입 후에도 회귀 없이 통과). 실제 GitHub 저장소 데이터로 로그 확인: `NOT_TESTED`. Java–Python 연결: `NOT_TESTED`. 동시 요청 로그 구분: `NOT_IMPLEMENTED`. 저장소·공고 하나의 전체 분석 시간: `NOT_IMPLEMENTED` | 계약(`document-extraction.md` 9절)이 요구하는 전체 구간 중 지금은 일부(모델 호출·GitHub 조회)만 계측한다. **아직 없음**: PDF 텍스트 추출 시간, 개인정보 제거 시간, Python 내부 API 전체 처리 시간, Java에서 측정하는 Python 왕복 시간, 성공/실패(outcome) 구분, 요청 식별자(`requestId` 등) 연결. 이 항목들은 Java 분석 API·실제 GitHub 데이터와 연결할 때 후속 작업으로 진행(2026-08-01 리뷰 반영) |
 
 **2026-08-01 리팩터링 — 매니페스트 파싱에 표준 파서 도입**: 저장소 근거 추출이 매니페스트 파일을
 파일 형식과 무관하게 문자열 검색(줄 단위 키워드 매칭)하던 방식은 이미 있는 표준 파서를 안 쓰고
@@ -143,12 +143,20 @@ placeholder가 이미 체크리스트 형태로 표현하도록 되어 있어 �
 (`job_posting_extraction.py`, `resume_extraction.py`의 `validate_evidence`·
 `filter_unevidenced_candidates`) — 새로 만들 것 없이 검증 상태 표로 옮겼다.
 
-2026-08-01 확인: "모델 성능·토큰·단계별 처리시간 측정"은 시간만(범용 타이머), 로그로만
-남기기로 범위를 확정했다(`app/services/performance_tracking.py`) — 기존 함수 시그니처는
-그대로 두고 호출부를 `measure_stage`로 감싸는 방식. 토큰 수와 로그 외 저장은 범위 밖.
+2026-08-01 확인·2026-08-01 리뷰 반영: "모델 성능·토큰·단계별 처리시간 측정" 항목은
+**"Python 개별 호출부 처리시간 기초 계측"**으로 이름을 정정했다 — 실제로 재는 건 소요
+시간뿐이고 정확도·토큰·분류 성능은 다루지 않는다. 시간만(범용 타이머), 로그로만 남기기로
+범위를 확정했다(`app/services/performance_tracking.py`) — 기존 함수 시그니처는 그대로 두고
+호출부를 `measure_stage`로 감싸는 방식. 계약이 요구하는 전체 구간 중 지금은 일부(모델
+호출·GitHub 조회)만 계측하며, 나머지(PDF 추출·개인정보 제거 시간, Python API 전체 처리
+시간, Java–Python 왕복 시간, 성공/실패 구분, 요청 식별자)는 위 검증 상태 표에 남은 항목으로
+명시했다.
 
-**Python 10개 범위 축소 목록이 전부 검증 상태 표로 옮겨졌다.** 남은 건 아래 계약 확정
-하나뿐이며, 이건 Python이 임의로 결정할 수 없고 사용자·Codex 확인이 필요하다.
+**Python 10개 범위 축소 목록을 전부 최소 구현 또는 검증 상태 표로 옮겼다.** 실제 GitHub
+데이터와 Java API를 사용한 통합 검증은 아직 남아 있다(위 각 행의 `NOT_TESTED`/`NOT_IMPLEMENTED`
+항목 참고) — "완료"가 아니라 "각 항목이 UNIT_TESTED 이상에 도달했고 다음 단계가 정리됨"으로
+읽어야 한다. 남은 결정 사항은 아래 계약 확정 하나뿐이며, 이건 Python이 임의로 결정할 수
+없고 사용자·Codex 확인이 필요하다.
 
 | 우선순위 | 작업 | 계약 상태 | 시작 조건 |
 | ---: | --- | --- | --- |

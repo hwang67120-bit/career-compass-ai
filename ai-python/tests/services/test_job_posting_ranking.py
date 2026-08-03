@@ -12,6 +12,8 @@ class _FakeEmbeddingProvider:
     직교하는 벡터를 반환해서 유사도 결과를 예측 가능하게 만든다.
     """
 
+    provider_name = "fake"
+
     async def embed(self, texts: list[str]) -> list[EmbeddingVector]:
         vectors = []
         for text in texts:

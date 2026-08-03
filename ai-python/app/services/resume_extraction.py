@@ -8,7 +8,7 @@ from app.guardrails.personal_information_sanitizer import sanitize_personal_info
 from app.providers.ollama import OllamaProvider
 from app.schemas.document import PageText
 from app.schemas.profile_candidate import CandidateProject, ProfileCandidatePayload
-from app.services.performance_tracking import measure_stage
+from app.services.performance_tracking import StageOperation, measure_stage
 
 
 class EvidenceValidationError(RuntimeError):
@@ -125,7 +125,7 @@ async def extract_resume_profile(
 ) -> ProfileCandidatePayload:
     """개인정보를 제거한 원문을 provider로 구조화 추출하고 근거를 검증·정리한다."""
     page_marked_text = build_page_marked_text(pages)
-    with measure_stage(f"{provider.provider_name}.extract_resume_profile"):
+    with measure_stage(provider.provider_name, StageOperation.EXTRACT_RESUME_PROFILE):
         candidate = await provider.extract_resume_profile(page_marked_text)
     validate_evidence(candidate, pages)
     return filter_unevidenced_candidates(candidate)

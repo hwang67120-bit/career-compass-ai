@@ -18,6 +18,8 @@ def make_vector(values: list[float]) -> EmbeddingVector:
 class _FakeEmbeddingProvider:
     """네트워크 없이 오케스트레이션만 검증하기 위한 가짜 provider다."""
 
+    provider_name = "fake"
+
     def __init__(self, vectors_by_text: dict[str, EmbeddingVector]) -> None:
         self._vectors_by_text = vectors_by_text
         self.received_texts: list[str] | None = None
