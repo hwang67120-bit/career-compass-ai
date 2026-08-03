@@ -11,6 +11,7 @@ from typing import Protocol
 
 from app.schemas.embedding import EmbeddingVector
 from app.schemas.job_posting import JobPostingExtraction
+from app.services.performance_tracking import measure_stage
 
 
 class JobPostingTextEmpty(ValueError):
@@ -77,5 +78,6 @@ async def embed_job_posting(
         provider가 던지는 예외(예: `EmbeddingUnavailableError`)를 그대로 전달한다.
     """
     text = build_job_posting_text(extraction)
-    vectors = await provider.embed([text])
+    with measure_stage("embedding.embed_job_posting"):
+        vectors = await provider.embed([text])
     return vectors[0]

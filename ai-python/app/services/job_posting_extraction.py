@@ -7,6 +7,7 @@
 
 from app.providers.ollama import OllamaProvider
 from app.schemas.job_posting import JobPostingExtraction, JobPostingSkill
+from app.services.performance_tracking import measure_stage
 
 
 class JobPostingEvidenceValidationError(RuntimeError):
@@ -75,6 +76,7 @@ async def extract_job_posting_profile(
     source_text: str, provider: OllamaProvider
 ) -> JobPostingExtraction:
     """채용공고 원문을 provider로 구조화 추출하고 근거를 검증·정리한다."""
-    candidate = await provider.extract_job_posting(source_text)
+    with measure_stage(f"{provider.provider_name}.extract_job_posting"):
+        candidate = await provider.extract_job_posting(source_text)
     validate_evidence(candidate, source_text)
     return filter_unevidenced_candidates(candidate)

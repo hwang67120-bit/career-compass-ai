@@ -18,6 +18,7 @@ from app.schemas.job_search_keywords import (
     JobSearchKeywordSet,
     KeywordSource,
 )
+from app.services.performance_tracking import measure_stage
 
 
 class KeywordSuggestionProvider(Protocol):
@@ -91,7 +92,8 @@ async def generate_job_search_keywords(
         provider가 던지는 예외(예: `OllamaUnavailableError`)를 그대로 전달한다.
     """
     input_keywords = build_input_keywords(desired_role, skill_names)
-    suggestions = await provider.generate_job_search_keyword_suggestions(
-        desired_role, skill_names
-    )
+    with measure_stage("llm.generate_job_search_keyword_suggestions"):
+        suggestions = await provider.generate_job_search_keyword_suggestions(
+            desired_role, skill_names
+        )
     return combine_keyword_sources(input_keywords, suggestions.keywords)
