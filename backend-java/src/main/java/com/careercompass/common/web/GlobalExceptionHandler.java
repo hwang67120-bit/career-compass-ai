@@ -2,7 +2,6 @@ package com.careercompass.common.web;
 
 import java.util.List;
 
-import com.careercompass.document.exception.DocumentTextTooLargeException;
 import com.careercompass.projectsource.exception.GitHubAccessException;
 import com.careercompass.projectsource.exception.GitHubAccessFailure;
 import com.careercompass.projectsource.exception.InvalidGitHubRepositoryUrlException;
@@ -34,14 +33,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadable() {
         return failure(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                "요청 형식이나 문서 종류를 확인해 주세요.", List.of());
-    }
-
-    @ExceptionHandler(DocumentTextTooLargeException.class)
-    ResponseEntity<ApiResponse<Void>> handleDocumentTextTooLarge() {
-        return failure(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE",
-                "문서 내용이 허용된 크기를 초과했습니다.",
-                List.of(new FieldErrorDetail("text", "허용된 문서 크기를 초과했습니다.")));
+                "요청 형식을 확인해 주세요.", List.of());
     }
 
     @ExceptionHandler(InvalidGitHubRepositoryUrlException.class)

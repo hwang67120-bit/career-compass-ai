@@ -1,3 +1,7 @@
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] requestId=%X{requestId:-none} %logger{36} - %msg%n"
+
 spring:
   application:
     name: career-compass-backend
@@ -25,10 +29,6 @@ management:
       exposure:
         include: health
 
-document:
-  policy:
-    max-text-length: ${DOCUMENT_MAX_TEXT_LENGTH}
-
 github:
   api:
     base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
@@ -49,3 +49,9 @@ technology-tag:
   resolution:
     max-names: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAMES:30}
     max-name-length: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAME_LENGTH:100}
+
+user:
+  profile:
+    max-target-job-title-length: ${USER_PROFILE_MAX_TARGET_JOB_TITLE_LENGTH:100}
+    max-technology-tag-count: ${USER_PROFILE_MAX_TECHNOLOGY_TAG_COUNT:30}
+    max-custom-tag-name-length: ${USER_PROFILE_MAX_CUSTOM_TAG_NAME_LENGTH:100}

@@ -21,7 +21,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @SpringBootTest(properties = {
         "spring.docker.compose.enabled=false",
-        "document.policy.max-text-length=100000",
         "github.api.connect-timeout=3s",
         "github.api.read-timeout=8s",
         "python.worker.internal-token=integration-test-token"

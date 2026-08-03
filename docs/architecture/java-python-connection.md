@@ -46,7 +46,7 @@
 - 값이 없으면 422, 있지만 틀리면 401을 반환한다. 비교는 타이밍 공격을 막기 위해 `hmac.compare_digest`를 사용한다.
 - Python 쪽 환경변수: `INTERNAL_SERVICE_TOKEN` (`ai-python/.env`). 충분히 길고 무작위한 값이어야 하며, JWT처럼 발급·서명·만료가 있는 값이 아니라 양쪽이 미리 공유하는 고정 비밀값이다.
 - Java는 `python.worker.internal-token`을 `INTERNAL_SERVICE_TOKEN` 환경변수에서 읽는다.
-- `PythonHealthClient`와 `PythonDocumentExtractionClient`는 모든 요청에 `X-Internal-Token`을 전송한다.
+- 현재 Java의 PythonHealthClient는 모든 요청에 X-Internal-Token과 X-Request-Id를 전송한다.
 - 문서 추출 요청에는 Java가 생성한 UUID를 `X-Request-Id`로 보내고 Python 응답의 동일 식별자를 검증한다.
 - 두 서버의 `INTERNAL_SERVICE_TOKEN` 값은 반드시 동일해야 한다.
 

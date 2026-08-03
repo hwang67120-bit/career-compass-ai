@@ -7,11 +7,16 @@ import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.projectsource.dto.CreateGitHubProjectSourceResponse;
 import com.careercompass.projectsource.repository.ProjectSourceRepository;
 import com.careercompass.security.currentuser.CurrentUserProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProjectSourceRegistrationService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(ProjectSourceRegistrationService.class);
 
     private final ProjectSourceRepository repository;
     private final CurrentUserProvider currentUserProvider;
@@ -44,6 +49,9 @@ public class ProjectSourceRegistrationService {
                 createdAt
         );
         ProjectSource savedProjectSource = repository.save(projectSource);
+        log.info("project_source_saved projectSourceId={} status={}",
+                savedProjectSource.getId(),
+                savedProjectSource.getProjectSourceStatus());
         return new CreateGitHubProjectSourceResponse(
                 savedProjectSource.getId(),
                 savedProjectSource.getRepositoryUrl(),
