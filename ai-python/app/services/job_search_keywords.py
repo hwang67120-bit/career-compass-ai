@@ -18,10 +18,13 @@ from app.schemas.job_search_keywords import (
     JobSearchKeywordSet,
     KeywordSource,
 )
+from app.services.performance_tracking import StageOperation, measure_stage
 
 
 class KeywordSuggestionProvider(Protocol):
     """`OllamaProvider`·`GeminiProvider`가 공통으로 구현하는 부분이다."""
+
+    provider_name: str
 
     async def generate_job_search_keyword_suggestions(
         self, desired_role: str, skill_names: list[str]
@@ -91,7 +94,8 @@ async def generate_job_search_keywords(
         provider가 던지는 예외(예: `OllamaUnavailableError`)를 그대로 전달한다.
     """
     input_keywords = build_input_keywords(desired_role, skill_names)
-    suggestions = await provider.generate_job_search_keyword_suggestions(
-        desired_role, skill_names
-    )
+    with measure_stage(provider.provider_name, StageOperation.GENERATE_JOB_SEARCH_KEYWORDS):
+        suggestions = await provider.generate_job_search_keyword_suggestions(
+            desired_role, skill_names
+        )
     return combine_keyword_sources(input_keywords, suggestions.keywords)

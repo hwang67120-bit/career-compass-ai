@@ -11,6 +11,8 @@ from app.services.job_search_keywords import (
 class _FakeKeywordProvider:
     """네트워크 없이 오케스트레이션 로직만 검증하기 위한 가짜 provider다."""
 
+    provider_name = "fake"
+
     def __init__(self, keywords: list[str]) -> None:
         self._keywords = keywords
         self.received_calls: list[tuple[str, list[str]]] = []

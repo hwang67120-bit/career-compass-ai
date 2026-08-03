@@ -20,6 +20,8 @@ class EmbeddingResponseError(RuntimeError):
 class OllamaEmbeddingProvider:
     """로컬 Ollama의 임베딩 모델을 호출한다."""
 
+    provider_name = "ollama"
+
     def __init__(self, client: httpx.AsyncClient, model_name: str) -> None:
         self.client = client
         self.model_name = model_name
@@ -83,6 +85,8 @@ class OllamaEmbeddingProvider:
 
 class GeminiEmbeddingProvider:
     """Gemini의 임베딩 모델을 호출한다."""
+
+    provider_name = "gemini"
 
     def __init__(self, client: genai.Client, model_name: str) -> None:
         self.client = client

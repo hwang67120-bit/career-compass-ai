@@ -25,6 +25,7 @@ from typing import Protocol
 from app.schemas.embedding import EmbeddingVector
 from app.schemas.reranking import RankedCandidate
 from app.schemas.skill_tag_match import SkillTagMatch, TagMatchRecommendation
+from app.services.performance_tracking import StageOperation, measure_stage
 from app.services.reranking import rerank_candidates
 
 # 확인 필요 — Gemini 임베딩으로 예시 7쌍만 확인한 값이라 표본이 작다.
@@ -44,6 +45,8 @@ MARGIN_THRESHOLD = 0.05
 
 class EmbeddingProvider(Protocol):
     """`OllamaEmbeddingProvider`·`GeminiEmbeddingProvider`가 공통으로 구현하는 부분이다."""
+
+    provider_name: str
 
     async def embed(self, texts: list[str]) -> list[EmbeddingVector]: ...
 
@@ -144,7 +147,8 @@ async def match_skill_tag(
     if exact_check.recommendation == TagMatchRecommendation.EXACT_MATCH or not canonical_tags:
         return exact_check
 
-    candidate_vector = (await provider.embed([candidate_tag]))[0]
+    with measure_stage(provider.provider_name, StageOperation.MATCH_SKILL_TAG):
+        candidate_vector = (await provider.embed([candidate_tag]))[0]
     rerank_result = rerank_candidates(
         query=candidate_vector,
         candidates=dict(zip(canonical_tags, canonical_vectors, strict=True)),

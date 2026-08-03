@@ -13,6 +13,7 @@ README가 하나도 없거나(비공개 정보 없음, 작성 안 함) 기술 �
 from typing import Protocol
 
 from app.schemas.embedding import EmbeddingVector
+from app.services.performance_tracking import StageOperation, measure_stage
 
 # 확인 필요 — 임시값. README가 길면(뱃지·스크린샷 설명 등 포함) 임베딩
 # 입력이 불필요하게 커진다. 실제 임베딩 모델의 입력 한도와 README 분포를
@@ -26,6 +27,8 @@ class UserProfileTextEmpty(ValueError):
 
 class EmbeddingProvider(Protocol):
     """`OllamaEmbeddingProvider`·`GeminiEmbeddingProvider`가 공통으로 구현하는 부분이다."""
+
+    provider_name: str
 
     async def embed(self, texts: list[str]) -> list[EmbeddingVector]: ...
 
@@ -79,5 +82,6 @@ async def embed_user_profile(
         provider가 던지는 예외(예: `EmbeddingUnavailableError`)를 그대로 전달한다.
     """
     text = build_user_profile_text(readme_texts, skill_names)
-    vectors = await provider.embed([text])
+    with measure_stage(provider.provider_name, StageOperation.EMBED_USER_PROFILE):
+        vectors = await provider.embed([text])
     return vectors[0]
