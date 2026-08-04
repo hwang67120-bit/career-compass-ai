@@ -1043,8 +1043,18 @@ select:focus {
     }
 }
 
+.profile-target-field {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
 .technology-search-form {
     margin-bottom: 16px;
+}
+
+.profile-save-form {
+    margin-top: 18px;
 }
 
 .technology-tag-options {

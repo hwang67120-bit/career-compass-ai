@@ -11,8 +11,11 @@
         globalMessage: document.getElementById("global-message"),
         technologyForm: document.getElementById("technology-form"),
         technologyOptions: document.getElementById("technology-options"),
+        targetJobTitle: document.getElementById("target-job-title"),
+        profileForm: document.getElementById("profile-form"),
         selectedTechnologyTags: document.getElementById("selected-technology-tags"),
         technologyStatus: document.getElementById("technology-status"),
+        profileStatus: document.getElementById("profile-status"),
         githubForm: document.getElementById("github-form"),
         githubStatus: document.getElementById("github-status"),
         githubResult: document.getElementById("github-result"),
@@ -30,6 +33,8 @@
 
     const state = {
         selectedTechnologyTags: new Map(),
+        userProfile: null,
+        profileDirty: false,
         github: null
     };
 
@@ -94,9 +99,9 @@
     }
 
     function updateAnalysisAvailability() {
-        const hasTechnologyTags = state.selectedTechnologyTags.size > 0;
+        const hasSavedProfile = Boolean(state.userProfile) && !state.profileDirty;
         const hasGitHubRepository = Boolean(state.github);
-        const ready = hasTechnologyTags && hasGitHubRepository;
+        const ready = hasSavedProfile && hasGitHubRepository;
         elements.startAnalysisButton.disabled = !ready;
         elements.analysisBarIcon.classList.toggle("is-ready", ready);
 
@@ -104,14 +109,10 @@
             elements.analysisBarTitle.textContent = "분석 입력이 준비됐어요.";
             elements.analysisBarDescription.textContent =
                 "선택한 기술 태그와 공개 GitHub 저장소를 기준으로 분석합니다.";
-        } else if (!hasTechnologyTags && !hasGitHubRepository) {
-            elements.analysisBarTitle.textContent = "기술 태그와 GitHub 저장소를 준비해 주세요.";
+        } else if (!hasSavedProfile) {
+            elements.analysisBarTitle.textContent = "분석 프로필을 저장해 주세요.";
             elements.analysisBarDescription.textContent =
-                "두 자료가 확인되면 분석을 시작할 수 있어요.";
-        } else if (!hasTechnologyTags) {
-            elements.analysisBarTitle.textContent = "기술 태그를 선택해 주세요.";
-            elements.analysisBarDescription.textContent =
-                "보유 기술을 하나 이상 선택해야 합니다.";
+                "희망 직무와 기술 태그를 서버에 저장해야 합니다.";
         } else {
             elements.analysisBarTitle.textContent = "GitHub 저장소를 연결해 주세요.";
             elements.analysisBarDescription.textContent =
@@ -176,6 +177,7 @@
             elements.sessionChip.classList.remove("is-hidden");
             showOnly(elements.dashboardView);
             await configureSessionActions();
+            await loadUserProfile();
             await searchTechnologyTags();
         } catch (error) {
             showOnly(elements.loginView);
@@ -229,28 +231,30 @@
             button.className = "technology-tag-button";
             button.dataset.technologyTagId = technologyTag.technologyTagId;
             button.textContent = technologyTag.displayName;
-            button.classList.toggle(
-                "is-selected",
-                state.selectedTechnologyTags.has(technologyTag.technologyTagId)
-            );
+            button.classList.toggle("is-selected", hasSelectedStandardTag(
+                technologyTag.technologyTagId
+            ));
             button.addEventListener("click", () => toggleTechnologyTag(technologyTag));
             elements.technologyOptions.appendChild(button);
         });
     }
 
     function toggleTechnologyTag(technologyTag) {
-        if (state.selectedTechnologyTags.has(technologyTag.technologyTagId)) {
-            state.selectedTechnologyTags.delete(technologyTag.technologyTagId);
+        const key = standardTechnologyTagKey(technologyTag.technologyTagId);
+        if (state.selectedTechnologyTags.has(key)) {
+            state.selectedTechnologyTags.delete(key);
         } else {
-            state.selectedTechnologyTags.set(technologyTag.technologyTagId, technologyTag);
+            removeCustomAliasOf(technologyTag.technologyTagId);
+            state.selectedTechnologyTags.set(key, {
+                ...technologyTag,
+                rawName: technologyTag.displayName,
+                normalizedName: technologyTag.key,
+                sourceType: "USER_SELECTED"
+            });
         }
+        markProfileDirty();
         renderSelectedTechnologyTags();
-        elements.technologyOptions
-            .querySelectorAll("[data-technology-tag-id]")
-            .forEach((button) => button.classList.toggle(
-                "is-selected",
-                state.selectedTechnologyTags.has(button.dataset.technologyTagId)
-            ));
+        syncTechnologyOptionSelection();
         updateTechnologyStatus();
         updateAnalysisAvailability();
     }
@@ -267,7 +271,8 @@
             button.type = "button";
             button.className = "technology-tag-button is-selected";
             button.textContent = `${technologyTag.displayName} ×`;
-            button.addEventListener("click", () => toggleTechnologyTag(technologyTag));
+            button.addEventListener("click", () =>
+                removeSelectedTechnologyTag(technologyTag));
             elements.selectedTechnologyTags.appendChild(button);
         });
     }
@@ -286,8 +291,186 @@
             elements.technologyStatus,
             "success",
             "선택 완료",
-            `${state.selectedTechnologyTags.size}개 기술이 현재 화면에서 선택됐습니다.`
+            `${state.selectedTechnologyTags.size}개 기술이 선택됐습니다.`
         );
+    }
+
+    function standardTechnologyTagKey(technologyTagId) {
+        return `standard:${technologyTagId}`;
+    }
+
+    function customTechnologyTagKey(technologyTag) {
+        return `custom:${technologyTag.normalizedName || technologyTag.rawName}`;
+    }
+
+    function hasSelectedStandardTag(technologyTagId) {
+        return state.selectedTechnologyTags.has(
+            standardTechnologyTagKey(technologyTagId)
+        );
+    }
+
+    function removeCustomAliasOf(technologyTagId) {
+        state.selectedTechnologyTags.forEach((technologyTag, key) => {
+            if (technologyTag.sourceType === "USER_CUSTOM"
+                && technologyTag.technologyTagId === technologyTagId) {
+                state.selectedTechnologyTags.delete(key);
+            }
+        });
+    }
+
+    function removeSelectedTechnologyTag(technologyTag) {
+        const key = technologyTag.sourceType === "USER_CUSTOM"
+            ? customTechnologyTagKey(technologyTag)
+            : standardTechnologyTagKey(technologyTag.technologyTagId);
+        state.selectedTechnologyTags.delete(key);
+        markProfileDirty();
+        renderSelectedTechnologyTags();
+        syncTechnologyOptionSelection();
+        updateTechnologyStatus();
+        updateAnalysisAvailability();
+    }
+
+    function syncTechnologyOptionSelection() {
+        elements.technologyOptions
+            .querySelectorAll("[data-technology-tag-id]")
+            .forEach((button) => button.classList.toggle(
+                "is-selected",
+                hasSelectedStandardTag(button.dataset.technologyTagId)
+            ));
+    }
+
+    function markProfileDirty() {
+        state.profileDirty = true;
+        updateProfileStatus();
+    }
+
+    function updateProfileStatus() {
+        if (state.userProfile && !state.profileDirty) {
+            updateStatus(
+                elements.profileStatus,
+                "success",
+                `프로필 버전 ${state.userProfile.version} 저장됨`,
+                "희망 직무와 기술 태그가 서버에 저장됐습니다."
+            );
+            return;
+        }
+        updateStatus(
+            elements.profileStatus,
+            "idle",
+            state.userProfile ? "변경사항 저장 필요" : "프로필 저장 전",
+            "희망 직무와 선택한 기술 태그를 저장해 주세요."
+        );
+    }
+
+    async function loadUserProfile() {
+        try {
+            applyUserProfile(await request("/api/v1/user-profile"));
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.status === 404) {
+                state.userProfile = null;
+                state.profileDirty = false;
+                state.selectedTechnologyTags.clear();
+                elements.targetJobTitle.value = "";
+                renderSelectedTechnologyTags();
+                updateTechnologyStatus();
+                updateProfileStatus();
+                updateAnalysisAvailability();
+                return;
+            }
+            throw error;
+        }
+    }
+
+    function applyUserProfile(userProfile) {
+        state.userProfile = userProfile;
+        state.profileDirty = false;
+        state.selectedTechnologyTags.clear();
+        elements.targetJobTitle.value = userProfile.targetJobTitle;
+        userProfile.technologyTags.forEach((technologyTag) => {
+            const key = technologyTag.sourceType === "USER_CUSTOM"
+                ? customTechnologyTagKey(technologyTag)
+                : standardTechnologyTagKey(technologyTag.technologyTagId);
+            state.selectedTechnologyTags.set(key, technologyTag);
+        });
+        renderSelectedTechnologyTags();
+        syncTechnologyOptionSelection();
+        updateTechnologyStatus();
+        updateProfileStatus();
+        updateAnalysisAvailability();
+    }
+
+    async function saveUserProfile(event) {
+        event.preventDefault();
+        clearGlobalMessage();
+        const targetJobTitle = elements.targetJobTitle.value.trim();
+        if (!targetJobTitle) {
+            updateStatus(
+                elements.profileStatus,
+                "error",
+                "희망 직무 입력 필요",
+                "분석할 개발 직무를 입력해 주세요."
+            );
+            elements.targetJobTitle.focus();
+            return;
+        }
+        if (state.selectedTechnologyTags.size === 0) {
+            updateStatus(
+                elements.profileStatus,
+                "error",
+                "기술 태그 선택 필요",
+                "보유 기술을 하나 이상 선택해 주세요."
+            );
+            return;
+        }
+
+        setFormBusy(elements.profileForm, true);
+        updateStatus(
+            elements.profileStatus,
+            "loading",
+            "프로필 저장 중",
+            "희망 직무와 기술 태그를 서버에 저장하고 있어요."
+        );
+        const requestBody = {
+            ...(state.userProfile
+                ? {expectedVersion: state.userProfile.version}
+                : {}),
+            targetJobTitle,
+            technologyTags: [...state.selectedTechnologyTags.values()]
+                .map((technologyTag) => technologyTag.sourceType === "USER_CUSTOM"
+                    ? {
+                        technologyTagId: null,
+                        customName: technologyTag.rawName
+                    }
+                    : {
+                        technologyTagId: technologyTag.technologyTagId,
+                        customName: null
+                    })
+        };
+
+        try {
+            const userProfile = await mutation(
+                "/api/v1/user-profile",
+                requestBody,
+                "PUT"
+            );
+            applyUserProfile(userProfile);
+            showGlobalMessage(
+                `분석 프로필 버전 ${userProfile.version}이 저장됐습니다.`
+            );
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.status === 409) {
+                updateStatus(
+                    elements.profileStatus,
+                    "error",
+                    "프로필 버전 충돌",
+                    "다른 변경이 먼저 저장됐습니다. 새로고침 후 다시 시도해 주세요."
+                );
+            } else {
+                displayError(elements.profileStatus, error);
+            }
+        } finally {
+            setFormBusy(elements.profileForm, false);
+        }
     }
 
     async function registerGitHubRepository(event) {
@@ -411,7 +594,7 @@
     }
 
     async function startAnalysis() {
-        if (state.selectedTechnologyTags.size === 0 || !state.github) {
+        if (!state.userProfile || state.profileDirty || !state.github) {
             return;
         }
         elements.progressLog.innerHTML = "";
@@ -422,6 +605,10 @@
             [...state.selectedTechnologyTags.values()]
                 .map((technologyTag) => technologyTag.displayName)
                 .join(", ")
+        );
+        appendCompletedStep(
+            "분석 프로필 확인",
+            `${state.userProfile.targetJobTitle} · 버전 ${state.userProfile.version}`
         );
         appendCompletedStep(
             "GitHub 저장소 확인",
@@ -438,7 +625,7 @@
         const pendingEntry = appendLogEntry("실제 분석 작업 연결 대기", null);
         appendLogDetail(
             pendingEntry,
-            "사용자 프로필 저장 API와 분석 작업 이벤트가 아직 연결되지 않아 결과를 생성하지 않았습니다."
+            "분석 시작 API와 작업 이벤트가 아직 연결되지 않아 결과를 생성하지 않았습니다."
         );
         markLogEntryFailed(pendingEntry);
     }
@@ -448,6 +635,11 @@
     }
 
     elements.technologyForm.addEventListener("submit", searchTechnologyTags);
+    elements.profileForm.addEventListener("submit", saveUserProfile);
+    elements.targetJobTitle.addEventListener("input", () => {
+        markProfileDirty();
+        updateAnalysisAvailability();
+    });
     elements.githubForm.addEventListener("submit", registerGitHubRepository);
     elements.logoutButton.addEventListener("click", logout);
     elements.startAnalysisButton.addEventListener("click", startAnalysis);
