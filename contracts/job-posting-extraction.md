@@ -1,17 +1,21 @@
 # 채용공고 구조화 추출 계약
 
-상태: **제안 — 코덱스 확인 필요**
+상태: **부분 확정 — API 스키마와 모델 실행 단계는 확정, 텍스트 최대 길이와
+`jobTitle` 누락 처리 정책은 확인 필요**
 
 이 계약은 Java가 사람인·고용24 같은 공식 채용 API에서 확보한 채용공고 원문을 Python이 구조화하는 내부 API를 정의한다. PDF·이력서 계약에는 의존하지 않는다.
 
-- 입력이 PDF가 아니라 **텍스트**다 — 파일 업로드, PII 제거 단계가 없다. 이 텍스트는 사용자가
-  직접 입력하지 않고, [`job-search-tool.md`](job-search-tool.md) 계약으로 Java가 공식 채용 API
+- 입력은 PDF가 아니라 **텍스트**다. 사용자가 직접 입력하지 않고,
+  [`job-search-tool.md`](job-search-tool.md) 계약으로 Java가 공식 채용 API
   (사람인·고용24)에서 받아온다.
-- 채용공고는 공개된 회사 정보이므로 개인정보 가드레일(계약 7절 상당)이 적용되지 않는다.
+- Java는 HTML·스크립트·이메일·전화번호와 채용 담당자 정보를 제거한 최소
+  `sourceText`만 Python에 전달한다. Python은 Gemini 외부 전송 직전에
+  이메일·전화번호 제거를 다시 수행한다.
 
 함께 적용하는 문서:
 
 - [`docs/architecture/llm-providers.md`](../docs/architecture/llm-providers.md)
+- [`job-search-tool.md`](job-search-tool.md)
 - [`docs/architecture/domain-state-ownership.md`](../docs/architecture/domain-state-ownership.md)
 
 ## 1. 실행 경계
@@ -32,6 +36,7 @@
 ### Java
 
 - 사용자 인증과 텍스트 길이·형식을 검증한다.
+- 연락처·담당자 정보와 실행 가능한 HTML·스크립트를 제거한다.
 - `JobPosting`과 `ExtractionTask` 식별자를 생성한다.
 - Python 응답을 계약 스키마로 다시 검증한다.
 - 성공한 결과를 저장하고 사용자의 수정·확정 흐름을 제공한다.
@@ -39,7 +44,7 @@
 ### Python
 
 - 채용공고 원문에서 직무명·필수/우대 기술·담당 업무를 추출한다.
-- 확인할 수 없는 값은 만들지 않고, 근거 없는 항목은 응답에서 제외한다(이력서와 같은 원칙, `app/services/resume_extraction.py`의 `filter_unevidenced_candidates`에 대응).
+- 확인할 수 없는 값은 만들지 않고, 근거 없는 항목은 `filter_unevidenced_candidates`로 응답에서 제외한다.
 - 직무명·기술 추출(Ollama)이 재시도까지 실패하면 Gemini로 폴백한다(7절 참고). 어느 단계를 어느 provider가 처리했는지는 `modelExecutions`로 숨기지 않고 응답에 남긴다.
 - 사용자 계정, 작업 상태를 저장하지 않는다.
 
@@ -82,12 +87,12 @@ X-Request-Id: {uuid}
     "modelExecutions": [
       {
         "stage": "CORE_EXTRACTION",
-        "provider": "ollama",
+        "provider": "OLLAMA",
         "model": "configured-core-model-name"
       },
       {
         "stage": "RESPONSIBILITY_EXTRACTION",
-        "provider": "ollama",
+        "provider": "OLLAMA",
         "model": "configured-responsibility-model-name"
       }
     ]
@@ -97,9 +102,9 @@ X-Request-Id: {uuid}
 }
 ```
 
-`jobTitle`은 확신할 수 없으면 `null`이다(실제 확인됨 — 아래 8절 참고). `piiRemoved` 필드는 없다(개인정보 제거 단계가 없으므로).
+`jobTitle`은 확신할 수 없으면 `null`이다(실제 확인됨 — 아래 8절 참고). `piiRemoved`는 Java가 정리한 최소 `sourceText`를 입력으로 받으므로 응답하지 않는다.
 
-### `modelExecutions` (2026-08-04, PR #45 리뷰 반영 — 코덱스 확인 필요)
+### `modelExecutions`
 
 직무명·기술(`CORE_EXTRACTION`)과 담당 업무(`RESPONSIBILITY_EXTRACTION`)는
 서로 다른 provider·모델이 처리할 수 있다 — 기본 구성도 이미 두 단계가
@@ -111,14 +116,17 @@ X-Request-Id: {uuid}
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `modelExecutions[].stage` | `"CORE_EXTRACTION"` \| `"RESPONSIBILITY_EXTRACTION"` | 어느 추출 단계인지 |
-| `modelExecutions[].provider` | string | 실제로 그 단계를 처리한 provider(`"ollama"` 또는 `"gemini"`) |
+| `modelExecutions[].provider` | `"OLLAMA"` \| `"GEMINI"` | 실제로 그 단계를 처리한 provider |
 | `modelExecutions[].model` | string | 실제로 그 단계를 처리한 모델 이름 |
 
 Ollama가 재시도까지 실패해 Gemini로 폴백한 단계는 그 단계의
-`provider`/`model`만 `"gemini"`/Gemini 모델 이름으로 바뀐다(9절 참고).
+`provider`/`model`만 `"GEMINI"`/Gemini 모델 이름으로 바뀐다(9절 참고).
 배열은 항상 두 항목(`CORE_EXTRACTION`, `RESPONSIBILITY_EXTRACTION`)을
 포함한다 — 실패해서 두 단계 모두 실패 처리된 경우(전체가 502/503으로
 응답) 외에는 값이 비지 않는다.
+각 stage는 성공 응답에 정확히 한 번만 존재하며 중복할 수 없다. 배열의 기본
+순서는 `CORE_EXTRACTION`, `RESPONSIBILITY_EXTRACTION`이지만 Java는 배열
+위치 대신 `stage` 값으로 항목을 구분한다.
 
 ### `JobPostingResponsibility`
 
@@ -167,25 +175,22 @@ Ollama(로컬)가 재시도까지 실패하면 Gemini(외부 API)로 폴백한�
 외부 서비스이므로 "채용공고는 공개 정보라 정책 확인이 필요 없다"는 판단은
 쓰지 않는다 — 이 판단 자체가 근거 없는 자체 추론이었다.
 
-- **확정된 것**: Gemini로 보내기 직전 이메일·전화번호로 보이는 문자열을
+- **확정된 것**: Java는 `job-search-tool.md`에 따라 이메일·전화번호와
+  채용 담당자 정보를 제거한 최소 `sourceText`만 전달한다. Python은
+  Gemini로 보내기 직전 이메일·전화번호로 보이는 문자열을
   `[REDACTED]`로 치환한다(`app/guardrails/contact_info_redaction.py`).
   Ollama는 로컬 실행이라 이 처리를 거치지 않는다.
 - **확인 필요**: 이 치환의 정규식이 실제 채용공고 원문 표본으로 검증되지
-  않았다(변형 표기·비표준 구분자를 놓칠 수 있음). 또한 "연락처만 지우면
-  충분한지, 그 이상(예: 담당자 이름)까지 지워야 하는지"는 계약으로 확정된
-  범위가 아니다 — Java의 [`job-search-tool.md`](job-search-tool.md)가
-  제안한 "sourceText에서 연락처·담당자 정보 제거"가 실제로 적용되면 이
-  중복 방어선의 필요 범위도 다시 판단해야 한다.
+  않았다. 변형 표기·비표준 구분자를 놓칠 수 있으므로 실제 Provider 표본으로
+  Java 전처리와 Python 이중 방어선을 함께 검증해야 한다.
 - Gemini 요청 자체가 무료 등급 요청 제한으로 실패할 수 있다는 점(정책이
   아니라 가용성 문제)은 기존과 동일하게 5절 `MODEL_UNAVAILABLE`로 처리된다.
 
-## 8. 확인 필요 (병합 전 코덱스 검토 요청)
+## 8. 확인 필요
 
-- 이 문서 전체가 **제안**이며, Java 쪽 사용자 API·`JobPosting` 저장 모델과 함께 확정해야 한다.
-- 채용공고 텍스트 최대 길이를 전용 설정으로 확정해야 한다.
+- 채용공고 텍스트 최대 길이는 사람인·고용24 실제 표본 길이를 측정한 뒤 Java와 Python의 동일한 전용 설정으로 확정해야 한다.
 - `jobTitle`이 채워지지 않는 경우(9절 참고) Java가 어떻게 처리할지 — 재시도, 사용자 직접 입력 등.
-- `modelExecutions[].stage`/`provider` 값 이름(`CORE_EXTRACTION` 등, 대문자 스네이크)과 `provider` 값의 대소문자(`"ollama"` 소문자, 기존 `modelProvider` 예시와 동일하게 맞춤)가 실제로 Java 쪽 파싱 규칙과 맞는지.
-- 7절의 Gemini 데이터 전송 범위·연락처 제거 검증 범위.
+- 7절의 Java 전처리와 Python 연락처 제거 정규식을 실제 Provider 원문 표본으로 검증해야 한다.
 
 ## 9. 실제 검증에서 발견한 사항
 

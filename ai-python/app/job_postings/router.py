@@ -1,8 +1,8 @@
 """채용공고 원문을 구조화 추출하는 내부 API다.
 
-계약(제안): contracts/job-posting-extraction.md — Java·프론트와 아직 확정
-전이다. PDF가 아니라 JSON 본문을 받고, 개인정보 제거 단계가 없다(공개
-회사 정보).
+계약(부분 확정): contracts/job-posting-extraction.md. PDF가 아니라 JSON
+본문을 받고, Java가 연락처·담당자 정보를 제거한 최소 sourceText를
+전달한다. Gemini 폴백 직전에는 Python이 연락처 제거를 다시 수행한다.
 """
 
 import functools
@@ -141,7 +141,7 @@ async def extract_job_posting(
                 "modelExecutions": [
                     {
                         "stage": execution.stage.value,
-                        "provider": execution.provider,
+                        "provider": execution.provider.value,
                         "model": execution.model,
                     }
                     for execution in result.model_executions

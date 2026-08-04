@@ -1,8 +1,9 @@
 """채용공고 원문을 LLM으로 구조화한다.
 
-계약: contracts/job-posting-extraction.md (제안) — 개인정보 제거 단계가
-없다(공개 회사 정보). 근거 검증·필터링은 이력서(`resume_extraction.py`)와
-같은 원칙을 쓰되, 페이지 개념이 없어 pageNumber를 다루지 않는다.
+계약: contracts/job-posting-extraction.md (부분 확정). Java가 연락처·담당자
+정보를 제거한 최소 sourceText를 전달하고, Gemini 폴백 직전에는 연락처 제거를
+한 번 더 적용한다. 근거 검증·필터링은 기존 추출 원칙과 같게 적용하되,
+페이지 개념이 없어 pageNumber를 다루지 않는다.
 
 담당 업무(`responsibilities`)는 직무명·기술과 같은 호출로 묻지 않는다 —
 하나로 합쳤을 때 qwen2.5의 evidence 배열 생성이 통째로 비어버리는 회귀가
@@ -189,12 +190,19 @@ class ModelExecutionStage(str, Enum):
     RESPONSIBILITY_EXTRACTION = "RESPONSIBILITY_EXTRACTION"
 
 
+class ModelExecutionProvider(str, Enum):
+    """`modelExecutions[].provider` 계약값이다."""
+
+    OLLAMA = "OLLAMA"
+    GEMINI = "GEMINI"
+
+
 @dataclass
 class ModelExecution:
     """`modelExecutions` 배열의 한 항목 — 어느 단계를 어느 provider·모델이 처리했는지."""
 
     stage: ModelExecutionStage
-    provider: str
+    provider: ModelExecutionProvider
     model: str
 
 
@@ -204,7 +212,7 @@ class JobPostingExtractionResult:
 
     core와 담당 업무는 서로 다른 provider·모델을 쓸 수 있다(기본 설정도
     Ollama 안에서 core=qwen2.5, responsibility=exaone3.5로 이미 다르다).
-    Gemini로 폴백한 단계가 있으면 그 단계만 provider가 "gemini"로 바뀐다 —
+    Gemini로 폴백한 단계가 있으면 그 단계만 provider가 "GEMINI"로 바뀐다 —
     혼합 실행을 단일 modelProvider/modelName 필드로 뭉개 감추지 않는다.
     """
 
@@ -284,9 +292,9 @@ async def extract_job_posting_profile(
     except _OllamaCoreFailure as error:
         responsibilities_error = error
 
-    core_execution_provider = core_provider.provider_name
+    core_execution_provider = ModelExecutionProvider.OLLAMA
     core_execution_model = core_provider.model_name
-    responsibility_execution_provider = responsibility_provider.provider_name
+    responsibility_execution_provider = ModelExecutionProvider.OLLAMA
     responsibility_execution_model = responsibility_provider.model_name
 
     if core_error is not None or responsibilities_error is not None:
@@ -299,18 +307,17 @@ async def extract_job_posting_profile(
                 with measure_stage(fallback_provider.provider_name, StageOperation.EXTRACT_JOB_POSTING):
                     gemini_result = await fallback_provider.extract_job_posting(cleaned_source_text)
                 validate_evidence(gemini_result, cleaned_source_text)
-                fallback_provider_name = fallback_provider.provider_name
                 fallback_model_name = fallback_provider.model_name
         except _GeminiFailure as gemini_error:
             raise (core_error or responsibilities_error) from gemini_error
 
         if core_error is not None:
             core = _core_from_gemini(gemini_result)
-            core_execution_provider = fallback_provider_name
+            core_execution_provider = ModelExecutionProvider.GEMINI
             core_execution_model = fallback_model_name
         if responsibilities_error is not None:
             responsibilities = _responsibilities_from_gemini(gemini_result)
-            responsibility_execution_provider = fallback_provider_name
+            responsibility_execution_provider = ModelExecutionProvider.GEMINI
             responsibility_execution_model = fallback_model_name
 
     merged = _merge_core_and_responsibilities(core, responsibilities)
