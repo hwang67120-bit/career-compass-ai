@@ -43,22 +43,26 @@ public class JobAnalysisWorker {
     private final Work24JobSearchClient work24JobSearchClient;
     private final Work24JobDetailFetcher work24JobDetailFetcher;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
-    private final ObjectMapper objectMapper;
     private final Clock clock;
+
+    /**
+     * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
+     * 만든다 — 이 클라이언트가 쓰는 com.fasterxml.jackson(2.x)과 다른 라이브러리라
+     * 빈 주입으로는 타입이 안 맞는다(확인 필요, 계획 파일 참고).
+     */
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public JobAnalysisWorker(
             JobAnalysisService jobAnalysisService,
             Work24JobSearchClient work24JobSearchClient,
             Work24JobDetailFetcher work24JobDetailFetcher,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
-            ObjectMapper objectMapper,
             Clock clock
     ) {
         this.jobAnalysisService = jobAnalysisService;
         this.work24JobSearchClient = work24JobSearchClient;
         this.work24JobDetailFetcher = work24JobDetailFetcher;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
-        this.objectMapper = objectMapper;
         this.clock = clock;
     }
 

@@ -28,16 +28,20 @@ public class JobAnalysisController {
 
     private final JobAnalysisService jobAnalysisService;
     private final ApiResponseFactory responseFactory;
-    private final ObjectMapper objectMapper;
+
+    /**
+     * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
+     * 만든다 — 저장된 JSON 문자열은 com.fasterxml.jackson(2.x)으로 만들어졌다
+     * (확인 필요, 계획 파일 참고).
+     */
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public JobAnalysisController(
             JobAnalysisService jobAnalysisService,
-            ApiResponseFactory responseFactory,
-            ObjectMapper objectMapper
+            ApiResponseFactory responseFactory
     ) {
         this.jobAnalysisService = jobAnalysisService;
         this.responseFactory = responseFactory;
-        this.objectMapper = objectMapper;
     }
 
     @PostMapping
@@ -88,8 +92,8 @@ public class JobAnalysisController {
                     posting.getCompanyName(),
                     posting.getOriginalJobTitle(),
                     posting.getSourceUrl(),
-                    objectMapper.readTree(posting.getExtractionJson()),
-                    objectMapper.readTree(posting.getModelExecutionsJson())
+                    objectMapper.readValue(posting.getExtractionJson(), Object.class),
+                    objectMapper.readValue(posting.getModelExecutionsJson(), Object.class)
             );
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
