@@ -286,13 +286,10 @@ Ollama 실행 환경(오늘 하루 수백 번의 로드·언로드로 누적된 
   라우터가 이미 처리하는 예외 타입(`OllamaUnavailableError`/`OllamaResponseError`/
   `JobPostingEvidenceValidationError`)을 그대로 유지해서 새 예외 종류를 추가로 처리할
   필요가 없게 했다.
-- 채용공고는 공개 회사 정보라 개인정보 가드레일이 적용되지 않으므로(계약 서문), 이력서·
-  희망 직무와 달리 Gemini 무료 등급 데이터 제한 정책 확인 없이 실사용 폴백으로 쓸 수
-  있다고 판단했다(요청 제한으로 이따금 실패하는 건 별개 확인 필요).
 - 계약 응답의 `modelProvider`/`modelName`이 실제로 core를 만든 provider를 반영하도록
   `extract_job_posting_profile`의 반환 타입을 `JobPostingExtractionResult`(추출 결과 +
   `core_provider_name`/`core_model_name`)로 바꿨다 — Gemini가 core를 대신 채웠는데
-  응답에 "ollama"라고 남는 걸 막았다. 담당 업무 쪼가 어느 provider에서 왔는지는 계약이
+  응답에 "ollama"라고 남는 걸 막았다. 담당 업무 쪽가 어느 provider에서 왔는지는 계약이
   아직 모델 1개만 가정해서 응답에 안 드러난다(기존에 이미 확인 필요로 남긴 항목).
 
 **구현 위치**: `app/providers/gemini_client.py`(신규, DI 팩토리), `app/services/job_posting_extraction.py`
@@ -309,7 +306,52 @@ Ollama 실행 환경(오늘 하루 수백 번의 로드·언로드로 누적된 
   정말 서버 프로세스 누적 상태 때문인지 확정
 - Gemini 무료 등급 요청 제한으로 폴백까지 실패하는 빈도를 실제 트래픽으로 확인 필요
 - 계약(`job-posting-extraction.md`)의 `modelProvider`가 "gemini"일 수 있다는 걸 문서에
-  반영할지, 담당 업무 쪼 provider 정보를 응답에 추가할지는 Java·사용자 확인 필요
+  반영할지, 담당 업무 쪽 provider 정보를 응답에 추가할지는 Java·사용자 확인 필요
+
+### 정정 및 개선 (2026-08-04, PR #45 리뷰 반영)
+
+위 절의 "채용공고는 공개 회사 정보라 개인정보 가드레일이 적용되지 않으므로,
+이력서·희망 직무와 달리 Gemini 무료 등급 데이터 제한 정책 확인 없이 실사용
+폴백으로 쓸 수 있다"는 판단과, 위 "구현 완료" 표기는 부정확했다 — 실제
+리뷰(코덱스)에서 이 판단 자체가 근거 없는 자체 추론이라는 지적을 받았고,
+"공개 정보"라는 사실이 "Gemini(외부 서비스)에 아무거나 보내도 된다"는
+결론으로 이어지지 않는다. 다음과 같이 고쳤다.
+
+1. **Gemini 데이터 전송 판단 제거·방어선 추가**: "정책 확인 불필요" 판단을
+   코드 주석(`job_posting_extraction.py`, `gemini_client.py`)과 계약
+   (`contracts/job-posting-extraction.md` 7절)에서 모두 뺐다. 대신 Gemini에
+   보내기 직전 이메일·전화번호를 `[REDACTED]`로 치환한다
+   (`app/guardrails/contact_info_redaction.py`, 신규) — Ollama는 로컬 실행이라
+   이 처리를 거치지 않는다. **실제 데이터 전송 범위(이 이상 무엇을 더 지워야
+   하는지, Java의 `job-search-tool.md`가 sourceText 단계에서 미리 지운
+   뒤라면 이 방어선이 여전히 필요한지)는 여전히 확인 필요다** — 정규식
+   커버리지도 실제 채용공고 표본으로 검증되지 않았다.
+2. **Gemini를 선택적 의존성으로 변경**: `GEMINI_API_KEY` 등이 없으면
+   `GeminiSettings()` 생성이 예외를 던지던 걸, `get_gemini_settings_if_configured`가
+   `None`을 반환하도록 바꿨다. 라우터는 Ollama가 실제로 실패했을 때만(그리고
+   Gemini 설정이 있을 때만) `build_gemini_job_posting_fallback_provider`로
+   클라이언트를 지연 생성한다 — 매 요청마다 무조건 만들지 않고, `async with`가
+   끝나면 `client.close()`로 정리한다. Gemini가 없으면 기존과 동일하게 Ollama
+   예외가 그대로 `MODEL_UNAVAILABLE`/`MODEL_RESPONSE_INVALID`로 응답한다.
+3. **혼합 실행 이력을 숨기지 않음**: 단일 `modelProvider`/`modelName` 필드를
+   `modelExecutions`(단계별 `stage`/`provider`/`model` 배열, `CORE_EXTRACTION`/
+   `RESPONSIBILITY_EXTRACTION`)로 바꿨다 — core와 담당 업무가 이미 기본
+   구성에서도 서로 다른 Ollama 모델을 쓰고 있어서, 이 혼합은 Gemini 폴백
+   여부와 무관하게 항상 존재했던 정보다. 계약(`contracts/job-posting-extraction.md`
+   4·7·8절)을 먼저 고치고 Python 구현·테스트를 맞췄다.
+4. **Gemini 프롬프트에 담당 업무 규칙 명시**: 기존 Gemini 프롬프트가
+   `responsibilities` 필드를 스키마에는 포함하면서도 추출 규칙(근거 필수,
+   자격요건과 구분, 근거 없으면 빈 배열)을 전혀 언급하지 않고 있었다 —
+   Ollama 쪽 담당 업무 전용 프롬프트와 같은 수준으로 명시했다.
+
+**검증**: 서비스 단위 테스트(연락처 제거 확인 포함, 혼합 실행 케이스 2건
+추가), 가드레일 단위 테스트 신규(`tests/guardrails/test_contact_info_redaction.py`),
+API 테스트(Gemini 미설정 시 Ollama만으로 성공, 미설정+Ollama 실패 시
+503 두 경우 모두 추가). 실제 Gemini 연결 테스트(`test_extract_falls_back_to_gemini_when_ollama_unavailable`)는
+`pytest.mark.real_gemini`로 분리해 기본 `pytest` 실행에서 제외하고
+`pytest -m real_gemini`로만 실행하도록 `pyproject.toml`에 마커를 등록했다 —
+필드 존재 여부만이 아니라 실제 값(`requiredSkills`에 "Python" 포함)과
+evidenceId 연결까지 검증하도록 깊게 고쳤다.
 
 ## 기술 태그 정규화 (2026-07-31 사용자 확인)
 

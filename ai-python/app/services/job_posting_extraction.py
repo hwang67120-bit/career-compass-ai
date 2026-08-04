@@ -14,16 +14,33 @@
 2026-08-04 추가 — Gemini 폴백: Ollama(로컬 서버)가 재시도까지 실패하면
 Gemini로 폴백한다. 오늘 채용공고 비교 평가에서 Ollama 통과율이 이전보다
 크게 떨어지는 현상이 실제로 있었는데, 같은 fixture를 Gemini로 교차
-검증하면 매번 깨끗하게 통과했다 — Ollama 로컬 서버 쪼 문제로 보인다.
-채용공고는 공개 회사 정보라 개인정보 가드레일이 적용되지 않으므로
-(계약 서문), 이력서·희망 직무와 달리 Gemini 무료 등급 데이터 제한
-정책 확인 없이 폴백으로 쓸 수 있다(요청 제한으로 이따금 실패하는 건
-별개 확인 필요).
+검증하면 매번 깨끗하게 통과했다 — Ollama 로컬 서버 쪽 문제로 보인다.
+
+2026-08-04 PR #45 리뷰 반영 — 아래 세 가지를 고쳤다:
+
+1. Gemini는 외부 서비스다. "채용공고는 공개 정보라 Gemini 무료 등급 데이터
+   정책 확인이 필요 없다"는 판단은 근거 없는 자체 추론이었다 — 지금은 이
+   판단을 쓰지 않는다. 실제 데이터 전송 범위(무엇을 어디까지 보내도 되는지)는
+   아직 계약으로 확정되지 않았다(확인 필요). 대신 최소한의 방어선으로,
+   Gemini에 보내기 직전 이메일·전화번호를 제거한다
+   (`app/guardrails/contact_info_redaction.py`) — Ollama는 로컬 실행이라
+   외부 전송이 아니므로 이 처리를 거치지 않는다.
+2. Gemini 설정(`GEMINI_API_KEY` 등)이 없어도 Ollama만으로 이 API가 정상
+   동작해야 한다. `fallback_provider_factory`는 실제 Ollama 실패가
+   확인된 뒤에만 호출되는 지연 생성 콜백이다 — 매 요청마다 Gemini 클라이언트를
+   미리 만들지 않는다(`app/providers/gemini_client.py`).
+3. 직무명·기술(core)과 담당 업무 중 어느 쪽이 어느 provider·모델에서
+   나왔는지를 숨기지 않는다. 응답은 단일 `modelProvider`/`modelName` 대신
+   `JobPostingExtractionResult.model_executions`(단계별 provider·모델 목록)를
+   반환한다 — core/responsibility가 서로 다른 Ollama 모델을 쓰는 기존
+   구성에서도 이미 숨겨져 있던 정보다.
 """
 
 from dataclasses import dataclass
+from enum import Enum
 
-from app.providers.gemini import GeminiProvider, GeminiResponseError, GeminiUnavailableError
+from app.guardrails.contact_info_redaction import redact_contact_info
+from app.providers.gemini import GeminiResponseError, GeminiUnavailableError
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
 from app.schemas.job_posting import (
     JobPostingCoreExtraction,
@@ -165,20 +182,34 @@ async def _extract_responsibilities_with_retry(
     return candidate
 
 
+class ModelExecutionStage(str, Enum):
+    """`modelExecutions[].stage` 계약값이다. 자유 문자열을 받지 않는다."""
+
+    CORE_EXTRACTION = "CORE_EXTRACTION"
+    RESPONSIBILITY_EXTRACTION = "RESPONSIBILITY_EXTRACTION"
+
+
+@dataclass
+class ModelExecution:
+    """`modelExecutions` 배열의 한 항목 — 어느 단계를 어느 provider·모델이 처리했는지."""
+
+    stage: ModelExecutionStage
+    provider: str
+    model: str
+
+
 @dataclass
 class JobPostingExtractionResult:
-    """추출 결과와 실제로 직무명·기술(core)을 만든 provider 정보다.
+    """추출 결과와 단계별(core/responsibility) 실행 provider·모델 이력이다.
 
-    Ollama가 실패해 Gemini로 폴백하면 계약 응답의 modelProvider/modelName이
-    실제로 근거를 만든 모델(Gemini)을 가리켜야 한다 — Ollama가 실패했는데도
-    응답에 "ollama"라고 남으면 실제와 다른 정보를 주는 것이다. 계약이 아직
-    모델 1개만 가정하므로(확인 필요), 담당 업무 쪼가 어느 provider에서 왔는지는
-    이 필드에 안 드러난다.
+    core와 담당 업무는 서로 다른 provider·모델을 쓸 수 있다(기본 설정도
+    Ollama 안에서 core=qwen2.5, responsibility=exaone3.5로 이미 다르다).
+    Gemini로 폴백한 단계가 있으면 그 단계만 provider가 "gemini"로 바뀐다 —
+    혼합 실행을 단일 modelProvider/modelName 필드로 뭉개 감추지 않는다.
     """
 
     extraction: JobPostingExtraction
-    core_provider_name: str
-    core_model_name: str
+    model_executions: list[ModelExecution]
 
 
 def _core_from_gemini(gemini_result: JobPostingExtraction) -> JobPostingCoreExtraction:
@@ -204,7 +235,7 @@ async def extract_job_posting_profile(
     source_text: str,
     core_provider: OllamaProvider,
     responsibility_provider: OllamaProvider | None = None,
-    fallback_provider: GeminiProvider | None = None,
+    fallback_provider_factory=None,
 ) -> JobPostingExtractionResult:
     """채용공고 원문을 provider로 구조화 추출하고 근거를 검증·정리한다.
 
@@ -219,14 +250,22 @@ async def extract_job_posting_profile(
     근거 검증이 실패하는 현상(세션 오염)을 실제로 확인했고, 언로드 직후 첫
     요청은 재현 시험에서 9/9 성공했다(2026-08-03, `docs/current-work.md`).
 
-    두 호출이 재시도까지 실패하면 `fallback_provider`(Gemini)로 폴백한다
-    (2026-08-04, 위 모듈 docstring 참고) — 실패한 쪸만 채운다. 둘 다
-    실패했으면 Gemini를 한 번만 호출해서 두 쪽 다 채운다(요청 수를
-    아끼기 위해). `fallback_provider`가 없거나 Gemini도 실패하면 Ollama
-    쪼 원래 예외를 그대로 전달한다 — 실패를 감추지 않는다.
+    두 호출이 재시도까지 실패하면 `fallback_provider_factory`(Gemini)로
+    폴백한다(2026-08-04, 위 모듈 docstring 참고) — 실패한 쪽만 채운다.
+    둘 다 실패했으면 Gemini를 한 번만 호출해서 두 쪽 다 채운다(요청 수를
+    아끼기 위해). `fallback_provider_factory`가 없거나(Gemini 설정 자체가
+    없는 경우 포함) Gemini도 실패하면 Ollama 쪽 원래 예외를 그대로 전달한다
+    — 실패를 감추지 않는다.
+
+    입력:
+        fallback_provider_factory: 인자 없이 호출하면 `GeminiProvider`를
+            내주는 비동기 컨텍스트 매니저를 반환하는 콜백(예:
+            `functools.partial(build_gemini_job_posting_fallback_provider, settings)`).
+            Ollama 쪽이 실제로 실패했을 때만 호출된다 — Gemini 설정이 없어도
+            이 함수가 정상 동작해야 하므로, 미리 provider 인스턴스를 만들어
+            넘기지 않고 지연 생성 콜백만 받는다.
     """
     responsibility_provider = responsibility_provider or core_provider
-    core_provider_used: OllamaProvider | GeminiProvider = core_provider
 
     core: JobPostingCoreExtraction | None = None
     responsibilities: JobPostingResponsibilityExtraction | None = None
@@ -245,27 +284,49 @@ async def extract_job_posting_profile(
     except _OllamaCoreFailure as error:
         responsibilities_error = error
 
+    core_execution_provider = core_provider.provider_name
+    core_execution_model = core_provider.model_name
+    responsibility_execution_provider = responsibility_provider.provider_name
+    responsibility_execution_model = responsibility_provider.model_name
+
     if core_error is not None or responsibilities_error is not None:
-        if fallback_provider is None:
+        if fallback_provider_factory is None:
             raise core_error or responsibilities_error
 
+        cleaned_source_text = redact_contact_info(source_text)
         try:
-            with measure_stage(fallback_provider.provider_name, StageOperation.EXTRACT_JOB_POSTING):
-                gemini_result = await fallback_provider.extract_job_posting(source_text)
-            validate_evidence(gemini_result, source_text)
+            async with fallback_provider_factory() as fallback_provider:
+                with measure_stage(fallback_provider.provider_name, StageOperation.EXTRACT_JOB_POSTING):
+                    gemini_result = await fallback_provider.extract_job_posting(cleaned_source_text)
+                validate_evidence(gemini_result, cleaned_source_text)
+                fallback_provider_name = fallback_provider.provider_name
+                fallback_model_name = fallback_provider.model_name
         except _GeminiFailure as gemini_error:
             raise (core_error or responsibilities_error) from gemini_error
 
         if core_error is not None:
             core = _core_from_gemini(gemini_result)
-            core_provider_used = fallback_provider
+            core_execution_provider = fallback_provider_name
+            core_execution_model = fallback_model_name
         if responsibilities_error is not None:
             responsibilities = _responsibilities_from_gemini(gemini_result)
+            responsibility_execution_provider = fallback_provider_name
+            responsibility_execution_model = fallback_model_name
 
     merged = _merge_core_and_responsibilities(core, responsibilities)
     extraction = filter_unevidenced_candidates(merged)
     return JobPostingExtractionResult(
         extraction=extraction,
-        core_provider_name=core_provider_used.provider_name,
-        core_model_name=core_provider_used.model_name,
+        model_executions=[
+            ModelExecution(
+                stage=ModelExecutionStage.CORE_EXTRACTION,
+                provider=core_execution_provider,
+                model=core_execution_model,
+            ),
+            ModelExecution(
+                stage=ModelExecutionStage.RESPONSIBILITY_EXTRACTION,
+                provider=responsibility_execution_provider,
+                model=responsibility_execution_model,
+            ),
+        ],
     )

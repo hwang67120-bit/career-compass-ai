@@ -5,6 +5,7 @@
 회사 정보).
 """
 
+import functools
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header
@@ -16,13 +17,16 @@ from app.job_postings.settings import (
     JobPostingExtractionSettings,
     get_job_posting_extraction_settings,
 )
-from app.providers.gemini import GeminiProvider
-from app.providers.gemini_client import get_gemini_job_posting_fallback_provider
+from app.providers.gemini_client import (
+    build_gemini_job_posting_fallback_provider,
+    get_gemini_settings_if_configured,
+)
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
 from app.providers.ollama_client import (
     get_ollama_job_posting_provider,
     get_ollama_job_posting_responsibility_provider,
 )
+from app.providers.settings import GeminiSettings
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
@@ -61,7 +65,7 @@ async def extract_job_posting(
     ollama_responsibility_provider: OllamaProvider = Depends(
         get_ollama_job_posting_responsibility_provider
     ),
-    gemini_fallback_provider: GeminiProvider = Depends(get_gemini_job_posting_fallback_provider),
+    gemini_settings: GeminiSettings | None = Depends(get_gemini_settings_if_configured),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
 
@@ -92,12 +96,18 @@ async def extract_job_posting(
             ),
         )
 
+    fallback_provider_factory = (
+        functools.partial(build_gemini_job_posting_fallback_provider, gemini_settings)
+        if gemini_settings is not None
+        else None
+    )
+
     try:
         result = await extract_job_posting_profile(
             request.source_text,
             ollama_provider,
             ollama_responsibility_provider,
-            gemini_fallback_provider,
+            fallback_provider_factory,
         )
     except OllamaUnavailableError:
         return JSONResponse(
@@ -128,8 +138,14 @@ async def extract_job_posting(
                 "extractionTaskId": request.extraction_task_id,
                 "status": "EXTRACTED",
                 "extraction": result.extraction.model_dump(by_alias=True),
-                "modelProvider": result.core_provider_name,
-                "modelName": result.core_model_name,
+                "modelExecutions": [
+                    {
+                        "stage": execution.stage.value,
+                        "provider": execution.provider,
+                        "model": execution.model,
+                    }
+                    for execution in result.model_executions
+                ],
             },
         ),
     )

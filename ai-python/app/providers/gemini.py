@@ -22,12 +22,15 @@ _JOB_POSTING_EXTRACTION_SYSTEM_PROMPT = (
     "제공된 채용 공고에 직접 존재하는 정보만 추출한다. "
     "확인할 수 없는 값은 만들지 않고 null 또는 빈 배열로 남긴다. "
     "반드시 evidence 배열부터 먼저 전부 채운 다음 jobTitle, requiredSkills, "
-    "preferredSkills를 채운다. "
+    "preferredSkills, responsibilities를 채운다. "
+    "responsibilities는 '담당 업무'·'주요 업무'처럼 이 직무가 실제로 하는 일을 서술한 "
+    "부분만 담는다. 자격 요건·기술·우대 사항·근무 조건·회사 소개는 담당 업무가 "
+    "아니므로 넣지 않는다. 확인할 수 없으면 만들지 않고 빈 배열로 남긴다. "
     "sourceText는 반드시 원문에서 이어져 있는 부분을 글자 하나까지 그대로 복사한 것이어야 한다. "
     "요약·재구성하지 않는다. 정확히 이어 붙여 복사할 수 없으면 그 항목은 만들지 않는다. "
-    "requiredSkills, preferredSkills의 모든 항목은 evidenceIds에 evidence 배열에 "
-    "실제로 존재하는 evidenceId를 하나 이상 채워 넣는다. jobTitle을 채웠으면 "
-    "jobTitleEvidenceIds도 채운다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
+    "requiredSkills, preferredSkills, responsibilities의 모든 항목은 evidenceIds에 "
+    "evidence 배열에 실제로 존재하는 evidenceId를 하나 이상 채워 넣는다. jobTitle을 "
+    "채웠으면 jobTitleEvidenceIds도 채운다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
 )
 
 class GeminiUnavailableError(RuntimeError):
@@ -54,7 +57,7 @@ class GeminiProvider:
             source_text: 텍스트 추출과 안전 검사가 끝난 채용 공고 원문.
 
         반환:
-            직무명, 필수·우대 기술과 원문 근거가 포함된 구조화 결과.
+            직무명, 필수·우대 기술, 담당 업무와 원문 근거가 포함된 구조화 결과.
 
         예외:
             GeminiUnavailableError: 연결 실패 또는 Gemini 서버 오류.

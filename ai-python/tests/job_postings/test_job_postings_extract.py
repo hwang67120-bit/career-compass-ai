@@ -1,11 +1,11 @@
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app.guardrails.settings import get_internal_auth_settings
 from app.job_postings.settings import get_job_posting_extraction_settings
 from app.main import app
-from app.providers.gemini import GeminiUnavailableError
-from app.providers.gemini_client import get_gemini_job_posting_fallback_provider
+from app.providers.gemini_client import get_gemini_settings_if_configured
 from app.providers.ollama import OllamaProvider
 from app.providers.ollama_client import get_ollama_job_posting_provider
 from app.providers.settings import OllamaSettings
@@ -33,6 +33,17 @@ def _valid_body(**overrides: str) -> dict:
     }
     body.update(overrides)
     return body
+
+
+def _unreachable_ollama_provider():
+    async def _provider():
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:1",
+            timeout=httpx.Timeout(connect=1, read=1, write=1, pool=1),
+        ) as broken_client:
+            yield OllamaProvider(client=broken_client, model_name=OllamaSettings().ollama_model)
+
+    return _provider
 
 
 def test_extract_rejects_missing_internal_token() -> None:
@@ -112,41 +123,61 @@ def test_extract_succeeds_with_real_ollama(caplog) -> None:
     assert data["jobPostingId"] == VALID_JOB_POSTING_ID
     assert data["extractionTaskId"] == VALID_EXTRACTION_TASK_ID
     assert data["status"] == "EXTRACTED"
-    assert data["modelProvider"] == "ollama"
     assert "requiredSkills" in data["extraction"]
+    assert "responsibilities" in data["extraction"]
     assert "evidence" in data["extraction"]
+
+    executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
+    assert set(executions_by_stage) == {"CORE_EXTRACTION", "RESPONSIBILITY_EXTRACTION"}
+    for execution in executions_by_stage.values():
+        assert execution["provider"] in {"ollama", "gemini"}
+        assert execution["model"]
 
     assert token not in response.text
     assert token not in caplog.text
 
 
+def test_extract_succeeds_with_real_ollama_when_gemini_not_configured() -> None:
+    """GEMINI_API_KEY 등이 없어도(2026-08-04 PR #45 리뷰) 실제 Ollama만으로
+    API가 정상 동작해야 한다 — Gemini 설정 부재를 예외로 다루지 않는다."""
+
+    def unconfigured_gemini():
+        return None
+
+    app.dependency_overrides[get_gemini_settings_if_configured] = unconfigured_gemini
+    try:
+        response = client.post(
+            "/internal/v1/job-postings/extract",
+            headers={"X-Internal-Token": _valid_token()},
+            json=_valid_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(get_gemini_settings_if_configured, None)
+
+    assert response.status_code == 200, (
+        "Gemini 설정 없이도 실제 Ollama 성공을 기대했다. Ollama 실행 여부를 확인해라. "
+        f"응답: {response.text}"
+    )
+    data = response.json()["data"]
+    executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
+    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "ollama"
+    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] == "ollama"
+
+
 def test_extract_reports_model_unavailable() -> None:
     """존재하지 않는 포트로 실제 연결 실패를 유도해 503을 확인한다(mock 아님).
 
-    Gemini 폴백(2026-08-04)도 함께 실패하도록 오버라이드한다 — 안 그러면
-    Ollama가 죽어도 Gemini가 대신 성공해서 200이 나와, "둘 다 죽었을 때"를
-    검증하지 못한다.
+    Gemini 설정도 없는 것으로 오버라이드한다 — 안 그러면 Ollama가 죽어도
+    실제 Gemini가 대신 성공해서 200이 나와, "폴백도 없을 때"를 검증하지
+    못한다. Gemini 설정 부재는 이제 예외가 아니라 `None`으로 표현되므로
+    (2026-08-04 PR #45 리뷰), 오버라이드도 단순히 `None`을 반환하면 된다.
     """
 
-    async def unreachable_provider():
-        async with httpx.AsyncClient(
-            base_url="http://127.0.0.1:1",
-            timeout=httpx.Timeout(connect=1, read=1, write=1, pool=1),
-        ) as broken_client:
-            yield OllamaProvider(client=broken_client, model_name=OllamaSettings().ollama_model)
+    def unconfigured_gemini():
+        return None
 
-    async def unavailable_gemini_fallback():
-        class _AlwaysFailsGemini:
-            provider_name = "gemini"
-            model_name = "unavailable"
-
-            async def extract_job_posting(self, source_text: str):
-                raise GeminiUnavailableError("테스트: Gemini도 사용할 수 없음")
-
-        yield _AlwaysFailsGemini()
-
-    app.dependency_overrides[get_ollama_job_posting_provider] = unreachable_provider
-    app.dependency_overrides[get_gemini_job_posting_fallback_provider] = unavailable_gemini_fallback
+    app.dependency_overrides[get_ollama_job_posting_provider] = _unreachable_ollama_provider()
+    app.dependency_overrides[get_gemini_settings_if_configured] = unconfigured_gemini
     try:
         response = client.post(
             "/internal/v1/job-postings/extract",
@@ -155,25 +186,24 @@ def test_extract_reports_model_unavailable() -> None:
         )
     finally:
         app.dependency_overrides.pop(get_ollama_job_posting_provider, None)
-        app.dependency_overrides.pop(get_gemini_job_posting_fallback_provider, None)
+        app.dependency_overrides.pop(get_gemini_settings_if_configured, None)
 
     assert response.status_code == 503
     assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
 
 
+@pytest.mark.real_gemini
 def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
-    """Ollama가 죽어도 Gemini 폴백이 성공하면 200을 반환하고 modelProvider가
-    gemini로 표시된다(2026-08-04) — 실제 응답에 어느 모델이 실제로 근거를
-    만들었는지 정직하게 남긴다."""
+    """Ollama가 죽어도 실제 Gemini 폴백이 성공하면 200을 반환하고
+    `modelExecutions`의 CORE_EXTRACTION이 gemini로 표시된다(2026-08-04) —
+    어느 단계를 어느 provider가 처리했는지 숨기지 않는다.
 
-    async def unreachable_provider():
-        async with httpx.AsyncClient(
-            base_url="http://127.0.0.1:1",
-            timeout=httpx.Timeout(connect=1, read=1, write=1, pool=1),
-        ) as broken_client:
-            yield OllamaProvider(client=broken_client, model_name=OllamaSettings().ollama_model)
+    실제 Gemini API를 호출하는 테스트라 기본 `pytest` 실행에서 제외된다
+    (`pytest -m real_gemini`로 명시 실행, 2026-08-04 PR #45 리뷰). `GEMINI_API_KEY`
+    설정이 필요하다.
+    """
 
-    app.dependency_overrides[get_ollama_job_posting_provider] = unreachable_provider
+    app.dependency_overrides[get_ollama_job_posting_provider] = _unreachable_ollama_provider()
     try:
         response = client.post(
             "/internal/v1/job-postings/extract",
@@ -188,5 +218,21 @@ def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
         f"응답: {response.text}"
     )
     data = response.json()["data"]
-    assert data["modelProvider"] == "gemini"
-    assert "requiredSkills" in data["extraction"]
+    extraction = data["extraction"]
+
+    executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
+    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "gemini"
+    assert executions_by_stage["CORE_EXTRACTION"]["model"]
+    # 담당 업무는 core와 독립적으로 재시도되므로 Ollama에서 성공했을 수도,
+    # 실패해 같은 Gemini 호출로 채워졌을 수도 있다 — 둘 다 유효한 결과다.
+    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] in {"ollama", "gemini"}
+
+    assert extraction["requiredSkills"], "실제 텍스트에 있는 Python 요구사항이 채워져야 한다"
+    required_skill_names = {skill["rawName"] for skill in extraction["requiredSkills"]}
+    assert "Python" in required_skill_names
+
+    evidence_ids = {e["evidenceId"] for e in extraction["evidence"]}
+    for skill in extraction["requiredSkills"]:
+        assert skill["evidenceIds"], "근거 없는 기술이 남아 있으면 안 된다"
+        for evidence_id in skill["evidenceIds"]:
+            assert evidence_id in evidence_ids
