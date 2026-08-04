@@ -23,7 +23,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "github.api.read-timeout=8s",
         "python.worker.internal-token=integration-test-token",
         "technology-tag.policy.max-query-length=50",
-        "technology-tag.policy.max-search-results=30"
+        "technology-tag.policy.max-search-results=30",
+        "work24.api.auth-key=integration-test-key"
 })
 class TechnologyTagSearchIntegrationTest {
 
