@@ -9,7 +9,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.documents.router import router as documents_router
 from app.health.router import router as health_router
 from app.job_postings.router import router as job_postings_router
 from app.providers.ollama_process import ensure_ollama_running
@@ -43,7 +42,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(health_router)
-app.include_router(documents_router)
 app.include_router(job_postings_router)
 
 

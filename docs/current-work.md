@@ -343,10 +343,15 @@ Python 모델 이름은 현재 연동 검증용 임시값이며 실제 채택 �
 `document-extraction.md`를 **폐기**로 표시하고 `DocumentController` 등 PDF 업로드 관련
 Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 없이 기술 태그+공개 GitHub
 저장소만으로 간다. `contracts/document-extraction.md`는 이력 확인용으로만 남는다.
-**Python 쪽 PDF 구현(`app/documents/`, `app/services/pdf_extraction.py`,
-`app/services/resume_extraction.py`, 개인정보 제거 등)은 Java가 더 이상 호출하지 않지만,
-아직 삭제하지 않았다** — Python 담당이 별도로 정리 범위·시점을 정할 때까지 코드·테스트를
-유지한다(`Python 다음 작업` 참고).
+
+**2026-08-03 Python 쪽도 정리 완료(사용자 확인)**: `app/documents/`,
+`app/services/pdf_extraction.py`, `app/services/resume_extraction.py`,
+`app/guardrails/personal_information_sanitizer.py`, `app/schemas/profile_candidate.py`,
+`app/schemas/document.py`, `evaluation/model_comparison.py`, `tests/fixtures/resumes/`와
+관련 테스트 전부를 삭제했다. `OllamaProvider`/`GeminiProvider`의 `extract_resume_profile`,
+`ollama_resume_model` 설정, `main.py`의 documents 라우터 등록도 함께 제거했다(공유 파일은
+삭제 대신 해당 부분만 편집). 삭제 전 별도 조사로 교차 참조를 전부 확인했고, 삭제 후 전체
+테스트 146개 통과(1 xfail은 기존에 알던 것)로 회귀 없음을 확인했다.
 
 1번(채용공고 구조화 추출 API 확정)은 채용공고 원문(`sourceText`)을 어떻게 확보하는지와 맞물려 있다.
 그 원문 확보 방법이 끝나기 전까지 Python은 임시 샘플 채용공고 텍스트로 임베딩·유사도·재정렬을

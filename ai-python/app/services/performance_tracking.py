@@ -40,7 +40,6 @@ class StageOperation(str, Enum):
 
     EXTRACT_JOB_POSTING = "extract_job_posting"
     EXTRACT_JOB_POSTING_RESPONSIBILITIES = "extract_job_posting_responsibilities"
-    EXTRACT_RESUME_PROFILE = "extract_resume_profile"
     GENERATE_JOB_SEARCH_KEYWORDS = "generate_job_search_keyword_suggestions"
     EMBED_USER_PROFILE = "embed_user_profile"
     EMBED_JOB_POSTING = "embed_job_posting"

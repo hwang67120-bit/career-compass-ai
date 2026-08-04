@@ -26,17 +26,6 @@ def _build_client(settings: OllamaSettings) -> httpx.AsyncClient:
     )
 
 
-async def get_ollama_resume_provider():
-    """`documents/extract`가 쓰는, 이력서 전용 모델(`OLLAMA_RESUME_MODEL`) provider다.
-
-    요청이 끝나면 클라이언트를 닫는다(`async with`) — 연결을 프로세스
-    전체에서 들고 있지 않는다.
-    """
-    settings = OllamaSettings()
-    async with _build_client(settings) as client:
-        yield OllamaProvider(client=client, model_name=settings.ollama_resume_model)
-
-
 async def get_ollama_job_posting_provider():
     """`job-postings/extract`가 쓰는, 채용공고 직무명·기술용 모델(`OLLAMA_MODEL`) provider다."""
     settings = OllamaSettings()
