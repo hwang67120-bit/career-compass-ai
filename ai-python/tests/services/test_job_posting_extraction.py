@@ -1,5 +1,6 @@
 import pytest
 
+from app.providers.gemini import GeminiUnavailableError
 from app.schemas.job_posting import (
     JobPostingCoreExtraction,
     JobPostingEvidence,
@@ -54,6 +55,7 @@ class _RetryFakeProvider:
     """
 
     provider_name = "fake"
+    model_name = "fake-model"
 
     def __init__(
         self,
@@ -80,6 +82,28 @@ class _RetryFakeProvider:
 
     async def unload_model(self) -> None:
         self.unload_call_count += 1
+
+
+class _FakeGeminiProvider:
+    """Ollama가 재시도까지 실패했을 때 타는 Gemini 폴백 경로만 검증하는 가짜 provider."""
+
+    provider_name = "gemini"
+    model_name = "fake-gemini-model"
+
+    def __init__(
+        self,
+        response: JobPostingExtraction | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._response = response
+        self._error = error
+        self.call_count = 0
+
+    async def extract_job_posting(self, source_text: str) -> JobPostingExtraction:
+        self.call_count += 1
+        if self._error is not None:
+            raise self._error
+        return self._response
 
 
 def test_validate_evidence_rejects_hallucinated_source_text() -> None:
@@ -226,14 +250,17 @@ async def test_extract_job_posting_profile_retries_core_once_after_unload_on_evi
     assert provider.unload_call_count == 1
     assert provider.core_call_count == 2
     assert provider.responsibility_call_count == 1
-    assert [s.raw_name for s in result.required_skills] == ["Python"]
+    assert [s.raw_name for s in result.extraction.required_skills] == ["Python"]
+    assert result.core_provider_name == "fake"
+    assert result.core_model_name == "fake-model"
 
 
 @pytest.mark.asyncio
-async def test_extract_job_posting_profile_raises_when_core_retry_also_fails() -> None:
-    """재시도까지 실패하면(세션과 무관한 진짜 모델 결함) 예외를 그대로 전달한다 —
-    재시도가 진짜 결함을 감추지 않는다. 담당 업무 호출은 core가 실패했으니
-    아예 실행되지 않아야 한다."""
+async def test_extract_job_posting_profile_raises_when_core_retry_also_fails_and_no_fallback() -> None:
+    """재시도까지 실패하고 폴백 provider가 없으면(2026-08-03 결정) 예외를 그대로
+    전달한다 — 재시도가 진짜 결함을 감추지 않는다. 담당 업무 호출은 core 결과와
+    무관하게 독립적으로 시도된다(둘 다 실패했을 때 Gemini를 한 번만 부르기
+    위한 구조, 2026-08-04)."""
     provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _HALLUCINATED_CORE])
 
     with pytest.raises(JobPostingEvidenceValidationError):
@@ -241,7 +268,7 @@ async def test_extract_job_posting_profile_raises_when_core_retry_also_fails() -
 
     assert provider.unload_call_count == 1
     assert provider.core_call_count == 2
-    assert provider.responsibility_call_count == 0
+    assert provider.responsibility_call_count == 1
 
 
 @pytest.mark.asyncio
@@ -280,4 +307,58 @@ async def test_extract_job_posting_profile_retries_responsibilities_independentl
     assert provider.core_call_count == 1
     assert provider.responsibility_call_count == 2
     assert provider.unload_call_count == 1
-    assert [r.raw_text for r in result.responsibilities] == ["백엔드 개발"]
+    assert [r.raw_text for r in result.extraction.responsibilities] == ["백엔드 개발"]
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_falls_back_to_gemini_when_ollama_fails() -> None:
+    """2026-08-04 결정 — Ollama가 재시도까지 실패하면 Gemini로 폴백한다. 채용공고는
+    공개 정보라 개인정보 가드레일이 적용되지 않으므로 이력서·희망 직무와 달리
+    Gemini를 실사용 폴백으로 쓸 수 있다."""
+    ollama_provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _HALLUCINATED_CORE])
+    gemini_response = JobPostingExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="g1",
+                field_path="requiredSkills[0].rawName",
+                value="Python",
+                source_text="Python 3년 이상",
+            )
+        ],
+        required_skills=[JobPostingSkill(raw_name="Python", evidence_ids=["g1"])],
+    )
+    gemini_provider = _FakeGeminiProvider(response=gemini_response)
+
+    result = await extract_job_posting_profile(
+        SOURCE_TEXT, ollama_provider, fallback_provider=gemini_provider
+    )
+
+    assert gemini_provider.call_count == 1
+    assert [s.raw_name for s in result.extraction.required_skills] == ["Python"]
+    assert result.core_provider_name == "gemini"
+    assert result.core_model_name == "fake-gemini-model"
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_raises_original_ollama_error_when_gemini_also_fails() -> None:
+    """Ollama도 실패하고 Gemini 폴백도 실패하면, Gemini 예외가 아니라 원래
+    Ollama 예외를 그대로 전달한다 — 라우터가 이미 처리하는 예외 타입을
+    유지해서 새 예외 종류를 별도로 처리하지 않아도 되게 한다."""
+    ollama_provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _HALLUCINATED_CORE])
+    gemini_provider = _FakeGeminiProvider(error=GeminiUnavailableError("Gemini도 실패"))
+
+    with pytest.raises(JobPostingEvidenceValidationError):
+        await extract_job_posting_profile(
+            SOURCE_TEXT, ollama_provider, fallback_provider=gemini_provider
+        )
+
+    assert gemini_provider.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_job_posting_profile_raises_ollama_error_when_no_fallback_configured() -> None:
+    """`fallback_provider`를 안 넘기면(기존 동작 그대로) Ollama 실패가 그대로 올라간다."""
+    ollama_provider = _RetryFakeProvider(core_responses=[_HALLUCINATED_CORE, _HALLUCINATED_CORE])
+
+    with pytest.raises(JobPostingEvidenceValidationError):
+        await extract_job_posting_profile(SOURCE_TEXT, ollama_provider)

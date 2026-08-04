@@ -3,7 +3,7 @@
 이 문서는 Java·Python·공통 계약 작업의 현재 위치와 검증 수준을 공유한다.
 `구현 완료`라는 표현 대신 실제로 통과한 가장 높은 검증 상태를 기록한다.
 
-- 마지막 확인일: 2026-08-03
+- 마지막 확인일: 2026-08-04
 - Python 기준: `origin/python` 커밋 `42dd375`
 - Java 기준: `java` 브랜치 작업 트리
 - 상태 정의: 루트 `AGENTS.md`의 완료 판정 기준
@@ -237,6 +237,79 @@ qwen2.5 대신 exaone3.5로 담당 업무 전용 호출을 실제 fixture 3개(`
 - "값은 정확한데 evidence만 빈 경우"를 `validate_evidence`가 놓친다는 것도 이번에 드러났다 —
   후보 항목이 있는데 evidence 배열 전체가 비어 있으면 재시도 대상으로 볼지는 별도 결정 필요
   (지금은 조용히 필터링만 됨)
+
+## 채용공고 추출 Gemini 폴백 추가 (2026-08-04)
+
+**평가 스크립트가 재시도 효과를 못 증명하던 문제부터 고쳤다**: `job_posting_model_comparison.py`가
+`provider.extract_job_posting`을 직접 호출하고 자체 검증 로직을 썼을 뿐, 세션 오염 완화책
+(`_extract_core_with_retry`, 2026-08-03)을 전혀 타지 않고 있었다. 이 스크립트를 실제 운영
+경로(`_extract_core_with_retry`)를 그대로 재사용하도록 고치는 과정에서 별개의 버그도
+발견했다 — `provider.extract_job_posting`이 이미 `JobPostingCoreExtraction`(담당 업무 없음)을
+반환하도록 바뀌었는데(2026-08-03), 이 스크립트는 여전히 `filter_unevidenced_candidates`
+(`JobPostingExtraction` 전용)에 그 결과를 그대로 넘기고 있어서 `AttributeError`로 즉시
+깨지는 상태였다. 둘 다 고쳤다.
+
+**고친 뒤 실제로 재평가한 결과, 예상과 반대되는 심각한 사실이 나왔다**:
+
+| 모델 | 이전(2026-08-03) 통과율 | 이번(재시도 적용 후) 통과율 |
+| --- | ---: | ---: |
+| `qwen2.5:latest` | 86% | 57% |
+| `exaone3.5:latest` | 67% | 57% |
+| `llama3.2:latest` | 14% | 19% |
+
+재시도가 27건 발동했는데 **단 한 건도 성공으로 복구되지 않았다**(qwen2.5 3건, exaone3.5 9건,
+llama3.2 15건 — 전부 재시도해도 실패 유지). 이는 "재로드 직후 첫 요청 9/9 성공"이었던
+2026-08-03 조사 결과와 정면으로 반대된다. 게다가 이전엔 멀쩡했던 fixture(`backend_java_spring.txt`,
+`ai_ml_engineer.txt` 등)까지 이번엔 3개 모델 전부에서 동시에 실패해서, 오염이 개별 fixture
+수준이 아니라 더 넓게 퍼진 것으로 보인다.
+
+**Gemini로 교차 검증해서 원인을 코드가 아니라 Ollama 환경으로 좁혔다**: 방금 실패한 fixture
+3개(`backend_java_spring.txt`, `ai_ml_engineer.txt`, `game_server_developer.txt`)를 같은
+검증 코드(`validate_evidence`)로 Gemini에 그대로 태워봤더니 **3/3 전부 깨끗하게 성공했다**
+(jobTitle·기술·evidence 전부 정확). 같은 코드가 Gemini에서는 통과하고 Ollama에서는
+동시다발로 실패한다는 건, 저희 스키마·검증·필터링 로직의 버그가 아니라 **이 컴퓨터의
+Ollama 실행 환경(오늘 하루 수백 번의 로드·언로드로 누적된 상태로 추정, 원인 미확정)에
+국한된 문제**라는 뜻이다. `ollama serve` 프로세스 자체를 재시작해서 재현성을 다시
+확인하는 건 아직 안 했다(확인 필요로 남김).
+
+**대응(사용자 확인, 구현 완료)**: 원래 `docs/architecture/llm-providers.md`가 명시했던
+설계 의도(`OllamaProvider`·`GeminiProvider`를 "나중에 `LlmGateway`에서 서로 바꿔 끼울 수
+있게" 같은 인터페이스로 만듦 — 노션 "Python AI 분석 구현 문서" 16번 항목을 가리키는
+한 줄짜리 언급뿐이었고, 이 repo에는 실제 구현·상세 설계가 없었다)를 실제로 채웠다.
+**Ollama가 재시도까지 실패하면 Gemini로 폴백**하도록 `extract_job_posting_profile`을
+고쳤다:
+
+- 직무명·기술(core)과 담당 업무(responsibilities)는 각자 독립적으로 Ollama 재시도를 거친다.
+- 둘 중 하나 또는 둘 다 실패하면 Gemini를 **한 번만** 호출해서(요청 수를 아끼기 위해)
+  실패한 쪽을 채운다. Gemini 결과도 `validate_evidence`를 통과해야 한다.
+- Gemini도 실패하면 Gemini의 예외가 아니라 **원래 Ollama 예외를 그대로 전달**한다 —
+  라우터가 이미 처리하는 예외 타입(`OllamaUnavailableError`/`OllamaResponseError`/
+  `JobPostingEvidenceValidationError`)을 그대로 유지해서 새 예외 종류를 추가로 처리할
+  필요가 없게 했다.
+- 채용공고는 공개 회사 정보라 개인정보 가드레일이 적용되지 않으므로(계약 서문), 이력서·
+  희망 직무와 달리 Gemini 무료 등급 데이터 제한 정책 확인 없이 실사용 폴백으로 쓸 수
+  있다고 판단했다(요청 제한으로 이따금 실패하는 건 별개 확인 필요).
+- 계약 응답의 `modelProvider`/`modelName`이 실제로 core를 만든 provider를 반영하도록
+  `extract_job_posting_profile`의 반환 타입을 `JobPostingExtractionResult`(추출 결과 +
+  `core_provider_name`/`core_model_name`)로 바꿨다 — Gemini가 core를 대신 채웠는데
+  응답에 "ollama"라고 남는 걸 막았다. 담당 업무 쪼가 어느 provider에서 왔는지는 계약이
+  아직 모델 1개만 가정해서 응답에 안 드러난다(기존에 이미 확인 필요로 남긴 항목).
+
+**구현 위치**: `app/providers/gemini_client.py`(신규, DI 팩토리), `app/services/job_posting_extraction.py`
+(`extract_job_posting_profile`에 `fallback_provider` 매개변수 추가), `app/job_postings/router.py`
+(Gemini provider 주입).
+
+**검증**: 가짜 provider 단위 테스트 3건(Gemini 성공 복구/Gemini도 실패/폴백 없음) +
+실제 라우터 end-to-end 테스트 1건(Ollama를 실제로 끊고 Gemini가 실제로 대신 성공하는지
+확인, mock 아님) 신규. 전체 테스트 150개 통과(1 xfail은 기존에 알던 것).
+
+**다음 단계(확인 필요)**
+
+- `ollama serve` 프로세스 자체를 재시작한 뒤 같은 fixture로 재평가해서, 오늘 통과율 하락이
+  정말 서버 프로세스 누적 상태 때문인지 확정
+- Gemini 무료 등급 요청 제한으로 폴백까지 실패하는 빈도를 실제 트래픽으로 확인 필요
+- 계약(`job-posting-extraction.md`)의 `modelProvider`가 "gemini"일 수 있다는 걸 문서에
+  반영할지, 담당 업무 쪼 provider 정보를 응답에 추가할지는 Java·사용자 확인 필요
 
 ## 기술 태그 정규화 (2026-07-31 사용자 확인)
 

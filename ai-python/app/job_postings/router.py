@@ -16,6 +16,8 @@ from app.job_postings.settings import (
     JobPostingExtractionSettings,
     get_job_posting_extraction_settings,
 )
+from app.providers.gemini import GeminiProvider
+from app.providers.gemini_client import get_gemini_job_posting_fallback_provider
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
 from app.providers.ollama_client import (
     get_ollama_job_posting_provider,
@@ -59,6 +61,7 @@ async def extract_job_posting(
     ollama_responsibility_provider: OllamaProvider = Depends(
         get_ollama_job_posting_responsibility_provider
     ),
+    gemini_fallback_provider: GeminiProvider = Depends(get_gemini_job_posting_fallback_provider),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
 
@@ -90,8 +93,11 @@ async def extract_job_posting(
         )
 
     try:
-        extraction = await extract_job_posting_profile(
-            request.source_text, ollama_provider, ollama_responsibility_provider
+        result = await extract_job_posting_profile(
+            request.source_text,
+            ollama_provider,
+            ollama_responsibility_provider,
+            gemini_fallback_provider,
         )
     except OllamaUnavailableError:
         return JSONResponse(
@@ -121,9 +127,9 @@ async def extract_job_posting(
                 "jobPostingId": request.job_posting_id,
                 "extractionTaskId": request.extraction_task_id,
                 "status": "EXTRACTED",
-                "extraction": extraction.model_dump(by_alias=True),
-                "modelProvider": ollama_provider.provider_name,
-                "modelName": ollama_provider.model_name,
+                "extraction": result.extraction.model_dump(by_alias=True),
+                "modelProvider": result.core_provider_name,
+                "modelName": result.core_model_name,
             },
         ),
     )

@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from app.guardrails.settings import get_internal_auth_settings
 from app.job_postings.settings import get_job_posting_extraction_settings
 from app.main import app
+from app.providers.gemini import GeminiUnavailableError
+from app.providers.gemini_client import get_gemini_job_posting_fallback_provider
 from app.providers.ollama import OllamaProvider
 from app.providers.ollama_client import get_ollama_job_posting_provider
 from app.providers.settings import OllamaSettings
@@ -119,7 +121,50 @@ def test_extract_succeeds_with_real_ollama(caplog) -> None:
 
 
 def test_extract_reports_model_unavailable() -> None:
-    """존재하지 않는 포트로 실제 연결 실패를 유도해 503을 확인한다(mock 아님)."""
+    """존재하지 않는 포트로 실제 연결 실패를 유도해 503을 확인한다(mock 아님).
+
+    Gemini 폴백(2026-08-04)도 함께 실패하도록 오버라이드한다 — 안 그러면
+    Ollama가 죽어도 Gemini가 대신 성공해서 200이 나와, "둘 다 죽었을 때"를
+    검증하지 못한다.
+    """
+
+    async def unreachable_provider():
+        async with httpx.AsyncClient(
+            base_url="http://127.0.0.1:1",
+            timeout=httpx.Timeout(connect=1, read=1, write=1, pool=1),
+        ) as broken_client:
+            yield OllamaProvider(client=broken_client, model_name=OllamaSettings().ollama_model)
+
+    async def unavailable_gemini_fallback():
+        class _AlwaysFailsGemini:
+            provider_name = "gemini"
+            model_name = "unavailable"
+
+            async def extract_job_posting(self, source_text: str):
+                raise GeminiUnavailableError("테스트: Gemini도 사용할 수 없음")
+
+        yield _AlwaysFailsGemini()
+
+    app.dependency_overrides[get_ollama_job_posting_provider] = unreachable_provider
+    app.dependency_overrides[get_gemini_job_posting_fallback_provider] = unavailable_gemini_fallback
+    try:
+        response = client.post(
+            "/internal/v1/job-postings/extract",
+            headers={"X-Internal-Token": _valid_token()},
+            json=_valid_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(get_ollama_job_posting_provider, None)
+        app.dependency_overrides.pop(get_gemini_job_posting_fallback_provider, None)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
+
+
+def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
+    """Ollama가 죽어도 Gemini 폴백이 성공하면 200을 반환하고 modelProvider가
+    gemini로 표시된다(2026-08-04) — 실제 응답에 어느 모델이 실제로 근거를
+    만들었는지 정직하게 남긴다."""
 
     async def unreachable_provider():
         async with httpx.AsyncClient(
@@ -138,5 +183,10 @@ def test_extract_reports_model_unavailable() -> None:
     finally:
         app.dependency_overrides.pop(get_ollama_job_posting_provider, None)
 
-    assert response.status_code == 503
-    assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
+    assert response.status_code == 200, (
+        "실제 Gemini 폴백 성공을 기대했다. GEMINI_API_KEY 설정을 확인해라. "
+        f"응답: {response.text}"
+    )
+    data = response.json()["data"]
+    assert data["modelProvider"] == "gemini"
+    assert "requiredSkills" in data["extraction"]

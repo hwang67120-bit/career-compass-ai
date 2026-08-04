@@ -10,9 +10,21 @@
 (`OllamaProvider.extract_job_posting`, `extract_job_posting_responsibilities`)
 을 독립적으로 실행·검증·재시도한 뒤 `_merge_core_and_responsibilities`로
 합친다.
+
+2026-08-04 추가 — Gemini 폴백: Ollama(로컬 서버)가 재시도까지 실패하면
+Gemini로 폴백한다. 오늘 채용공고 비교 평가에서 Ollama 통과율이 이전보다
+크게 떨어지는 현상이 실제로 있었는데, 같은 fixture를 Gemini로 교차
+검증하면 매번 깨끗하게 통과했다 — Ollama 로컬 서버 쪼 문제로 보인다.
+채용공고는 공개 회사 정보라 개인정보 가드레일이 적용되지 않으므로
+(계약 서문), 이력서·희망 직무와 달리 Gemini 무료 등급 데이터 제한
+정책 확인 없이 폴백으로 쓸 수 있다(요청 제한으로 이따금 실패하는 건
+별개 확인 필요).
 """
 
-from app.providers.ollama import OllamaProvider
+from dataclasses import dataclass
+
+from app.providers.gemini import GeminiProvider, GeminiResponseError, GeminiUnavailableError
+from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
 from app.schemas.job_posting import (
     JobPostingCoreExtraction,
     JobPostingExtraction,
@@ -25,6 +37,10 @@ _EvidenceLinkedPayload = JobPostingCoreExtraction | JobPostingResponsibilityExtr
 
 class JobPostingEvidenceValidationError(RuntimeError):
     """LLM이 반환한 근거의 원문이 실제 채용공고 원문과 일치하지 않는 경우다."""
+
+
+_OllamaCoreFailure = (JobPostingEvidenceValidationError, OllamaResponseError, OllamaUnavailableError)
+_GeminiFailure = (JobPostingEvidenceValidationError, GeminiResponseError, GeminiUnavailableError)
 
 
 def validate_evidence(payload: _EvidenceLinkedPayload, source_text: str) -> None:
@@ -149,11 +165,47 @@ async def _extract_responsibilities_with_retry(
     return candidate
 
 
+@dataclass
+class JobPostingExtractionResult:
+    """추출 결과와 실제로 직무명·기술(core)을 만든 provider 정보다.
+
+    Ollama가 실패해 Gemini로 폴백하면 계약 응답의 modelProvider/modelName이
+    실제로 근거를 만든 모델(Gemini)을 가리켜야 한다 — Ollama가 실패했는데도
+    응답에 "ollama"라고 남으면 실제와 다른 정보를 주는 것이다. 계약이 아직
+    모델 1개만 가정하므로(확인 필요), 담당 업무 쪼가 어느 provider에서 왔는지는
+    이 필드에 안 드러난다.
+    """
+
+    extraction: JobPostingExtraction
+    core_provider_name: str
+    core_model_name: str
+
+
+def _core_from_gemini(gemini_result: JobPostingExtraction) -> JobPostingCoreExtraction:
+    return JobPostingCoreExtraction(
+        evidence=gemini_result.evidence,
+        job_title=gemini_result.job_title,
+        job_title_evidence_ids=gemini_result.job_title_evidence_ids,
+        required_skills=gemini_result.required_skills,
+        preferred_skills=gemini_result.preferred_skills,
+    )
+
+
+def _responsibilities_from_gemini(
+    gemini_result: JobPostingExtraction,
+) -> JobPostingResponsibilityExtraction:
+    return JobPostingResponsibilityExtraction(
+        evidence=gemini_result.evidence,
+        responsibilities=gemini_result.responsibilities,
+    )
+
+
 async def extract_job_posting_profile(
     source_text: str,
     core_provider: OllamaProvider,
     responsibility_provider: OllamaProvider | None = None,
-) -> JobPostingExtraction:
+    fallback_provider: GeminiProvider | None = None,
+) -> JobPostingExtractionResult:
     """채용공고 원문을 provider로 구조화 추출하고 근거를 검증·정리한다.
 
     직무명·기술 추출과 담당 업무 추출을 독립된 두 호출로 나눠서 실행한다
@@ -166,13 +218,54 @@ async def extract_job_posting_profile(
     — 같은 모델 로드 세션에서 다른 요청을 먼저 처리한 뒤에만 특정 입력의
     근거 검증이 실패하는 현상(세션 오염)을 실제로 확인했고, 언로드 직후 첫
     요청은 재현 시험에서 9/9 성공했다(2026-08-03, `docs/current-work.md`).
-    재시도까지 실패하면 그대로 예외를 전달한다 — 세션과 무관한 진짜 모델
-    결함은 언로드해도 재현되므로, 재시도가 그 결함을 감추지 않는다.
+
+    두 호출이 재시도까지 실패하면 `fallback_provider`(Gemini)로 폴백한다
+    (2026-08-04, 위 모듈 docstring 참고) — 실패한 쪸만 채운다. 둘 다
+    실패했으면 Gemini를 한 번만 호출해서 두 쪽 다 채운다(요청 수를
+    아끼기 위해). `fallback_provider`가 없거나 Gemini도 실패하면 Ollama
+    쪼 원래 예외를 그대로 전달한다 — 실패를 감추지 않는다.
     """
     responsibility_provider = responsibility_provider or core_provider
-    core = await _extract_core_with_retry(source_text, core_provider)
-    responsibilities = await _extract_responsibilities_with_retry(
-        source_text, responsibility_provider
-    )
+    core_provider_used: OllamaProvider | GeminiProvider = core_provider
+
+    core: JobPostingCoreExtraction | None = None
+    responsibilities: JobPostingResponsibilityExtraction | None = None
+    core_error: Exception | None = None
+    responsibilities_error: Exception | None = None
+
+    try:
+        core = await _extract_core_with_retry(source_text, core_provider)
+    except _OllamaCoreFailure as error:
+        core_error = error
+
+    try:
+        responsibilities = await _extract_responsibilities_with_retry(
+            source_text, responsibility_provider
+        )
+    except _OllamaCoreFailure as error:
+        responsibilities_error = error
+
+    if core_error is not None or responsibilities_error is not None:
+        if fallback_provider is None:
+            raise core_error or responsibilities_error
+
+        try:
+            with measure_stage(fallback_provider.provider_name, StageOperation.EXTRACT_JOB_POSTING):
+                gemini_result = await fallback_provider.extract_job_posting(source_text)
+            validate_evidence(gemini_result, source_text)
+        except _GeminiFailure as gemini_error:
+            raise (core_error or responsibilities_error) from gemini_error
+
+        if core_error is not None:
+            core = _core_from_gemini(gemini_result)
+            core_provider_used = fallback_provider
+        if responsibilities_error is not None:
+            responsibilities = _responsibilities_from_gemini(gemini_result)
+
     merged = _merge_core_and_responsibilities(core, responsibilities)
-    return filter_unevidenced_candidates(merged)
+    extraction = filter_unevidenced_candidates(merged)
+    return JobPostingExtractionResult(
+        extraction=extraction,
+        core_provider_name=core_provider_used.provider_name,
+        core_model_name=core_provider_used.model_name,
+    )
