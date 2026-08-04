@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,7 +30,6 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
 import com.careercompass.userprofile.domain.UserProfileVersion;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -65,7 +65,6 @@ class JobAnalysisWorkerTest {
                 work24JobSearchClient,
                 work24JobDetailFetcher,
                 pythonJobPostingExtractionClient,
-                new ObjectMapper(),
                 clock
         );
 
@@ -186,13 +185,12 @@ class JobAnalysisWorkerTest {
     }
 
     private PythonJobPostingExtractionEnvelope.Data extractionData() {
-        ObjectMapper objectMapper = new ObjectMapper();
         return new PythonJobPostingExtractionEnvelope.Data(
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
                 "EXTRACTED",
-                objectMapper.createObjectNode(),
-                objectMapper.createArrayNode()
+                Map.of(),
+                List.of()
         );
     }
 }
