@@ -49,13 +49,18 @@ Python 검색 계획
 
 MVP에서는 측정되지 않은 병렬 호출과 자동 재시도를 사용하지 않는다.
 
-1. 설정된 우선순위의 첫 Provider를 호출한다.
-2. 정상 결과가 하나 이상이면 검증된 결과만 반환하고 다음 Provider를 호출하지
-   않는다.
-3. 정상 0건이거나 사용할 수 없으면 다음 Provider를 순차 호출한다.
-4. 하나 이상의 Provider가 정상 0건이면 성공한 빈 목록을 반환할 수 있다.
-5. 모든 활성 Provider가 사용 불가이면 503을 반환한다.
-6. 활성 Provider가 없으면 구성 오류로 처리하고 외부 호출을 시도하지 않는다.
+1. 활성 Provider가 없으면 구성 오류로 처리하고 외부 호출을 시도하지 않는다.
+2. 설정된 우선순위의 첫 Provider를 호출한다.
+3. `SUCCESS_RESULTS`이면 즉시 반환하고 다음 Provider를 호출하지 않는다.
+4. `SUCCESS_EMPTY`, `UNAVAILABLE`, `INVALID_RESPONSE`이면 다음 활성 Provider를
+   호출한다.
+5. 연결 실패, 타임아웃, 일시 장애는 `UNAVAILABLE`에 포함한다.
+6. 하나 이상의 `SUCCESS_EMPTY`가 있고 이후 Provider에서도 결과를 얻지
+   못하면 성공한 빈 목록을 반환한다.
+7. 정상 결과와 정상 빈 결과가 없고 모든 활성 Provider가 `UNAVAILABLE`이면
+   503 `JOB_PROVIDERS_UNAVAILABLE`을 반환한다.
+8. 정상 결과와 정상 빈 결과가 없고 하나 이상의 Provider가 `INVALID_RESPONSE`이면
+   502 `JOB_PROVIDER_INVALID_RESPONSE`을 반환한다.
 
 ## 3. 내부 API
 
@@ -216,12 +221,17 @@ HTTP 상태는 200 OK다.
 
 | 필드 | 허용값 | 의미 |
 |---|---|---|
-| data.status | COMPLETED | 첫 Provider가 결과 또는 정상 0건을 반환 |
-| data.status | FALLBACK_COMPLETED | 앞 Provider 실패·0건 후 다음 Provider가 정상 반환 |
+| data.status | COMPLETED | 두 번째 이후 Provider를 호출하지 않고 첫 Provider의 `SUCCESS_RESULTS`로 종료하거나, 다음 활성 Provider가 없어 첫 Provider의 `SUCCESS_EMPTY`로 종료한 경우 |
+| data.status | FALLBACK_COMPLETED | 두 번째 이후 Provider를 실제로 호출했고 최종적으로 `SUCCESS_RESULTS` 또는 `SUCCESS_EMPTY`를 반환한 경우 |
 | Provider 상태 | SUCCESS_RESULTS | 정상 결과가 하나 이상 |
 | Provider 상태 | SUCCESS_EMPTY | 정상 응답이지만 결과 없음 |
 | Provider 상태 | UNAVAILABLE | 연결 실패, 제한시간 초과 또는 일시 장애 |
 | Provider 상태 | INVALID_RESPONSE | HTTP 성공이지만 계약·크기·형식 검증 실패 |
+
+`FALLBACK_COMPLETED`는 앞 Provider의 `SUCCESS_EMPTY`를 보존한 상태에서 이후
+Provider가 `UNAVAILABLE` 또는 `INVALID_RESPONSE`로 끝나 빈 목록을 반환하는
+경우도 포함한다. `data.status`는 활성 Provider 개수가 아니라 두 번째 이후
+Provider의 실제 호출 여부로 결정한다.
 
 providerAttempts는 실제 호출 순서대로 반환한다. 호출하지 않은 Provider는
 포함하지 않는다. 빈 결과는 오류가 아니며 jobPostings를 빈 배열로 반환한다.
