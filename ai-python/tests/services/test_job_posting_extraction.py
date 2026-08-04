@@ -13,6 +13,7 @@ from app.schemas.job_posting import (
 )
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
+    ModelExecutionProvider,
     ModelExecutionStage,
     _merge_core_and_responsibilities,
     extract_job_posting_profile,
@@ -284,9 +285,13 @@ async def test_extract_job_posting_profile_retries_core_once_after_unload_on_evi
     assert provider.responsibility_call_count == 1
     assert [s.raw_name for s in result.extraction.required_skills] == ["Python"]
     executions_by_stage = {e.stage: e for e in result.model_executions}
-    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == "fake"
+    assert [execution.stage for execution in result.model_executions] == [
+        ModelExecutionStage.CORE_EXTRACTION,
+        ModelExecutionStage.RESPONSIBILITY_EXTRACTION,
+    ]
+    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == ModelExecutionProvider.OLLAMA
     assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].model == "fake-model"
-    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == "fake"
+    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == ModelExecutionProvider.OLLAMA
 
 
 @pytest.mark.asyncio
@@ -377,9 +382,9 @@ async def test_extract_job_posting_profile_falls_back_to_gemini_when_core_fails(
     assert gemini_provider.call_count == 1
     assert [s.raw_name for s in result.extraction.required_skills] == ["Python"]
     executions_by_stage = {e.stage: e for e in result.model_executions}
-    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == "gemini"
+    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == ModelExecutionProvider.GEMINI
     assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].model == "fake-gemini-model"
-    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == "fake"
+    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == ModelExecutionProvider.OLLAMA
     assert [r.raw_text for r in result.extraction.responsibilities] == ["백엔드 개발"]
 
 
@@ -412,8 +417,8 @@ async def test_extract_job_posting_profile_falls_back_to_gemini_when_responsibil
 
     assert gemini_provider.call_count == 1
     executions_by_stage = {e.stage: e for e in result.model_executions}
-    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == "fake"
-    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == "gemini"
+    assert executions_by_stage[ModelExecutionStage.CORE_EXTRACTION].provider == ModelExecutionProvider.OLLAMA
+    assert executions_by_stage[ModelExecutionStage.RESPONSIBILITY_EXTRACTION].provider == ModelExecutionProvider.GEMINI
     assert [s.raw_name for s in result.extraction.required_skills] == ["Python"]
     assert [r.raw_text for r in result.extraction.responsibilities] == ["백엔드 API 운영"]
 

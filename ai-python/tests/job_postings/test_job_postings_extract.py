@@ -130,7 +130,7 @@ def test_extract_succeeds_with_real_ollama(caplog) -> None:
     executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
     assert set(executions_by_stage) == {"CORE_EXTRACTION", "RESPONSIBILITY_EXTRACTION"}
     for execution in executions_by_stage.values():
-        assert execution["provider"] in {"ollama", "gemini"}
+        assert execution["provider"] in {"OLLAMA", "GEMINI"}
         assert execution["model"]
 
     assert token not in response.text
@@ -160,8 +160,8 @@ def test_extract_succeeds_with_real_ollama_when_gemini_not_configured() -> None:
     )
     data = response.json()["data"]
     executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
-    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "ollama"
-    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] == "ollama"
+    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "OLLAMA"
+    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] == "OLLAMA"
 
 
 def test_extract_reports_model_unavailable() -> None:
@@ -195,7 +195,7 @@ def test_extract_reports_model_unavailable() -> None:
 @pytest.mark.real_gemini
 def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
     """Ollama가 죽어도 실제 Gemini 폴백이 성공하면 200을 반환하고
-    `modelExecutions`의 CORE_EXTRACTION이 gemini로 표시된다(2026-08-04) —
+    `modelExecutions`의 CORE_EXTRACTION이 GEMINI로 표시된다(2026-08-04) —
     어느 단계를 어느 provider가 처리했는지 숨기지 않는다.
 
     실제 Gemini API를 호출하는 테스트라 기본 `pytest` 실행에서 제외된다
@@ -221,11 +221,11 @@ def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
     extraction = data["extraction"]
 
     executions_by_stage = {e["stage"]: e for e in data["modelExecutions"]}
-    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "gemini"
+    assert executions_by_stage["CORE_EXTRACTION"]["provider"] == "GEMINI"
     assert executions_by_stage["CORE_EXTRACTION"]["model"]
     # 담당 업무는 core와 독립적으로 재시도되므로 Ollama에서 성공했을 수도,
     # 실패해 같은 Gemini 호출로 채워졌을 수도 있다 — 둘 다 유효한 결과다.
-    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] in {"ollama", "gemini"}
+    assert executions_by_stage["RESPONSIBILITY_EXTRACTION"]["provider"] in {"OLLAMA", "GEMINI"}
 
     assert extraction["requiredSkills"], "실제 텍스트에 있는 Python 요구사항이 채워져야 한다"
     required_skill_names = {skill["rawName"] for skill in extraction["requiredSkills"]}

@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +11,7 @@ class JobPostingExtractionSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    job_posting_extraction_max_text_length: int
+    job_posting_extraction_max_text_length: int = Field(gt=0)
 
 
 @lru_cache

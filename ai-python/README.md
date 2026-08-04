@@ -30,9 +30,12 @@ X-Internal-Token: {shared-secret}
 }
 ```
 
-### 채용공고 추출 (제안 — 코덱스 확인 필요)
+### 채용공고 추출 (부분 확정)
 
-계약: [채용공고 구조화 추출 계약](../contracts/job-posting-extraction.md), 상태 "제안". JSON 본문(`jobPostingId`, `extractionTaskId`, `sourceText`)을 받는다. 채용공고는 공개 정보라 개인정보 제거 단계가 없다 — 바로 Ollama 구조화 추출(`OLLAMA_MODEL`)로 간다.
+계약: [채용공고 구조화 추출 계약](../contracts/job-posting-extraction.md), 상태 "부분 확정".
+JSON 본문(`jobPostingId`, `extractionTaskId`, `sourceText`)을 받는다. Java가 HTML·스크립트와
+연락처·담당자 정보를 제거한 최소 원문을 전달하고, Python은 Gemini 외부 전송 직전에
+이메일·전화번호 제거를 다시 수행한다.
 
 - 근거 검증·필터링(할루시네이션·중복·유령 참조 차단, 근거 없는 후보 제거)은 `app/services/job_posting_extraction.py`.
 - 실제 검증: `tests/job_postings/test_job_postings_extract.py` — 실제 Ollama 호출(mock 아님).
@@ -43,7 +46,7 @@ X-Internal-Token: {shared-secret}
   때만 지연 생성한다. Gemini는 외부 서비스라 "공개 정보라 정책 확인 불필요"하다고 임의로
   판단하지 않고, 대신 전송 직전 이메일·전화번호를 제거한다(정규식 커버리지는 확인 필요).
   응답의 `modelExecutions` 배열이 `CORE_EXTRACTION`/`RESPONSIBILITY_EXTRACTION` 단계별로
-  실제 처리한 provider·모델을 정직하게 남긴다(`docs/current-work.md` 참고).
+  실제 처리한 대문자 provider(`OLLAMA`·`GEMINI`)와 모델을 정직하게 남긴다(`docs/current-work.md` 참고).
 
 ## 내부 서비스 인증 (2차 방어선)
 
@@ -87,7 +90,7 @@ app/
 
 ## 필수 환경변수
 
-`app/config.py`, `app/guardrails/settings.py`, `app/providers/settings.py`가 `pydantic-settings`로 읽는다. **필수값이 하나라도 없으면 서버 시작 자체가 실패한다**(`ValidationError`, 기본값 없는 필드는 생략 불가).
+`app/config.py`, `app/guardrails/settings.py`, `app/providers/settings.py`, `app/job_postings/settings.py`가 `pydantic-settings`로 읽는다. **필수값이 하나라도 없거나 최대 길이가 양수가 아니면 서버 시작 자체가 실패한다**(`ValidationError`, 기본값 없는 필드는 생략 불가).
 
 | 변수 | 용도 | 확인 상태 |
 |---|---|---|
@@ -97,7 +100,7 @@ app/
 | `OLLAMA_EMBEDDING_MODEL` | Ollama 임베딩 모델 | 확인 필요 |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini 연동. `GEMINI_MODEL`은 채용공고 추출의 Ollama 폴백으로 쓰인다(2026-08-04). **선택값** — 없으면 폴백 없이 Ollama만으로 동작한다(2026-08-04 PR #45 리뷰 반영, 이 셋만 예외적으로 필수가 아니다) | 확인 필요 |
 | `GEMINI_EMBEDDING_MODEL` | Gemini 임베딩 모델 | 확인 필요 |
-| `JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH` | 채용공고 텍스트 최대 길이(문자 수) | 확인 필요 — 계약이 제안 상태라 임시값, Java 설정과 맞춰야 함 |
+| `JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH` | 채용공고 텍스트 최대 길이(양의 문자 수) | 확인 필요 — 사람인·고용24 실제 표본 측정 후 Java와 같은 값으로 확정 |
 
 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).
 

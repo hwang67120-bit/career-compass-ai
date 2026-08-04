@@ -1,8 +1,8 @@
 """채용 공고 구조화 추출 결과의 요청·응답 스키마를 정의한다.
 
-계약: contracts/job-posting-extraction.md (제안). 이력서의
-`app/schemas/profile_candidate.py`와 같은 근거 연결 방식(evidenceId
-기반)을 쓴다 — 채용공고는 페이지 개념이 없으므로 `pageNumber`는 없다.
+계약: contracts/job-posting-extraction.md (부분 확정). 추출값과 근거를
+`evidenceId`로 연결한다. 채용공고는 페이지 개념이 없으므로
+`pageNumber`는 없다.
 """
 
 from pydantic import BaseModel, ConfigDict, Field
