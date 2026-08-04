@@ -1,5 +1,9 @@
 # MVP 구현 로드맵
 
+상태: **폐기된 이전 로드맵**
+
+2026-08-03부터 PDF·이력서 입력을 제외하고 기술 태그와 공개 GitHub 저장소만 사용하는 [개발자 분석 API](api/developer-job-analysis-api.md)가 현재 기준이다.
+
 이 문서는 현재 구현 상태와 논의된 Java·Python·프론트 작업을 하나의 실행 순서로 정리한다.
 실제 완료 상태는 [`current-work.md`](current-work.md)에 기록하고, 이 문서는 우선순위와 담당 경계를 관리한다.
 

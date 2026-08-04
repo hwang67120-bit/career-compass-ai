@@ -1,5 +1,14 @@
 # 현재 작업 상태
 
+## 2026-08-03 최신 범위 결정
+
+- PDF·이력서·포트폴리오 입력을 MVP에서 제거했다.
+- 현재 분석 입력은 사용자가 선택한 기술 태그와 등록한 공개 GitHub 저장소다.
+- Java 문서 API와 Java PDF 추출 클라이언트는 제거했다.
+- Python PDF 구현은 Python 담당이 별도로 정리할 때까지 기존 코드·테스트를 유지한다.
+- V1__create_user_document.sql과 기존 DB 데이터는 삭제하지 않는다.
+- 아래 PDF 관련 기록은 과거 검증 이력이며 현재 구현 목표가 아니다.
+
 이 문서는 Java·Python·공통 계약 작업의 현재 위치와 검증 수준을 공유한다.
 `구현 완료`라는 표현 대신 실제로 통과한 가장 높은 검증 상태를 기록한다.
 
@@ -510,6 +519,7 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 | 공개 GitHub 저장소 등록 | `INTEGRATION_TESTED` | 실제 GitHub 주소 HTTP·Postman 확인 이력 | GitHub 로그인 세션·CSRF 적용 후 재검증 |
 | 사용자 프로젝트 출처 목록 API(`GET /api/v1/project-sources`) | `UNIT_TESTED` | Service·Controller 테스트 + PostgreSQL/Testcontainers 통합 테스트 통과(PR #31) | Python이 저장소 근거 추출(1번) 대상 저장소를 고를 때 이 목록을 실제로 쓰도록 연결 |
 | 표준 기술 태그 검색 API(`GET /api/v1/technology-tags`) | `UNIT_TESTED` | Controller·정규화 단위 테스트 + Testcontainers 통합 테스트, Java 전체 테스트 107개 통과(PR #33) | Python `match_skill_tag`가 이 API의 고정 태그 목록(과 캐시된 임베딩)을 받아 쓰도록 연결 — 아직 Java–Python 계약 없음. 채용공고에서 발견한 새 `rawName`은 후보로만 저장되고 자동 표준 등록되지 않음(사용자·관리 확인 후 승격) |
+| 내부 기술 태그 정규화 API(`POST /internal/v1/technology-tags/resolve`) | `UNIT_TESTED` | Java 21 컴파일, Service 테스트, 내부 토큰·API·PostgreSQL 16 통합 테스트와 Java 전체 114개 테스트 통과 | Python이 같은 계약 예제로 실제 HTTP 호출해 `INTEGRATION_TESTED` 확인 |
 
 인증 변경은 아직 `java` 작업 트리에 커밋되지 않았다. 다른 담당자는 전달 커밋이 생기기 전
 `backend-java` 인증 파일과 공통 인증 문서를 수정하지 않는다.

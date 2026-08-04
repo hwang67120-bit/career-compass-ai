@@ -1,6 +1,6 @@
 # 개발자 채용공고 분석 사용자 API
 
-상태: 제안 — 구현 전 사용자 확인 필요
+상태: MVP 계약 확정 — 2026-08-03 사용자 승인, 구현 진행 중
 
 ## 범위
 
@@ -68,15 +68,30 @@ Content-Type: application/json
 
 ```json
 {
+  "expectedVersion": 2,
   "targetJobTitle": "백엔드 개발자",
-  "manualSkills": ["Java", "Spring Boot", "PostgreSQL"]
+  "technologyTags": [
+    {
+      "technologyTagId": "70000000-0000-0000-0000-000000000001",
+      "customName": null
+    },
+    {
+      "technologyTagId": null,
+      "customName": "LangChain"
+    }
+  ]
 }
 ```
 
-수기 기술은 `USER_DECLARED`로 저장하고 GitHub에서 확인된 기술과 구분한다.
+각 기술 항목은 `technologyTagId`와 `customName` 중 정확히 하나만 사용한다.
+표준 태그 선택은 `USER_SELECTED`, 직접 입력은 `USER_CUSTOM`으로 저장하고
+GitHub에서 확인된 기술과 구분한다. 커스텀 이름이 표준 태그 또는 별칭과 일치하면
+표준 태그 식별자를 연결하되 입력 출처와 원문을 보존한다.
 원문 표현은 보존하며 정규화 값으로 덮어쓰지 않는다. 내용이 변경되면 새 프로필
 버전을 만들고 기존 분석이 참조한 버전을 변경하지 않는다. 같은 내용을 다시 저장하면
-새 버전을 만들지 않는다.
+현재 버전을 반환한다. 최초 저장에는 `expectedVersion`을 생략하고 버전 1을 만든다.
+기존 내용과 다른 저장 요청은 `expectedVersion`이 현재 버전과 같아야 한다.
+같지 않거나 생략하면 `409 USER_PROFILE_VERSION_CONFLICT`를 반환한다.
 
 성공: `200 OK`
 
@@ -87,11 +102,20 @@ Content-Type: application/json
     "userProfileId": "ecbca375-2ba2-407a-9e87-29022d2f031a",
     "version": 3,
     "targetJobTitle": "백엔드 개발자",
-    "manualSkills": [
+    "technologyTags": [
       {
+        "technologyTagId": "70000000-0000-0000-0000-000000000011",
         "rawName": "Spring Boot",
-        "normalizedName": "spring boot",
-        "sourceType": "USER_DECLARED"
+        "normalizedName": "springboot",
+        "displayName": "Spring Boot",
+        "sourceType": "USER_SELECTED"
+      },
+      {
+        "technologyTagId": null,
+        "rawName": "LangChain",
+        "normalizedName": "langchain",
+        "displayName": "LangChain",
+        "sourceType": "USER_CUSTOM"
       }
     ],
     "updatedAt": "2026-07-31T02:30:00Z"
@@ -104,10 +128,11 @@ Content-Type: application/json
 검증 제한은 다음 설정에서 관리한다.
 
 - `user.profile.max-target-job-title-length`
-- `user.profile.max-manual-skill-count`
-- `user.profile.max-manual-skill-name-length`
+- `user.profile.max-technology-tag-count`
+- `user.profile.max-custom-tag-name-length`
 
 조회는 `GET /api/v1/user-profile`을 사용하고 프로필이 없으면 `404`로 응답한다.
+표준 태그의 표시명이 변경되어도 기존 프로필 버전에는 당시 표시명을 유지한다.
 
 ## 분석 시작
 

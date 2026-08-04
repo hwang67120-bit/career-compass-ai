@@ -1,0 +1,12 @@
+package com.careercompass.jobanalysis.domain;
+
+public enum JobAnalysisStep {
+    VALIDATING_INPUTS,
+    ANALYZING_REPOSITORIES,
+    GENERATING_SEARCH_PLAN,
+    SEARCHING_JOB_POSTINGS,
+    EXTRACTING_JOB_POSTINGS,
+    COMPARING_EVIDENCE,
+    FINALIZING_RESULT,
+    FINISHED
+}

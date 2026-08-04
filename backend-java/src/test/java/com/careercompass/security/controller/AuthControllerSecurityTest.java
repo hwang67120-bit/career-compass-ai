@@ -84,7 +84,7 @@ class AuthControllerSecurityTest {
 
     @Test
     void protectedApi_withoutSession_returnsUnauthorizedResponse() throws Exception {
-        mockMvc.perform(get("/api/v1/documents"))
+        mockMvc.perform(get("/api/v1/project-sources"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.errorType").value("UNAUTHORIZED"));
     }

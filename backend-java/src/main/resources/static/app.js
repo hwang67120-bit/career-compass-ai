@@ -9,8 +9,13 @@
         logoutButton: document.getElementById("logout-button"),
         currentUserId: document.getElementById("current-user-id"),
         globalMessage: document.getElementById("global-message"),
-        documentForm: document.getElementById("document-form"),
-        documentStatus: document.getElementById("document-status"),
+        technologyForm: document.getElementById("technology-form"),
+        technologyOptions: document.getElementById("technology-options"),
+        targetJobTitle: document.getElementById("target-job-title"),
+        profileForm: document.getElementById("profile-form"),
+        selectedTechnologyTags: document.getElementById("selected-technology-tags"),
+        technologyStatus: document.getElementById("technology-status"),
+        profileStatus: document.getElementById("profile-status"),
         githubForm: document.getElementById("github-form"),
         githubStatus: document.getElementById("github-status"),
         githubResult: document.getElementById("github-result"),
@@ -23,15 +28,13 @@
         startAnalysisButton: document.getElementById("start-analysis-button"),
         analysisProgressView: document.getElementById("analysis-progress-view"),
         progressLog: document.getElementById("progress-log"),
-        analysisResultView: document.getElementById("analysis-result-view"),
-        resultChecklist: document.getElementById("result-checklist"),
-        resultSimilarity: document.getElementById("result-similarity"),
-        resultSkillGaps: document.getElementById("result-skill-gaps"),
         backToDashboardButton: document.getElementById("back-to-dashboard-button")
     };
 
     const state = {
-        document: null,
+        selectedTechnologyTags: new Map(),
+        userProfile: null,
+        profileDirty: false,
         github: null
     };
 
@@ -41,9 +44,7 @@
             super(apiError?.message || "요청을 처리하는 중 문제가 발생했습니다.");
             this.name = "ApiRequestError";
             this.status = status;
-            this.errorType = apiError?.errorType;
             this.fieldErrors = apiError?.fieldErrors || [];
-            this.retryable = apiError?.retryable === true;
         }
     }
 
@@ -57,15 +58,12 @@
                 ...(options.headers || {})
             }
         });
-
         const payload = response.status === 204
             ? null
             : await response.json().catch(() => null);
-
         if (!response.ok) {
             throw new ApiRequestError(response.status, payload);
         }
-
         return payload?.data ?? null;
     }
 
@@ -96,28 +94,29 @@
             elements.loadingView,
             elements.loginView,
             elements.dashboardView,
-            elements.analysisProgressView,
-            elements.analysisResultView
+            elements.analysisProgressView
         ].forEach((view) => view.classList.toggle("is-hidden", view !== target));
     }
 
-    function sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
     function updateAnalysisAvailability() {
-        const ready = Boolean(state.document);
+        const hasSavedProfile = Boolean(state.userProfile) && !state.profileDirty;
+        const hasGitHubRepository = Boolean(state.github);
+        const ready = hasSavedProfile && hasGitHubRepository;
         elements.startAnalysisButton.disabled = !ready;
         elements.analysisBarIcon.classList.toggle("is-ready", ready);
 
         if (ready) {
-            elements.analysisBarTitle.textContent = "분석을 시작할 수 있어요.";
-            elements.analysisBarDescription.textContent = state.github
-                ? "이력서와 GitHub 저장소 정보로 분석을 진행합니다."
-                : "이력서 내용만으로 분석을 진행합니다.";
+            elements.analysisBarTitle.textContent = "분석 입력이 준비됐어요.";
+            elements.analysisBarDescription.textContent =
+                "선택한 기술 태그와 공개 GitHub 저장소를 기준으로 분석합니다.";
+        } else if (!hasSavedProfile) {
+            elements.analysisBarTitle.textContent = "분석 프로필을 저장해 주세요.";
+            elements.analysisBarDescription.textContent =
+                "희망 직무와 기술 태그를 서버에 저장해야 합니다.";
         } else {
-            elements.analysisBarTitle.textContent = "이력서 내용을 먼저 등록해 주세요.";
-            elements.analysisBarDescription.textContent = "문서 등록이 확인되면 분석을 시작할 수 있어요.";
+            elements.analysisBarTitle.textContent = "GitHub 저장소를 연결해 주세요.";
+            elements.analysisBarDescription.textContent =
+                "분석 근거로 사용할 공개 저장소가 필요합니다.";
         }
     }
 
@@ -132,22 +131,19 @@
         elements.globalMessage.textContent = "";
     }
 
-    function updateStatus(element, state, title, description) {
-        element.className = `status-box status-${state}`;
-        const titleElement = element.querySelector("strong");
-        const descriptionElement = element.querySelector("p");
-        titleElement.textContent = title;
-        descriptionElement.textContent = description;
+    function updateStatus(element, status, title, description) {
+        element.className = `status-box status-${status}`;
+        element.querySelector("strong").textContent = title;
+        element.querySelector("p").textContent = description;
     }
 
     function setFormBusy(form, busy) {
         const button = form.querySelector("button[type='submit']");
         const label = button.querySelector(".button-label");
         const spinner = button.querySelector(".button-spinner");
-        form.querySelectorAll("input, textarea, select, button")
-            .forEach((control) => {
-                control.disabled = busy;
-            });
+        form.querySelectorAll("input, button").forEach((control) => {
+            control.disabled = busy;
+        });
         label.classList.toggle("is-hidden", busy);
         spinner.classList.toggle("is-hidden", !busy);
         button.setAttribute("aria-busy", String(busy));
@@ -157,10 +153,12 @@
         const fieldMessage = error instanceof ApiRequestError
             ? error.fieldErrors[0]?.message
             : null;
-        const description = fieldMessage || error.message
-            || "잠시 후 다시 시도해 주세요.";
-        updateStatus(statusElement, "error", "등록 실패", description);
-
+        updateStatus(
+            statusElement,
+            "error",
+            "요청 실패",
+            fieldMessage || error.message || "잠시 후 다시 시도해 주세요."
+        );
         if (error instanceof ApiRequestError && error.status === 401) {
             showOnly(elements.loginView);
             elements.sessionChip.classList.add("is-hidden");
@@ -174,18 +172,16 @@
                 showOnly(elements.loginView);
                 return;
             }
-
             elements.currentUserId.textContent = currentUser.userId;
             elements.currentUserId.title = currentUser.userId;
             elements.sessionChip.classList.remove("is-hidden");
             showOnly(elements.dashboardView);
             await configureSessionActions();
+            await loadUserProfile();
+            await searchTechnologyTags();
         } catch (error) {
             showOnly(elements.loginView);
-            const message = error instanceof ApiRequestError
-                ? error.message
-                : "서버에 연결할 수 없습니다.";
-            console.error(message);
+            console.error(error.message || "서버에 연결할 수 없습니다.");
         }
     }
 
@@ -202,49 +198,278 @@
         }
     }
 
-    async function registerDocument(event) {
+    async function searchTechnologyTags(event) {
+        event?.preventDefault();
+        clearGlobalMessage();
+        const query = String(new FormData(elements.technologyForm).get("query") || "").trim();
+        setFormBusy(elements.technologyForm, true);
+        updateStatus(elements.technologyStatus, "loading", "검색 중", "표준 기술 태그를 조회하고 있어요.");
+
+        try {
+            const result = await request(
+                `/api/v1/technology-tags?query=${encodeURIComponent(query)}`
+            );
+            renderTechnologyOptions(result?.technologyTags || []);
+            updateTechnologyStatus();
+        } catch (error) {
+            displayError(elements.technologyStatus, error);
+        } finally {
+            setFormBusy(elements.technologyForm, false);
+        }
+    }
+
+    function renderTechnologyOptions(technologyTags) {
+        elements.technologyOptions.innerHTML = "";
+        if (technologyTags.length === 0) {
+            elements.technologyOptions.innerHTML =
+                '<span class="empty-tag-message">검색 결과가 없습니다.</span>';
+            return;
+        }
+        technologyTags.forEach((technologyTag) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "technology-tag-button";
+            button.dataset.technologyTagId = technologyTag.technologyTagId;
+            button.textContent = technologyTag.displayName;
+            button.classList.toggle("is-selected", hasSelectedStandardTag(
+                technologyTag.technologyTagId
+            ));
+            button.addEventListener("click", () => toggleTechnologyTag(technologyTag));
+            elements.technologyOptions.appendChild(button);
+        });
+    }
+
+    function toggleTechnologyTag(technologyTag) {
+        const key = standardTechnologyTagKey(technologyTag.technologyTagId);
+        if (state.selectedTechnologyTags.has(key)) {
+            state.selectedTechnologyTags.delete(key);
+        } else {
+            removeCustomAliasOf(technologyTag.technologyTagId);
+            state.selectedTechnologyTags.set(key, {
+                ...technologyTag,
+                rawName: technologyTag.displayName,
+                normalizedName: technologyTag.key,
+                sourceType: "USER_SELECTED"
+            });
+        }
+        markProfileDirty();
+        renderSelectedTechnologyTags();
+        syncTechnologyOptionSelection();
+        updateTechnologyStatus();
+        updateAnalysisAvailability();
+    }
+
+    function renderSelectedTechnologyTags() {
+        elements.selectedTechnologyTags.innerHTML = "";
+        if (state.selectedTechnologyTags.size === 0) {
+            elements.selectedTechnologyTags.innerHTML =
+                '<span class="empty-tag-message">선택한 기술이 없습니다.</span>';
+            return;
+        }
+        state.selectedTechnologyTags.forEach((technologyTag) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "technology-tag-button is-selected";
+            button.textContent = `${technologyTag.displayName} ×`;
+            button.addEventListener("click", () =>
+                removeSelectedTechnologyTag(technologyTag));
+            elements.selectedTechnologyTags.appendChild(button);
+        });
+    }
+
+    function updateTechnologyStatus() {
+        if (state.selectedTechnologyTags.size === 0) {
+            updateStatus(
+                elements.technologyStatus,
+                "idle",
+                "선택 전",
+                "분석에 사용할 기술을 하나 이상 선택해 주세요."
+            );
+            return;
+        }
+        updateStatus(
+            elements.technologyStatus,
+            "success",
+            "선택 완료",
+            `${state.selectedTechnologyTags.size}개 기술이 선택됐습니다.`
+        );
+    }
+
+    function standardTechnologyTagKey(technologyTagId) {
+        return `standard:${technologyTagId}`;
+    }
+
+    function customTechnologyTagKey(technologyTag) {
+        return `custom:${technologyTag.normalizedName || technologyTag.rawName}`;
+    }
+
+    function hasSelectedStandardTag(technologyTagId) {
+        return state.selectedTechnologyTags.has(
+            standardTechnologyTagKey(technologyTagId)
+        );
+    }
+
+    function removeCustomAliasOf(technologyTagId) {
+        state.selectedTechnologyTags.forEach((technologyTag, key) => {
+            if (technologyTag.sourceType === "USER_CUSTOM"
+                && technologyTag.technologyTagId === technologyTagId) {
+                state.selectedTechnologyTags.delete(key);
+            }
+        });
+    }
+
+    function removeSelectedTechnologyTag(technologyTag) {
+        const key = technologyTag.sourceType === "USER_CUSTOM"
+            ? customTechnologyTagKey(technologyTag)
+            : standardTechnologyTagKey(technologyTag.technologyTagId);
+        state.selectedTechnologyTags.delete(key);
+        markProfileDirty();
+        renderSelectedTechnologyTags();
+        syncTechnologyOptionSelection();
+        updateTechnologyStatus();
+        updateAnalysisAvailability();
+    }
+
+    function syncTechnologyOptionSelection() {
+        elements.technologyOptions
+            .querySelectorAll("[data-technology-tag-id]")
+            .forEach((button) => button.classList.toggle(
+                "is-selected",
+                hasSelectedStandardTag(button.dataset.technologyTagId)
+            ));
+    }
+
+    function markProfileDirty() {
+        state.profileDirty = true;
+        updateProfileStatus();
+    }
+
+    function updateProfileStatus() {
+        if (state.userProfile && !state.profileDirty) {
+            updateStatus(
+                elements.profileStatus,
+                "success",
+                `프로필 버전 ${state.userProfile.version} 저장됨`,
+                "희망 직무와 기술 태그가 서버에 저장됐습니다."
+            );
+            return;
+        }
+        updateStatus(
+            elements.profileStatus,
+            "idle",
+            state.userProfile ? "변경사항 저장 필요" : "프로필 저장 전",
+            "희망 직무와 선택한 기술 태그를 저장해 주세요."
+        );
+    }
+
+    async function loadUserProfile() {
+        try {
+            applyUserProfile(await request("/api/v1/user-profile"));
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.status === 404) {
+                state.userProfile = null;
+                state.profileDirty = false;
+                state.selectedTechnologyTags.clear();
+                elements.targetJobTitle.value = "";
+                renderSelectedTechnologyTags();
+                updateTechnologyStatus();
+                updateProfileStatus();
+                updateAnalysisAvailability();
+                return;
+            }
+            throw error;
+        }
+    }
+
+    function applyUserProfile(userProfile) {
+        state.userProfile = userProfile;
+        state.profileDirty = false;
+        state.selectedTechnologyTags.clear();
+        elements.targetJobTitle.value = userProfile.targetJobTitle;
+        userProfile.technologyTags.forEach((technologyTag) => {
+            const key = technologyTag.sourceType === "USER_CUSTOM"
+                ? customTechnologyTagKey(technologyTag)
+                : standardTechnologyTagKey(technologyTag.technologyTagId);
+            state.selectedTechnologyTags.set(key, technologyTag);
+        });
+        renderSelectedTechnologyTags();
+        syncTechnologyOptionSelection();
+        updateTechnologyStatus();
+        updateProfileStatus();
+        updateAnalysisAvailability();
+    }
+
+    async function saveUserProfile(event) {
         event.preventDefault();
         clearGlobalMessage();
-
-        const formData = new FormData(elements.documentForm);
-        const text = String(formData.get("text") || "").trim();
-        if (!text) {
+        const targetJobTitle = elements.targetJobTitle.value.trim();
+        if (!targetJobTitle) {
             updateStatus(
-                elements.documentStatus,
+                elements.profileStatus,
                 "error",
-                "입력 필요",
-                "등록할 문서 내용을 입력해 주세요."
+                "희망 직무 입력 필요",
+                "분석할 개발 직무를 입력해 주세요."
             );
-            document.getElementById("document-text").focus();
+            elements.targetJobTitle.focus();
+            return;
+        }
+        if (state.selectedTechnologyTags.size === 0) {
+            updateStatus(
+                elements.profileStatus,
+                "error",
+                "기술 태그 선택 필요",
+                "보유 기술을 하나 이상 선택해 주세요."
+            );
             return;
         }
 
-        setFormBusy(elements.documentForm, true);
+        setFormBusy(elements.profileForm, true);
         updateStatus(
-            elements.documentStatus,
+            elements.profileStatus,
             "loading",
-            "등록 중",
-            "문서 내용을 검증하고 저장하고 있어요."
+            "프로필 저장 중",
+            "희망 직무와 기술 태그를 서버에 저장하고 있어요."
         );
+        const requestBody = {
+            ...(state.userProfile
+                ? {expectedVersion: state.userProfile.version}
+                : {}),
+            targetJobTitle,
+            technologyTags: [...state.selectedTechnologyTags.values()]
+                .map((technologyTag) => technologyTag.sourceType === "USER_CUSTOM"
+                    ? {
+                        technologyTagId: null,
+                        customName: technologyTag.rawName
+                    }
+                    : {
+                        technologyTagId: technologyTag.technologyTagId,
+                        customName: null
+                    })
+        };
 
         try {
-            const result = await mutation("/api/v1/documents", {
-                documentType: formData.get("documentType"),
-                text
-            });
-            state.document = result;
-            updateAnalysisAvailability();
-            updateStatus(
-                elements.documentStatus,
-                "success",
-                "등록 완료",
-                `${documentTypeLabel(result.documentType)} · ${formatDate(result.createdAt)}`
+            const userProfile = await mutation(
+                "/api/v1/user-profile",
+                requestBody,
+                "PUT"
             );
-            showGlobalMessage(`문서 등록이 완료됐습니다. 문서 ID: ${result.documentId}`);
+            applyUserProfile(userProfile);
+            showGlobalMessage(
+                `분석 프로필 버전 ${userProfile.version}이 저장됐습니다.`
+            );
         } catch (error) {
-            displayError(elements.documentStatus, error);
+            if (error instanceof ApiRequestError && error.status === 409) {
+                updateStatus(
+                    elements.profileStatus,
+                    "error",
+                    "프로필 버전 충돌",
+                    "다른 변경이 먼저 저장됐습니다. 새로고침 후 다시 시도해 주세요."
+                );
+            } else {
+                displayError(elements.profileStatus, error);
+            }
         } finally {
-            setFormBusy(elements.documentForm, false);
+            setFormBusy(elements.profileForm, false);
         }
     }
 
@@ -252,9 +477,9 @@
         event.preventDefault();
         clearGlobalMessage();
         elements.githubResult.classList.add("is-hidden");
-
-        const formData = new FormData(elements.githubForm);
-        const repositoryUrl = String(formData.get("repositoryUrl") || "").trim();
+        const repositoryUrl = String(
+            new FormData(elements.githubForm).get("repositoryUrl") || ""
+        ).trim();
         if (!repositoryUrl) {
             updateStatus(
                 elements.githubStatus,
@@ -271,15 +496,12 @@
             elements.githubStatus,
             "loading",
             "조회 중",
-            "주소를 검증하고 GitHub에서 저장소 정보를 확인하고 있어요."
+            "GitHub에서 공개 저장소 정보를 확인하고 있어요."
         );
 
         try {
-            const result = await mutation("/api/v1/project-sources/github", {
-                repositoryUrl
-            });
+            const result = await mutation("/api/v1/project-sources/github", {repositoryUrl});
             state.github = result;
-            updateAnalysisAvailability();
             updateStatus(
                 elements.githubStatus,
                 "success",
@@ -291,7 +513,8 @@
             elements.resultCommit.textContent = shortCommit(result.commitSha);
             elements.resultCommit.title = result.commitSha;
             elements.githubResult.classList.remove("is-hidden");
-            showGlobalMessage(`GitHub 프로젝트 등록이 완료됐습니다. 저장소: ${result.repositoryFullName}`);
+            showGlobalMessage(`GitHub 프로젝트 등록 완료: ${result.repositoryFullName}`);
+            updateAnalysisAvailability();
         } catch (error) {
             displayError(elements.githubStatus, error);
         } finally {
@@ -313,72 +536,56 @@
     function appendLogEntry(text, detail) {
         const entry = document.createElement("div");
         entry.className = "chat-message chat-message-active";
-
         const avatar = document.createElement("span");
         avatar.className = "chat-avatar";
-        avatar.setAttribute("aria-hidden", "true");
         avatar.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
-
         const bubble = document.createElement("div");
         bubble.className = "chat-bubble";
-
         const textElement = document.createElement("p");
         textElement.className = "chat-text";
         textElement.textContent = text;
         bubble.appendChild(textElement);
-
-        if (detail) {
-            const detailElement = document.createElement("p");
-            detailElement.className = "chat-detail";
-            detailElement.textContent = detail;
-            bubble.appendChild(detailElement);
-        }
-
+        appendLogDetailToBubble(bubble, detail);
         entry.append(avatar, bubble);
         elements.progressLog.appendChild(entry);
-        entry.scrollIntoView({behavior: "smooth", block: "end"});
         return entry;
     }
 
-    function markLogEntryDone(entry) {
-        entry.classList.remove("chat-message-active");
-        entry.classList.add("chat-message-done");
-        entry.querySelector(".chat-avatar").innerHTML =
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4 10-10"></path></svg>';
-    }
-
-    function markLogEntryFailed(entry) {
-        entry.classList.remove("chat-message-active");
-        entry.classList.add("chat-message-failed");
-        entry.querySelector(".chat-avatar").innerHTML =
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>';
-    }
-
-    function appendLogDetail(entry, detail) {
+    function appendLogDetailToBubble(bubble, detail) {
         if (!detail) {
             return;
         }
         const detailElement = document.createElement("p");
         detailElement.className = "chat-detail";
         detailElement.textContent = detail;
-        entry.querySelector(".chat-bubble").appendChild(detailElement);
+        bubble.appendChild(detailElement);
     }
 
-    async function runStep(text, detail, delayMs) {
+    function appendLogDetail(entry, detail) {
+        appendLogDetailToBubble(entry.querySelector(".chat-bubble"), detail);
+    }
+
+    function markLogEntryDone(entry) {
+        entry.classList.remove("chat-message-active");
+        entry.classList.add("chat-message-done");
+        entry.querySelector(".chat-avatar").textContent = "✓";
+    }
+
+    function markLogEntryFailed(entry) {
+        entry.classList.remove("chat-message-active");
+        entry.classList.add("chat-message-failed");
+        entry.querySelector(".chat-avatar").textContent = "×";
+    }
+
+    function appendCompletedStep(text, detail) {
         const entry = appendLogEntry(text, detail);
-        await sleep(delayMs);
         markLogEntryDone(entry);
     }
 
-    /**
-     * 고정 지연이 아니라 실제 비동기 작업(task)의 결과로 성공·실패를 표시하는 단계다.
-     * task는 완료 시 상세 문구를 반환하고, 실패하면 Error를 던져야 한다.
-     */
     async function runRealStep(text, task) {
         const entry = appendLogEntry(text, null);
         try {
-            const detail = await task();
-            appendLogDetail(entry, detail);
+            appendLogDetail(entry, await task());
             markLogEntryDone(entry);
         } catch (error) {
             appendLogDetail(entry, error.message || "확인하지 못했습니다.");
@@ -387,33 +594,26 @@
     }
 
     async function startAnalysis() {
-        if (!state.document) {
+        if (!state.userProfile || state.profileDirty || !state.github) {
             return;
         }
-
         elements.progressLog.innerHTML = "";
         showOnly(elements.analysisProgressView);
 
-        await runStep(
-            "이력서 내용 확인",
-            `${documentTypeLabel(state.document.documentType)} · ${formatDate(state.document.createdAt)}`,
-            700
+        appendCompletedStep(
+            "기술 태그 확인",
+            [...state.selectedTechnologyTags.values()]
+                .map((technologyTag) => technologyTag.displayName)
+                .join(", ")
         );
-
-        if (state.github) {
-            await runStep(
-                "GitHub 저장소 확인",
-                `${state.github.repositoryFullName} · 기본 브랜치 ${state.github.defaultBranch} · ${shortCommit(state.github.commitSha)}`,
-                700
-            );
-        } else {
-            await runStep(
-                "GitHub 저장소 미등록",
-                "이력서 내용만으로 분석을 진행합니다.",
-                500
-            );
-        }
-
+        appendCompletedStep(
+            "분석 프로필 확인",
+            `${state.userProfile.targetJobTitle} · 버전 ${state.userProfile.version}`
+        );
+        appendCompletedStep(
+            "GitHub 저장소 확인",
+            `${state.github.repositoryFullName} · ${state.github.defaultBranch} · ${shortCommit(state.github.commitSha)}`
+        );
         await runRealStep("Python 서버 연결 확인", async () => {
             const status = await request("/api/v1/system/python-status");
             if (!status?.connected) {
@@ -422,87 +622,31 @@
             return `연결됨 · status=${status.status} · modelReady=${status.modelReady}`;
         });
 
-        await runStep(
-            "기술 스택·경력 임베딩 계산",
-            "Python 분석 서비스 연동 준비 중이라 샘플 값으로 진행합니다.",
-            900
+        const pendingEntry = appendLogEntry("실제 분석 작업 연결 대기", null);
+        appendLogDetail(
+            pendingEntry,
+            "분석 시작 API와 작업 이벤트가 아직 연결되지 않아 결과를 생성하지 않았습니다."
         );
-
-        await runStep(
-            "채용 조건과 유사도 비교",
-            "샘플 값으로 계산 중입니다.",
-            900
-        );
-
-        await runStep("결과 정리", null, 500);
-
-        renderAnalysisResult();
-        showOnly(elements.analysisResultView);
-    }
-
-    function renderAnalysisResult() {
-        const checklistItems = [
-            {label: "3년 이상 백엔드 개발 경험", met: true},
-            {label: "Spring Boot 기반 서비스 운영 경험", met: true},
-            {label: "클라우드 인프라 운영 경험", met: false}
-        ];
-        elements.resultChecklist.innerHTML = checklistItems.map((item) => `
-            <li class="checklist-item ${item.met ? "is-met" : "is-missing"}">
-                <span class="checklist-icon" aria-hidden="true">
-                    ${item.met
-                        ? '<svg viewBox="0 0 24 24"><path d="m5 13 4 4 10-10"></path></svg>'
-                        : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg>'}
-                </span>
-                <span>${item.label}</span>
-            </li>
-        `).join("");
-
-        const similarityItems = [
-            {label: "백엔드 개발", score: 82},
-            {label: "클라우드·인프라", score: 54},
-            {label: "AI·LLM 활용", score: 38}
-        ];
-        elements.resultSimilarity.innerHTML = similarityItems.map((item) => `
-            <div class="similarity-row">
-                <div class="similarity-label">
-                    <span>${item.label}</span>
-                    <span>${item.score}%</span>
-                </div>
-                <div class="similarity-track">
-                    <div class="similarity-fill" style="width: ${item.score}%"></div>
-                </div>
-            </div>
-        `).join("");
-
-        const skillGaps = ["Kubernetes", "RAG 파이프라인 설계", "클라우드 비용 최적화"];
-        elements.resultSkillGaps.innerHTML = skillGaps
-            .map((skill) => `<span class="skill-tag">${skill}</span>`)
-            .join("");
-    }
-
-    function documentTypeLabel(documentType) {
-        return documentType === "PORTFOLIO" ? "포트폴리오" : "이력서";
-    }
-
-    function formatDate(value) {
-        if (!value) {
-            return "등록 시각 확인 불가";
-        }
-        return new Intl.DateTimeFormat("ko-KR", {
-            dateStyle: "medium",
-            timeStyle: "short"
-        }).format(new Date(value));
+        markLogEntryFailed(pendingEntry);
     }
 
     function shortCommit(commitSha) {
         return commitSha ? commitSha.slice(0, 12) : "-";
     }
 
-    elements.documentForm.addEventListener("submit", registerDocument);
+    elements.technologyForm.addEventListener("submit", searchTechnologyTags);
+    elements.profileForm.addEventListener("submit", saveUserProfile);
+    elements.targetJobTitle.addEventListener("input", () => {
+        markProfileDirty();
+        updateAnalysisAvailability();
+    });
     elements.githubForm.addEventListener("submit", registerGitHubRepository);
     elements.logoutButton.addEventListener("click", logout);
     elements.startAnalysisButton.addEventListener("click", startAnalysis);
-    elements.backToDashboardButton.addEventListener("click", () => showOnly(elements.dashboardView));
+    elements.backToDashboardButton.addEventListener(
+        "click",
+        () => showOnly(elements.dashboardView)
+    );
 
     updateAnalysisAvailability();
     window.addEventListener("pageshow", loadSession);
