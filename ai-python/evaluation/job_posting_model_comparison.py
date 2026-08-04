@@ -68,17 +68,11 @@ CANDIDATE_MODELS = [
 # 절충값이며 확인 필요 — 표본이 3회뿐이라 흔들리는 비율의 정밀한 추정치는 아니다.
 REPEATS = 3
 
-# 파일명 -> 원문에 직무명 근거가 있는지. True인데 jobTitle이 null이면 실패로 본다.
-# False(no_job_title_stated.txt)는 null이 정답이므로 null이어도 실패가 아니다.
-EXPECTS_JOB_TITLE = {
-    "backend_java_spring.txt": True,
-    "ai_ml_engineer.txt": True,
-    "llm_rag_backend.txt": True,
-    "frontend_react.txt": True,
-    "game_server_developer.txt": True,
-    "title_in_sentence_only.txt": True,
-    "no_job_title_stated.txt": False,
-}
+# 원문에 직무명 근거가 없어서(= jobTitle null이 정답인) job_title_missing 판정을
+# 건너뛰어야 하는 fixture만 여기 나열한다. 나머지는 전부 "직무명 근거 있음"이
+# 기본값이라, 새 fixture를 추가해도 이 목록을 안 고치면 KeyError가 나던 예전과
+# 달리 조용히 기본값(True)으로 처리된다.
+NO_JOB_TITLE_FIXTURES = {"no_job_title_stated.txt"}
 
 
 @dataclass
@@ -148,7 +142,7 @@ async def _run_trial(model: str, fixture_path: Path, repeat_index: int) -> Trial
     )
 
     source_text = fixture_path.read_text(encoding="utf-8")
-    expects_job_title = EXPECTS_JOB_TITLE[fixture_path.name]
+    expects_job_title = fixture_path.name not in NO_JOB_TITLE_FIXTURES
 
     start = time.monotonic()
     async with httpx.AsyncClient(
