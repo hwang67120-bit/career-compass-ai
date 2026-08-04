@@ -18,6 +18,21 @@
 `REPEATS`회 반복해 fixture별 결과가 실행마다 달라지는지(`flaky`)를 함께
 기록한다.
 
+2026-08-04 수정: 세션 오염 완화책(근거 검증 실패 시 언로드 후 1회 재시도,
+`app/services/job_posting_extraction.py`의 `_extract_core_with_retry`)이
+실제로 통과율을 올리는지 이 스크립트가 지금까지 증명하지 못했다 —
+`provider.extract_job_posting`을 직접 호출하고 재시도 로직을 안 탔기
+때문이다. 이제 `_extract_core_with_retry`를 그대로 재사용해서(운영 코드
+경로와 동일하게) 검증하고, 재시도가 실제로 몇 번 발동했는지도 집계한다.
+
+같은 수정 과정에서 별개의 버그도 발견했다 — `provider.extract_job_posting`이
+`JobPostingCoreExtraction`(담당 업무 필드 없음)을 반환하도록 이미 바뀌었는데
+(2026-08-03 스키마 분리), 이 스크립트는 여전히 `filter_unevidenced_candidates`
+(`JobPostingExtraction` 전용, `responsibilities` 속성을 직접 접근)에 그
+결과를 그대로 넘기고 있었다 — `AttributeError`로 즉시 깨지는 상태였다.
+직무명·기술만 담당 업무 없이 감싸서(`JobPostingExtraction`으로 변환) 넘기도록
+고쳤다.
+
 실행:
     cd ai-python
     .venv/Scripts/python.exe -m evaluation.job_posting_model_comparison
@@ -33,10 +48,11 @@ import httpx
 
 from app.providers.ollama import OllamaProvider, OllamaResponseError, OllamaUnavailableError
 from app.providers.settings import OllamaSettings
+from app.schemas.job_posting import JobPostingExtraction
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
+    _extract_core_with_retry,
     filter_unevidenced_candidates,
-    validate_evidence,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "job_postings"
@@ -52,17 +68,11 @@ CANDIDATE_MODELS = [
 # 절충값이며 확인 필요 — 표본이 3회뿐이라 흔들리는 비율의 정밀한 추정치는 아니다.
 REPEATS = 3
 
-# 파일명 -> 원문에 직무명 근거가 있는지. True인데 jobTitle이 null이면 실패로 본다.
-# False(no_job_title_stated.txt)는 null이 정답이므로 null이어도 실패가 아니다.
-EXPECTS_JOB_TITLE = {
-    "backend_java_spring.txt": True,
-    "ai_ml_engineer.txt": True,
-    "llm_rag_backend.txt": True,
-    "frontend_react.txt": True,
-    "game_server_developer.txt": True,
-    "title_in_sentence_only.txt": True,
-    "no_job_title_stated.txt": False,
-}
+# 원문에 직무명 근거가 없어서(= jobTitle null이 정답인) job_title_missing 판정을
+# 건너뛰어야 하는 fixture만 여기 나열한다. 나머지는 전부 "직무명 근거 있음"이
+# 기본값이라, 새 fixture를 추가해도 이 목록을 안 고치면 KeyError가 나던 예전과
+# 달리 조용히 기본값(True)으로 처리된다.
+NO_JOB_TITLE_FIXTURES = {"no_job_title_stated.txt"}
 
 
 @dataclass
@@ -73,6 +83,8 @@ class TrialResult:
     outcome: str  # "success" | "schema_invalid" | "evidence_invalid" | "unavailable" | "job_title_missing"
     elapsed_seconds: float
     detail: str = ""
+    retried: bool = False
+    """세션 오염 완화책(언로드+재시도)이 이 시도에서 실제로 발동했는지."""
 
 
 @dataclass
@@ -130,31 +142,58 @@ async def _run_trial(model: str, fixture_path: Path, repeat_index: int) -> Trial
     )
 
     source_text = fixture_path.read_text(encoding="utf-8")
-    expects_job_title = EXPECTS_JOB_TITLE[fixture_path.name]
+    expects_job_title = fixture_path.name not in NO_JOB_TITLE_FIXTURES
 
     start = time.monotonic()
     async with httpx.AsyncClient(
         base_url=str(settings.ollama_base_url).rstrip("/"), timeout=timeout
     ) as client:
         provider = OllamaProvider(client=client, model_name=model)
+
+        retried = False
+        original_unload = provider.unload_model
+
+        async def _counting_unload() -> None:
+            nonlocal retried
+            retried = True
+            await original_unload()
+
+        provider.unload_model = _counting_unload
+
         try:
-            candidate = await provider.extract_job_posting(source_text)
+            # 운영 코드와 같은 경로(언로드+1회 재시도 포함)를 그대로 탄다 —
+            # 이 스크립트가 자체적으로 근거 검증을 다시 구현하지 않는다.
+            candidate = await _extract_core_with_retry(source_text, provider)
         except OllamaUnavailableError as error:
             return TrialResult(
-                model, fixture_path.name, repeat_index, "unavailable", time.monotonic() - start, str(error)
+                model, fixture_path.name, repeat_index, "unavailable",
+                time.monotonic() - start, str(error), retried,
             )
         except OllamaResponseError as error:
             return TrialResult(
-                model, fixture_path.name, repeat_index, "schema_invalid", time.monotonic() - start, str(error)
+                model, fixture_path.name, repeat_index, "schema_invalid",
+                time.monotonic() - start, str(error), retried,
+            )
+        except JobPostingEvidenceValidationError as error:
+            return TrialResult(
+                model, fixture_path.name, repeat_index, "evidence_invalid",
+                time.monotonic() - start, str(error), retried,
             )
 
     elapsed = time.monotonic() - start
-    try:
-        validate_evidence(candidate, source_text)
-    except JobPostingEvidenceValidationError as error:
-        return TrialResult(model, fixture_path.name, repeat_index, "evidence_invalid", elapsed, str(error))
 
-    filtered = filter_unevidenced_candidates(candidate)
+    # filter_unevidenced_candidates는 담당 업무 필드가 있는 JobPostingExtraction
+    # 전용이다 — 이 스크립트는 직무명·기술(core)만 비교하므로 담당 업무를 빈
+    # 채로 감싸서 넘긴다(응답을 지어내는 게 아니라 애초에 이 스크립트가 담당
+    # 업무를 요청하지 않았다는 뜻).
+    full_shaped = JobPostingExtraction(
+        evidence=candidate.evidence,
+        job_title=candidate.job_title,
+        job_title_evidence_ids=candidate.job_title_evidence_ids,
+        required_skills=candidate.required_skills,
+        preferred_skills=candidate.preferred_skills,
+    )
+    filtered = filter_unevidenced_candidates(full_shaped)
 
     if expects_job_title and filtered.job_title is None:
         return TrialResult(
@@ -164,9 +203,10 @@ async def _run_trial(model: str, fixture_path: Path, repeat_index: int) -> Trial
             "job_title_missing",
             elapsed,
             "원문에 직무명 근거가 있는데도 jobTitle이 null로 반환됨",
+            retried,
         )
 
-    return TrialResult(model, fixture_path.name, repeat_index, "success", elapsed)
+    return TrialResult(model, fixture_path.name, repeat_index, "success", elapsed, retried=retried)
 
 
 async def run_comparison(
@@ -185,9 +225,10 @@ async def run_comparison(
                 for repeat_index in range(repeats):
                     result = await _run_trial(model, fixture_path, repeat_index)
                     fixture_summary.trials.append(result)
+                    retry_marker = " [재시도 발동]" if result.retried else ""
                     line = (
                         f"[{model}] {fixture_path.name} #{repeat_index + 1}/{repeats}: "
-                        f"{result.outcome} ({result.elapsed_seconds:.1f}s) {result.detail}"
+                        f"{result.outcome}{retry_marker} ({result.elapsed_seconds:.1f}s) {result.detail}"
                     )
                     print(line)
                     if raw_log:
@@ -206,6 +247,21 @@ def print_report(summaries: list[ModelSummary]) -> None:
         print(
             f"{summary.model:<20} {summary.success_rate:>7.0%} {summary.average_seconds:>9.1f}s"
         )
+
+    print("\n=== 세션 오염 완화책(언로드+재시도) 실제 효과 ===")
+    any_retried = False
+    for summary in summaries:
+        retried_trials = [t for t in summary.trials if t.retried]
+        if not retried_trials:
+            continue
+        any_retried = True
+        rescued = sum(1 for t in retried_trials if t.outcome == "success")
+        print(
+            f"  [{summary.model}] 재시도 발동 {len(retried_trials)}건 중 "
+            f"{rescued}건 성공으로 복구, {len(retried_trials) - rescued}건은 재시도해도 실패 유지"
+        )
+    if not any_retried:
+        print("  이번 실행에서는 재시도가 한 번도 발동하지 않았다(근거 검증 실패 없음).")
 
     print("\n=== 반복마다 결과가 갈린 fixture(비결정성) ===")
     any_flaky = False

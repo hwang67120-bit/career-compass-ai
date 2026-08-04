@@ -38,8 +38,9 @@
 
 ### Python
 
-- 채용공고 원문에서 직무명·필수/우대 기술을 추출한다.
+- 채용공고 원문에서 직무명·필수/우대 기술·담당 업무를 추출한다.
 - 확인할 수 없는 값은 만들지 않고, 근거 없는 항목은 응답에서 제외한다(이력서와 같은 원칙, `app/services/resume_extraction.py`의 `filter_unevidenced_candidates`에 대응).
+- 직무명·기술 추출(Ollama)이 재시도까지 실패하면 Gemini로 폴백한다(7절 참고). 어느 단계를 어느 provider가 처리했는지는 `modelExecutions`로 숨기지 않고 응답에 남긴다.
 - 사용자 계정, 작업 상태를 저장하지 않는다.
 
 ## 3. 내부 API
@@ -73,12 +74,23 @@ X-Request-Id: {uuid}
     "extraction": {
       "jobTitle": null,
       "jobTitleEvidenceIds": [],
+      "responsibilities": [],
       "requiredSkills": [],
       "preferredSkills": [],
       "evidence": []
     },
-    "modelProvider": "ollama",
-    "modelName": "configured-model-name"
+    "modelExecutions": [
+      {
+        "stage": "CORE_EXTRACTION",
+        "provider": "ollama",
+        "model": "configured-core-model-name"
+      },
+      {
+        "stage": "RESPONSIBILITY_EXTRACTION",
+        "provider": "ollama",
+        "model": "configured-responsibility-model-name"
+      }
+    ]
   },
   "error": null,
   "timestamp": "2026-07-30T08:00:00Z"
@@ -86,6 +98,34 @@ X-Request-Id: {uuid}
 ```
 
 `jobTitle`은 확신할 수 없으면 `null`이다(실제 확인됨 — 아래 8절 참고). `piiRemoved` 필드는 없다(개인정보 제거 단계가 없으므로).
+
+### `modelExecutions` (2026-08-04, PR #45 리뷰 반영 — 코덱스 확인 필요)
+
+직무명·기술(`CORE_EXTRACTION`)과 담당 업무(`RESPONSIBILITY_EXTRACTION`)는
+서로 다른 provider·모델이 처리할 수 있다 — 기본 구성도 이미 두 단계가
+서로 다른 Ollama 모델을 쓴다(8절 참고). 예전 계약의 단일
+`modelProvider`/`modelName` 필드는 이 혼합 실행을 표현할 수 없어서(어느
+필드값이 core 것인지 responsibility 것인지 구분 불가), 필드를 배열로
+바꿨다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `modelExecutions[].stage` | `"CORE_EXTRACTION"` \| `"RESPONSIBILITY_EXTRACTION"` | 어느 추출 단계인지 |
+| `modelExecutions[].provider` | string | 실제로 그 단계를 처리한 provider(`"ollama"` 또는 `"gemini"`) |
+| `modelExecutions[].model` | string | 실제로 그 단계를 처리한 모델 이름 |
+
+Ollama가 재시도까지 실패해 Gemini로 폴백한 단계는 그 단계의
+`provider`/`model`만 `"gemini"`/Gemini 모델 이름으로 바뀐다(9절 참고).
+배열은 항상 두 항목(`CORE_EXTRACTION`, `RESPONSIBILITY_EXTRACTION`)을
+포함한다 — 실패해서 두 단계 모두 실패 처리된 경우(전체가 502/503으로
+응답) 외에는 값이 비지 않는다.
+
+### `JobPostingResponsibility`
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `rawText` | string | 공고에 적힌 담당 업무 서술(자격 요건·우대 사항·근무 조건 제외) |
+| `evidenceIds` | string[] | 하나 이상의 근거 식별자 |
 
 ### `JobPostingSkill`
 
@@ -103,7 +143,7 @@ X-Request-Id: {uuid}
 | `value` | string | 근거가 뒷받침하는 값 |
 | `sourceText` | string | 판정을 확인할 수 있는 최소 원문 범위 |
 
-모든 후보 항목(`requiredSkills`, `preferredSkills`, `jobTitle`을 채운 경우)은 근거를 가져야 한다. 근거를 못 만든 항목은 응답에서 제외한다(빈 값으로 채우지 않음 — `document-extraction.md`에서 코덱스와 합의한 방식과 동일).
+모든 후보 항목(`responsibilities`, `requiredSkills`, `preferredSkills`, `jobTitle`을 채운 경우)은 근거를 가져야 한다. 근거를 못 만든 항목은 응답에서 제외한다(빈 값으로 채우지 않음 — `document-extraction.md`에서 코덱스와 합의한 방식과 동일).
 
 ## 5. 실패 응답
 
@@ -121,12 +161,32 @@ X-Request-Id: {uuid}
 
 최적화 전에 모델 호출 시간과 전체 처리 시간을 측정한다.
 
-## 7. 확인 필요 (병합 전 코덱스 검토 요청)
+## 7. Gemini 폴백과 데이터 전송 범위 (2026-08-04, PR #45 리뷰 반영 — 코덱스 확인 필요)
+
+Ollama(로컬)가 재시도까지 실패하면 Gemini(외부 API)로 폴백한다. Gemini는
+외부 서비스이므로 "채용공고는 공개 정보라 정책 확인이 필요 없다"는 판단은
+쓰지 않는다 — 이 판단 자체가 근거 없는 자체 추론이었다.
+
+- **확정된 것**: Gemini로 보내기 직전 이메일·전화번호로 보이는 문자열을
+  `[REDACTED]`로 치환한다(`app/guardrails/contact_info_redaction.py`).
+  Ollama는 로컬 실행이라 이 처리를 거치지 않는다.
+- **확인 필요**: 이 치환의 정규식이 실제 채용공고 원문 표본으로 검증되지
+  않았다(변형 표기·비표준 구분자를 놓칠 수 있음). 또한 "연락처만 지우면
+  충분한지, 그 이상(예: 담당자 이름)까지 지워야 하는지"는 계약으로 확정된
+  범위가 아니다 — Java의 [`job-search-tool.md`](job-search-tool.md)가
+  제안한 "sourceText에서 연락처·담당자 정보 제거"가 실제로 적용되면 이
+  중복 방어선의 필요 범위도 다시 판단해야 한다.
+- Gemini 요청 자체가 무료 등급 요청 제한으로 실패할 수 있다는 점(정책이
+  아니라 가용성 문제)은 기존과 동일하게 5절 `MODEL_UNAVAILABLE`로 처리된다.
+
+## 8. 확인 필요 (병합 전 코덱스 검토 요청)
 
 - 이 문서 전체가 **제안**이며, Java 쪽 사용자 API·`JobPosting` 저장 모델과 함께 확정해야 한다.
 - 채용공고 텍스트 최대 길이를 전용 설정으로 확정해야 한다.
-- `jobTitle`이 채워지지 않는 경우(8절 참고) Java가 어떻게 처리할지 — 재시도, 사용자 직접 입력 등.
+- `jobTitle`이 채워지지 않는 경우(9절 참고) Java가 어떻게 처리할지 — 재시도, 사용자 직접 입력 등.
+- `modelExecutions[].stage`/`provider` 값 이름(`CORE_EXTRACTION` 등, 대문자 스네이크)과 `provider` 값의 대소문자(`"ollama"` 소문자, 기존 `modelProvider` 예시와 동일하게 맞춤)가 실제로 Java 쪽 파싱 규칙과 맞는지.
+- 7절의 Gemini 데이터 전송 범위·연락처 제거 검증 범위.
 
-## 8. 실제 검증에서 발견한 사항
+## 9. 실제 검증에서 발견한 사항
 
 `qwen2.5:latest`로 실제 호출해보면 `requiredSkills`·`evidence`는 안정적으로 채우지만, `jobTitle`은 채우지 않는 경우가 실제로 재현됐다(원문에 "백엔드 개발자를 채용합니다"처럼 직무가 명확해도). 이력서와 마찬가지로 근거 없는 값을 지어내지 않는 지침을 모델이 보수적으로 따른 것으로 보인다. 스키마·프롬프트가 계약으로 확정되지 않아 이번에는 더 튜닝하지 않았다 — `docs/architecture/llm-providers.md`의 모델 평가 방식(같은 평가 자료로 통과율 비교)을 채용공고에도 적용할 필요가 있다.

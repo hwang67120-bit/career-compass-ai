@@ -37,6 +37,13 @@ X-Internal-Token: {shared-secret}
 - 근거 검증·필터링(할루시네이션·중복·유령 참조 차단, 근거 없는 후보 제거)은 `app/services/job_posting_extraction.py`.
 - 실제 검증: `tests/job_postings/test_job_postings_extract.py` — 실제 Ollama 호출(mock 아님).
 - `qwen2.5:latest`로는 `requiredSkills`·`evidence`는 안정적으로 채우지만 `jobTitle`은 채우지 않는 경우가 실제로 있었다(계약 문서 8절 참고) — 아직 모델 평가·프롬프트 튜닝을 안 했다.
+- **Gemini 폴백(2026-08-04, PR #45 리뷰로 2026-08-04 수정)**: Ollama가 근거 검증 재시도까지
+  실패하면 Gemini로 폴백한다. `GEMINI_API_KEY` 등이 없어도 Ollama만으로 정상 동작하며(설정
+  부재는 예외가 아니라 폴백 미사용으로 처리), Gemini 클라이언트는 Ollama가 실제로 실패했을
+  때만 지연 생성한다. Gemini는 외부 서비스라 "공개 정보라 정책 확인 불필요"하다고 임의로
+  판단하지 않고, 대신 전송 직전 이메일·전화번호를 제거한다(정규식 커버리지는 확인 필요).
+  응답의 `modelExecutions` 배열이 `CORE_EXTRACTION`/`RESPONSIBILITY_EXTRACTION` 단계별로
+  실제 처리한 provider·모델을 정직하게 남긴다(`docs/current-work.md` 참고).
 
 ## 내부 서비스 인증 (2차 방어선)
 
@@ -88,7 +95,8 @@ app/
 | `OLLAMA_MODEL` | 채용공고 직무명·기술 구조화 추출용 Ollama 모델 | 확인 필요 — 임시값(`qwen2.5:latest`) |
 | `OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL` | 채용공고 담당 업무 추출 전용 Ollama 모델 | 확인 필요 — 임시값(`exaone3.5:latest`), qwen2.5는 이 호출에서 evidence를 못 채워서 분리(`docs/current-work.md` 참고) |
 | `OLLAMA_EMBEDDING_MODEL` | Ollama 임베딩 모델 | 확인 필요 |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Gemini 연동 | 확인 필요 |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini 연동. `GEMINI_MODEL`은 채용공고 추출의 Ollama 폴백으로 쓰인다(2026-08-04). **선택값** — 없으면 폴백 없이 Ollama만으로 동작한다(2026-08-04 PR #45 리뷰 반영, 이 셋만 예외적으로 필수가 아니다) | 확인 필요 |
+| `GEMINI_EMBEDDING_MODEL` | Gemini 임베딩 모델 | 확인 필요 |
 | `JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH` | 채용공고 텍스트 최대 길이(문자 수) | 확인 필요 — 계약이 제안 상태라 임시값, Java 설정과 맞춰야 함 |
 
 실제 배포 환경(Linux)에 이 값들이 실제로 주입되는지는 배포 담당이 별도로 확인해야 한다(이 문서 작성 시점에는 로컬 `.env`만 확인함, 실제 비밀값은 커밋하지 않음 — `.env.example` 참고).
