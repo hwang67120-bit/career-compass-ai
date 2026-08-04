@@ -1,7 +1,7 @@
 import pytest
 
 from app.schemas.embedding import EmbeddingVector
-from app.schemas.job_posting import JobPostingExtraction, JobPostingSkill
+from app.schemas.job_posting import JobPostingExtraction, JobPostingResponsibility, JobPostingSkill
 from app.services.job_posting_embedding import (
     JobPostingTextEmpty,
     build_job_posting_text,
@@ -41,6 +41,22 @@ def test_build_job_posting_text_combines_title_and_skills() -> None:
     assert "직무명: 백엔드 개발자" in text
     assert "필수 기술: Java, Spring Boot" in text
     assert "우대 기술: AWS" in text
+
+
+def test_build_job_posting_text_includes_responsibilities() -> None:
+    """2026-08-03 추가 — 사용자 경험 임베딩(README 서술형 텍스트)과 비교할 서술형
+    텍스트가 채용공고 쪽에도 들어가야 한다(담당 업무)."""
+    extraction = JobPostingExtraction(
+        job_title="백엔드 개발자",
+        responsibilities=[
+            JobPostingResponsibility(raw_text="주문·결제 API 설계", evidence_ids=["e1"]),
+            JobPostingResponsibility(raw_text="대용량 트래픽 처리", evidence_ids=["e2"]),
+        ],
+    )
+
+    text = build_job_posting_text(extraction)
+
+    assert "담당 업무: 주문·결제 API 설계 대용량 트래픽 처리" in text
 
 
 def test_build_job_posting_text_works_with_only_required_skills() -> None:

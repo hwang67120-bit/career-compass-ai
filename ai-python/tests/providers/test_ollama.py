@@ -53,6 +53,48 @@ async def test_extract_job_posting_returns_evidence_linked_result(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(
+    reason=(
+        "2026-08-03 확인: qwen2.5는 담당 업무만 추출하는 좁은 스키마로 완전히 "
+        "분리해도(직무명·기술 스키마와 안 합쳐도) evidence 배열을 계속 비운다 — "
+        "값(responsibilities.rawText)은 정확한데 evidenceIds만 안 채운다. 여러 "
+        "fixture·여러 재로드로 4회 이상 반복 확인, 매번 재현됨(우연한 flaky 아님). "
+        "filter_unevidenced_candidates가 근거 없는 항목을 걸러내므로 운영에서는 "
+        "안전하게 빈 결과로 처리되지만, 이 모델로는 이 필드가 아직 못 쓴다 — "
+        "다른 모델 평가 또는 프롬프트 재작업이 필요(확인 필요)."
+    ),
+    strict=False,
+)
+async def test_extract_job_posting_responsibilities_returns_evidence_linked_result(
+    provider: OllamaProvider,
+) -> None:
+    """담당 업무 추출은 직무명·기술 추출과 완전히 별도 호출이다(2026-08-03) —
+    같은 스키마에 합쳤을 때 evidence 배열이 통째로 비는 회귀가 실제로
+    재현돼 분리했다. 분리 후에도 qwen2.5는 이 호출에서 evidence를 안 채운다
+    (아래 xfail 이유 참고) — 이 assert는 모델이 개선되면 알 수 있도록 그대로 둔다."""
+    result = await provider.extract_job_posting_responsibilities(
+        "백엔드 개발자 채용\n\n담당 업무: 주문·결제 백엔드 API 설계 및 운영\n\n"
+        "필수 조건: Python 3년 이상."
+    )
+
+    assert result.evidence
+    assert result.responsibilities
+
+
+@pytest.mark.asyncio
+async def test_unload_model_then_extract_still_works(provider: OllamaProvider) -> None:
+    """세션 오염 완화책(2026-08-03 결정)이 쓰는 언로드 요청 자체가 예외 없이 끝나고,
+    언로드 후에도 다음 요청이 정상적으로 새로 로드해 응답하는지 확인한다."""
+    await provider.unload_model()
+
+    result = await provider.extract_job_posting(
+        "백엔드 개발자를 채용합니다. 필수 조건: Python 3년 이상."
+    )
+
+    assert result.evidence
+
+
+@pytest.mark.asyncio
 async def test_generate_job_search_keyword_suggestions_returns_list(
     provider: OllamaProvider,
 ) -> None:
