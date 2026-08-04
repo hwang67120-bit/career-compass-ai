@@ -23,7 +23,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "spring.docker.compose.enabled=false",
         "github.api.connect-timeout=3s",
         "github.api.read-timeout=8s",
-        "python.worker.internal-token=integration-test-token"
+        "python.worker.internal-token=integration-test-token",
+        "work24.api.auth-key=integration-test-key"
 })
 class ProjectSourceQueryRepositoryIntegrationTest {
 
