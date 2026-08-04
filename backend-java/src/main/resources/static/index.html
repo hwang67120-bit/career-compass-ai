@@ -91,6 +91,11 @@
                 <p class="panel-description">
                     서버가 관리하는 표준 기술 태그를 검색해 직접 선택합니다.
                 </p>
+                <div class="profile-target-field">
+                    <label for="target-job-title">희망 개발 직무</label>
+                    <input id="target-job-title" name="targetJobTitle" form="profile-form" type="text" placeholder="백엔드 개발자" autocomplete="off" required>
+                    <p class="field-help">채용공고 검색과 비교의 기준으로 사용합니다.</p>
+                </div>
                 <form id="technology-form" class="technology-search-form" novalidate>
                     <label for="technology-query">보유 기술 검색</label>
                     <input id="technology-query" name="query" type="search" placeholder="Java, Spring Boot, PostgreSQL" autocomplete="off">
@@ -104,6 +109,19 @@
                     <strong>선택한 기술</strong>
                     <div id="selected-technology-tags" class="technology-tag-options">
                         <span class="empty-tag-message">선택한 기술이 없습니다.</span>
+                    </div>
+                </div>
+                <form id="profile-form" class="profile-save-form" novalidate>
+                    <button class="primary-button submit-button" type="submit">
+                        <span class="button-label">분석 프로필 저장</span>
+                        <span class="button-spinner is-hidden" aria-hidden="true"></span>
+                    </button>
+                </form>
+                <div id="profile-status" class="status-box status-idle">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <div>
+                        <strong>프로필 저장 전</strong>
+                        <p>희망 직무와 선택한 기술 태그를 저장해 주세요.</p>
                     </div>
                 </div>
                 <div id="technology-status" class="status-box status-idle">
