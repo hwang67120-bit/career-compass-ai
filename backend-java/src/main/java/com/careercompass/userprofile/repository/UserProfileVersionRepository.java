@@ -14,4 +14,10 @@ public interface UserProfileVersionRepository
     Optional<UserProfileVersion> findByUserProfile_IdAndProfileVersion(
             UUID userProfileId, int profileVersion
     );
+
+    @EntityGraph(attributePaths = "technologyTags")
+    Optional<UserProfileVersion>
+    findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
+            UUID userProfileId, int profileVersion, UUID userId
+    );
 }
