@@ -8,6 +8,7 @@ import com.careercompass.common.web.ApiResponseFactory;
 import com.careercompass.common.web.FieldErrorDetail;
 import com.careercompass.jobanalysis.exception.InvalidJobAnalysisRequestException;
 import com.careercompass.jobanalysis.exception.JobAnalysisInputNotFoundException;
+import com.careercompass.jobanalysis.exception.JobAnalysisNotFoundException;
 import com.careercompass.jobanalysis.exception.ProjectSourceUnavailableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,16 @@ public class JobAnalysisExceptionHandler {
                 HttpStatus.NOT_FOUND,
                 "JOB_ANALYSIS_INPUT_NOT_FOUND",
                 "분석에 사용할 프로필 또는 저장소를 찾을 수 없습니다.",
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(JobAnalysisNotFoundException.class)
+    ResponseEntity<ApiResponse<Void>> handleJobAnalysisNotFound() {
+        return failure(
+                HttpStatus.NOT_FOUND,
+                "JOB_ANALYSIS_NOT_FOUND",
+                "분석 작업을 찾을 수 없습니다.",
                 List.of()
         );
     }

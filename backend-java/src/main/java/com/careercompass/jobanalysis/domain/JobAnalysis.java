@@ -167,4 +167,39 @@ public class JobAnalysis {
     public List<ProjectSource> getProjectSources() {
         return List.copyOf(projectSources);
     }
+
+    /**
+     * 기능: 워커가 이 작업을 선점했음을 표시한다(짧은 트랜잭션 안에서만 호출).
+     */
+    public void markRunning(Instant now) {
+        this.analysisStatus = JobAnalysisStatus.RUNNING;
+        this.updatedAt = now;
+    }
+
+    /**
+     * 기능: 현재 진행 단계를 갱신한다.
+     */
+    public void advanceStep(JobAnalysisStep step, Instant now) {
+        this.currentStep = step;
+        this.updatedAt = now;
+    }
+
+    /**
+     * 기능: 검색·추출 단계까지 일부라도 성공했을 때 부분 완료로 표시한다. 조건판정·유사도
+     * 비교(COMPARING_EVIDENCE 이후)는 아직 구현이 없어 여기서 멈춘다(확인 필요, 2026-08-04
+     * 임시 작업 — docs/current-work.md 참고).
+     */
+    public void markPartiallyCompleted(Instant now) {
+        this.analysisStatus = JobAnalysisStatus.PARTIALLY_COMPLETED;
+        this.currentStep = JobAnalysisStep.EXTRACTING_JOB_POSTINGS;
+        this.updatedAt = now;
+    }
+
+    /**
+     * 기능: 검색·추출이 전부 실패했을 때 실패로 표시한다.
+     */
+    public void markFailed(Instant now) {
+        this.analysisStatus = JobAnalysisStatus.FAILED;
+        this.updatedAt = now;
+    }
 }
