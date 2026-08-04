@@ -16,24 +16,25 @@
 
 | 기능 | 문서 | 상태 |
 |---|---|---|
-| PDF 문서 추출 | [document-extraction.md](document-extraction.md) | MVP 확정 |
+| PDF 문서 추출 | [document-extraction.md](document-extraction.md) | 폐기 — MVP 입력에서 제거 |
+| 채용공고 검색 도구 | [job-search-tool.md](job-search-tool.md) | 부분 확정 — 제공자·제한 수치 확인 필요 |
 | 채용공고 구조화 추출 | [job-posting-extraction.md](job-posting-extraction.md) | 제안 — 코덱스 확인 필요 |
 
-## PDF 문서 추출 요약
+## 채용공고 검색 도구 요약
 
 ```http
-POST /internal/v1/documents/extract
-Content-Type: multipart/form-data
+POST /internal/v1/tools/job-search
+Content-Type: application/json
 X-Internal-Token: {shared-secret}
 X-Request-Id: {uuid}
 ```
 
-- Java가 `UserDocument`와 `ExtractionTask`를 생성한다.
-- Python은 PDF 텍스트 추출, 개인정보 제거와 구조화 후보 생성을 담당한다.
-- 요청은 `documentId`, `extractionTaskId`, `documentType`, PDF `file`을 포함한다.
-- Python 성공 응답은 근거가 연결된 후보와 `piiRemoved=true`를 포함한다.
-- 실패·재시도·후보 필드의 상세 기준은 계약 본문을 최종 기준으로 사용한다.
-- 사용자 재시도는 같은 작업 갱신이 아니라 새로운 `ExtractionTask` 생성이다.
+- Python과 LLM은 임의 URL에 접근하지 않고 Java 내부 검색 도구만 호출한다.
+- Java는 분석 상태·고정 프로필·저장소 근거와 멱등 키를 검증한다.
+- URL, Provider 선택, API 키와 호출 한도는 Java 설정이 소유한다.
+- Provider는 측정 전 병렬화하지 않고 설정 우선순위에 따라 순차 fallback한다.
+- 외부 API 호출은 DB 트랜잭션 밖에서 실행한다.
+- 성공 결과는 최소 공고 원문, 출처, 수집 시각과 변경 지문을 포함한다.
 
 ## 변경 순서
 
