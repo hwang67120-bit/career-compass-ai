@@ -38,6 +38,44 @@
         github: null
     };
 
+    /**
+     * 2026-08-05 임시 작업(코덱스 사용량 한도 공백기 대응) — 분석 상태 폴링 주기의 운영
+     * 정책이 아직 확정되지 않았다(docs/architecture/backend-job-processing-and-sse.md
+     * "구현 전에 남은 결정" 참고). 실제 측정 전까지 쓰는 임시값이다.
+     */
+    const ANALYSIS_POLL_INTERVAL_MS = 3000;
+
+    const JOB_ANALYSIS_TERMINAL_STATUSES = new Set([
+        "COMPLETED",
+        "PARTIALLY_COMPLETED",
+        "FAILED",
+        "CANCELLED"
+    ]);
+
+    const JOB_ANALYSIS_STEP_LABELS = {
+        VALIDATING_INPUTS: "입력값 확인 중",
+        ANALYZING_REPOSITORIES: "저장소 분석 중",
+        GENERATING_SEARCH_PLAN: "검색 계획 수립 중",
+        SEARCHING_JOB_POSTINGS: "채용공고 검색 중",
+        EXTRACTING_JOB_POSTINGS: "채용공고 내용 추출 중",
+        COMPARING_EVIDENCE: "근거 비교 중",
+        FINALIZING_RESULT: "결과 정리 중",
+        FINISHED: "완료 처리 중"
+    };
+
+    let analysisPollingToken = null;
+
+    function stopAnalysisPolling() {
+        if (analysisPollingToken) {
+            analysisPollingToken.cancelled = true;
+            analysisPollingToken = null;
+        }
+    }
+
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
     class ApiRequestError extends Error {
         constructor(status, payload) {
             const apiError = payload?.error;
@@ -48,14 +86,14 @@
         }
     }
 
-    async function request(path, options = {}) {
+    async function request(path, {returnResponse = false, ...fetchOptions} = {}) {
         const response = await fetch(path, {
             credentials: "same-origin",
-            ...options,
+            ...fetchOptions,
             headers: {
                 Accept: "application/json",
-                ...(options.body ? {"Content-Type": "application/json"} : {}),
-                ...(options.headers || {})
+                ...(fetchOptions.body ? {"Content-Type": "application/json"} : {}),
+                ...(fetchOptions.headers || {})
             }
         });
         const payload = response.status === 204
@@ -64,7 +102,8 @@
         if (!response.ok) {
             throw new ApiRequestError(response.status, payload);
         }
-        return payload?.data ?? null;
+        const data = payload?.data ?? null;
+        return returnResponse ? {data, response} : data;
     }
 
     async function csrfHeaders() {
@@ -81,9 +120,10 @@
         }
     }
 
-    async function mutation(path, body, method = "POST") {
+    async function mutation(path, body, method = "POST", {returnResponse = false} = {}) {
         return request(path, {
             method,
+            returnResponse,
             headers: await csrfHeaders(),
             ...(body === undefined ? {} : {body: JSON.stringify(body)})
         });
@@ -523,6 +563,7 @@
     }
 
     async function logout() {
+        stopAnalysisPolling();
         elements.logoutButton.disabled = true;
         try {
             await mutation("/api/v1/auth/logout", undefined);
@@ -565,6 +606,25 @@
         appendLogDetailToBubble(entry.querySelector(".chat-bubble"), detail);
     }
 
+    function setLogEntryText(entry, text) {
+        entry.querySelector(".chat-text").textContent = text;
+    }
+
+    function setLogEntryDetail(entry, detail) {
+        const bubble = entry.querySelector(".chat-bubble");
+        let detailElement = bubble.querySelector(".chat-detail");
+        if (!detail) {
+            detailElement?.remove();
+            return;
+        }
+        if (!detailElement) {
+            detailElement = document.createElement("p");
+            detailElement.className = "chat-detail";
+            bubble.appendChild(detailElement);
+        }
+        detailElement.textContent = detail;
+    }
+
     function markLogEntryDone(entry) {
         entry.classList.remove("chat-message-active");
         entry.classList.add("chat-message-done");
@@ -597,6 +657,7 @@
         if (!state.userProfile || state.profileDirty || !state.github) {
             return;
         }
+        stopAnalysisPolling();
         elements.progressLog.innerHTML = "";
         showOnly(elements.analysisProgressView);
 
@@ -622,12 +683,138 @@
             return `연결됨 · status=${status.status} · modelReady=${status.modelReady}`;
         });
 
-        const pendingEntry = appendLogEntry("실제 분석 작업 연결 대기", null);
-        appendLogDetail(
-            pendingEntry,
-            "분석 시작 API와 작업 이벤트가 아직 연결되지 않아 결과를 생성하지 않았습니다."
-        );
-        markLogEntryFailed(pendingEntry);
+        const jobAnalysisId = await requestJobAnalysis();
+        if (!jobAnalysisId) {
+            return;
+        }
+
+        const statusEntry = appendLogEntry("분석 상태 확인 중", null);
+        await pollJobAnalysis(jobAnalysisId, statusEntry);
+    }
+
+    async function requestJobAnalysis() {
+        const requestEntry = appendLogEntry("분석 작업 생성 요청", null);
+        try {
+            const requestBody = {
+                userProfileId: state.userProfile.userProfileId,
+                userProfileVersion: state.userProfile.version,
+                projectSourceIds: [state.github.projectSourceId]
+            };
+            const {response} = await mutation(
+                "/api/v1/job-analyses",
+                requestBody,
+                "POST",
+                {returnResponse: true}
+            );
+            const location = response.headers.get("Location");
+            const jobAnalysisId = location ? location.split("/").pop() : null;
+            if (!jobAnalysisId) {
+                throw new Error("응답에 분석 작업 위치 정보가 없습니다.");
+            }
+            appendLogDetail(requestEntry, `분석 작업이 생성됐습니다 (${jobAnalysisId}).`);
+            markLogEntryDone(requestEntry);
+            return jobAnalysisId;
+        } catch (error) {
+            appendLogDetail(requestEntry, error.message || "분석 작업을 시작하지 못했습니다.");
+            markLogEntryFailed(requestEntry);
+            return null;
+        }
+    }
+
+    /**
+     * 이전 요청이 끝난 뒤에만 다음 조회를 보낸다(중첩 polling 금지). 로그아웃·화면
+     * 이탈·새 분석 시작 시 stopAnalysisPolling()이 token.cancelled를 표시해 이 루프를
+     * 안전하게 멈춘다.
+     */
+    async function pollJobAnalysis(jobAnalysisId, statusEntry) {
+        const token = {cancelled: false};
+        analysisPollingToken = token;
+
+        while (!token.cancelled) {
+            let jobAnalysis;
+            try {
+                jobAnalysis = await request(`/api/v1/job-analyses/${jobAnalysisId}`);
+            } catch (error) {
+                if (token.cancelled) {
+                    return;
+                }
+                setLogEntryText(statusEntry, "분석 상태 확인 실패");
+                setLogEntryDetail(
+                    statusEntry,
+                    error.message || "네트워크 오류로 상태를 확인하지 못했습니다."
+                );
+                markLogEntryFailed(statusEntry);
+                return;
+            }
+            if (token.cancelled) {
+                return;
+            }
+            renderJobAnalysisState(statusEntry, jobAnalysis);
+            if (JOB_ANALYSIS_TERMINAL_STATUSES.has(jobAnalysis.analysisStatus)) {
+                if (analysisPollingToken === token) {
+                    analysisPollingToken = null;
+                }
+                return;
+            }
+            await sleep(ANALYSIS_POLL_INTERVAL_MS);
+        }
+    }
+
+    function renderJobAnalysisState(statusEntry, jobAnalysis) {
+        const {analysisStatus, currentStep, postings} = jobAnalysis;
+        switch (analysisStatus) {
+            case "QUEUED":
+                setLogEntryText(statusEntry, "분석 작업 대기 중");
+                setLogEntryDetail(statusEntry, "워커가 작업을 아직 선점하지 않았습니다.");
+                break;
+            case "RUNNING":
+                setLogEntryText(statusEntry, "분석 진행 중");
+                setLogEntryDetail(
+                    statusEntry,
+                    JOB_ANALYSIS_STEP_LABELS[currentStep] || currentStep
+                );
+                break;
+            case "CANCELLATION_REQUESTED":
+                setLogEntryText(statusEntry, "취소 처리 중");
+                setLogEntryDetail(statusEntry, "취소 요청을 반영하고 있습니다.");
+                break;
+            case "PARTIALLY_COMPLETED":
+                setLogEntryText(statusEntry, "일부 완료");
+                setLogEntryDetail(statusEntry, describePostings(postings, true));
+                markLogEntryDone(statusEntry);
+                break;
+            case "COMPLETED":
+                setLogEntryText(statusEntry, "분석 완료");
+                setLogEntryDetail(statusEntry, describePostings(postings, false));
+                markLogEntryDone(statusEntry);
+                break;
+            case "FAILED":
+                setLogEntryText(statusEntry, "분석 실패");
+                setLogEntryDetail(statusEntry, "분석 작업이 실패했습니다.");
+                markLogEntryFailed(statusEntry);
+                break;
+            case "CANCELLED":
+                setLogEntryText(statusEntry, "분석 취소됨");
+                setLogEntryDetail(statusEntry, "사용자 요청으로 분석이 취소됐습니다.");
+                markLogEntryFailed(statusEntry);
+                break;
+            default:
+                setLogEntryText(statusEntry, analysisStatus);
+                setLogEntryDetail(statusEntry, null);
+        }
+    }
+
+    function describePostings(postings, isPartial) {
+        if (!postings || postings.length === 0) {
+            return isPartial
+                ? "성공적으로 추출된 채용공고가 없습니다."
+                : "저장된 채용공고 결과가 없습니다.";
+        }
+        const summary = postings
+            .map((posting) =>
+                `${posting.companyName || "회사명 미상"} · ${posting.originalJobTitle || "직무명 미상"}`)
+            .join(", ");
+        return `${postings.length}건 추출: ${summary}`;
     }
 
     function shortCommit(commitSha) {
@@ -645,7 +832,10 @@
     elements.startAnalysisButton.addEventListener("click", startAnalysis);
     elements.backToDashboardButton.addEventListener(
         "click",
-        () => showOnly(elements.dashboardView)
+        () => {
+            stopAnalysisPolling();
+            showOnly(elements.dashboardView);
+        }
     );
 
     updateAnalysisAvailability();
