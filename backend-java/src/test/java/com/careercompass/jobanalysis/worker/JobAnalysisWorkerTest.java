@@ -129,7 +129,7 @@ class JobAnalysisWorkerTest {
                 .thenThrow(new Work24AccessException(Work24AccessFailure.SERVICE_UNAVAILABLE));
         when(work24JobDetailFetcher.fetchSourceText("posting-2"))
                 .thenReturn("채용공고 본문");
-        when(pythonJobPostingExtractionClient.extract(eq("posting-2"), anyString(), anyString()))
+        when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenReturn(extractionData());
 
         worker.pollAndProcessOne();

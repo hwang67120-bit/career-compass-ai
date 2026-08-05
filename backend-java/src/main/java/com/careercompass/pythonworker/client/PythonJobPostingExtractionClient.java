@@ -1,5 +1,10 @@
 package com.careercompass.pythonworker.client;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.careercompass.common.observability.RequestCorrelationContext;
 import com.careercompass.pythonworker.config.PythonWorkerProperties;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
@@ -16,6 +21,10 @@ import org.springframework.web.client.RestClientException;
  */
 @Component
 public class PythonJobPostingExtractionClient {
+
+    private static final String EXTRACTED_STATUS = "EXTRACTED";
+    private static final Set<String> EXPECTED_MODEL_EXECUTION_STAGES =
+            Set.of("CORE_EXTRACTION", "RESPONSIBILITY_EXTRACTION");
 
     private final RestClient restClient;
     private final String internalServiceToken;
@@ -57,7 +66,42 @@ public class PythonJobPostingExtractionClient {
         if (envelope == null || envelope.data() == null) {
             throw failureFromEnvelope(envelope);
         }
+        validateData(jobPostingId, envelope.data());
         return envelope.data();
+    }
+
+    /**
+     * 기능: Python 응답을 계약 스키마로 다시 검증한다(계약 2절 Java 책임). 요청과
+     * 다른 jobPostingId, EXTRACTED가 아닌 상태, 빈 extraction이나 modelExecutions의
+     * stage 중복·누락은 저장 전에 걸러낸다.
+     */
+    private void validateData(
+            String requestedJobPostingId,
+            PythonJobPostingExtractionEnvelope.Data data
+    ) {
+        if (!requestedJobPostingId.equals(data.jobPostingId())
+                || !EXTRACTED_STATUS.equals(data.status())
+                || data.extraction() == null
+                || !hasExpectedModelExecutionStages(data.modelExecutions())) {
+            throw new PythonExtractionException(PythonExtractionFailure.RESPONSE_INVALID);
+        }
+    }
+
+    private boolean hasExpectedModelExecutionStages(Object modelExecutions) {
+        if (!(modelExecutions instanceof List<?> executions)) {
+            return false;
+        }
+        Set<String> stages = new HashSet<>();
+        for (Object execution : executions) {
+            if (!(execution instanceof Map<?, ?> executionMap)) {
+                return false;
+            }
+            Object stage = executionMap.get("stage");
+            if (!(stage instanceof String stageName) || !stages.add(stageName)) {
+                return false;
+            }
+        }
+        return stages.equals(EXPECTED_MODEL_EXECUTION_STAGES);
     }
 
     private PythonExtractionException failureFromEnvelope(

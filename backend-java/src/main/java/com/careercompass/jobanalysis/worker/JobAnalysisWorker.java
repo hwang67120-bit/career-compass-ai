@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
+import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.client.Work24JobDetailFetcher;
 import com.careercompass.jobsearch.client.Work24JobSearchClient;
@@ -22,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -32,8 +34,12 @@ import org.springframework.stereotype.Component;
  * 두 단계만 실제로 연결한다. 조건판정·유사도 비교(COMPARING_EVIDENCE 이후)는 Python 쪽에
  * 아직 API가 없어서 이번 범위에 없다(docs/current-work.md, 계획 파일 참고) — 코덱스가
  * 돌아오면 이어서 확장해야 한다.
+ *
+ * test 프로필에서는 빈을 만들지 않는다 — 테스트가 끝나 Testcontainers DB가 종료된 뒤에도
+ * 스케줄러가 계속 폴링해 연결 오류·타임아웃을 일으키는 문제를 막는다.
  */
 @Component
+@Profile("!test")
 public class JobAnalysisWorker {
 
     private static final Logger log = LoggerFactory.getLogger(JobAnalysisWorker.class);
@@ -86,8 +92,11 @@ public class JobAnalysisWorker {
                     jobAnalysisService.loadFixedProfileVersion(jobAnalysis);
             String keyword = profileVersion.getTargetJobTitle();
 
+            jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
             List<JobPostingCandidate> candidates =
                     work24JobSearchClient.search(keyword, SEARCH_RESULT_LIMIT);
+
+            jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
             List<JobAnalysisPosting> savedPostings = extractCandidates(jobAnalysisId, candidates);
 
             if (savedPostings.isEmpty()) {
@@ -137,8 +146,9 @@ public class JobAnalysisWorker {
             Instant now
     ) throws JsonProcessingException {
         String sourceText = work24JobDetailFetcher.fetchSourceText(candidate.providerPostingId());
+        UUID jobPostingId = UUID.randomUUID();
         PythonJobPostingExtractionEnvelope.Data data = pythonJobPostingExtractionClient.extract(
-                candidate.providerPostingId(),
+                jobPostingId.toString(),
                 UUID.randomUUID().toString(),
                 sourceText
         );

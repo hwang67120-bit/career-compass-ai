@@ -1,5 +1,7 @@
 package com.careercompass.jobsearch.client;
 
+import java.util.regex.Pattern;
+
 import com.careercompass.jobsearch.exception.Work24AccessException;
 import com.careercompass.jobsearch.exception.Work24AccessFailure;
 import org.jsoup.Jsoup;
@@ -25,6 +27,18 @@ public class Work24JobDetailFetcher {
 
     private static final String DETAIL_PAGE_PATH = "/wk/a/b/1500/empDetailAuthView.do";
     private static final int MAX_SOURCE_TEXT_LENGTH = 8000;
+    private static final String REDACTED = "[REDACTED]";
+
+    /**
+     * ai-python의 app/guardrails/contact_info_redaction.py와 같은 정규식이다 — Python은
+     * Gemini로 보낼 때만 이 치환을 거치는데(job-posting-extraction.md 7절), AGENTS.md의
+     * "Python과 외부 AI에는 개인정보가 제거된 최소 필드만 전달한다" 규칙은 Ollama 호출도
+     * 포함하므로 Java가 보내기 전에 한 번 더 제거한다. 담당자 이름 등 연락처 이외 개인정보는
+     * 확인된 방법이 없어 이번에는 처리하지 않는다(확인 필요).
+     */
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[\\w.+-]+@[\\w-]+\\.[\\w.-]+");
+    private static final Pattern PHONE_PATTERN =
+            Pattern.compile("0\\d{1,2}[-.\\s]?\\d{3,4}[-.\\s]?\\d{4}");
 
     private final RestClient restClient;
 
@@ -73,13 +87,19 @@ public class Work24JobDetailFetcher {
             if (text.isBlank()) {
                 throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
             }
-            return text.length() > MAX_SOURCE_TEXT_LENGTH
-                    ? text.substring(0, MAX_SOURCE_TEXT_LENGTH)
-                    : text;
+            String redactedText = redactContactInfo(text);
+            return redactedText.length() > MAX_SOURCE_TEXT_LENGTH
+                    ? redactedText.substring(0, MAX_SOURCE_TEXT_LENGTH)
+                    : redactedText;
         } catch (Work24AccessException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE, exception);
         }
+    }
+
+    private String redactContactInfo(String text) {
+        String withoutEmails = EMAIL_PATTERN.matcher(text).replaceAll(REDACTED);
+        return PHONE_PATTERN.matcher(withoutEmails).replaceAll(REDACTED);
     }
 }

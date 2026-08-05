@@ -647,9 +647,11 @@
         try {
             appendLogDetail(entry, await task());
             markLogEntryDone(entry);
+            return true;
         } catch (error) {
             appendLogDetail(entry, error.message || "확인하지 못했습니다.");
             markLogEntryFailed(entry);
+            return false;
         }
     }
 
@@ -675,13 +677,16 @@
             "GitHub 저장소 확인",
             `${state.github.repositoryFullName} · ${state.github.defaultBranch} · ${shortCommit(state.github.commitSha)}`
         );
-        await runRealStep("Python 서버 연결 확인", async () => {
+        const pythonReady = await runRealStep("Python 서버 연결 확인", async () => {
             const status = await request("/api/v1/system/python-status");
             if (!status?.connected) {
                 throw new Error("Python 서버에 연결하지 못했습니다.");
             }
             return `연결됨 · status=${status.status} · modelReady=${status.modelReady}`;
         });
+        if (!pythonReady) {
+            return;
+        }
 
         const jobAnalysisId = await requestJobAnalysis();
         if (!jobAnalysisId) {

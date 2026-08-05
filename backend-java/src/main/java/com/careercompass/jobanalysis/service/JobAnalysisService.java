@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
+import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.dto.CreateJobAnalysisRequest;
 import com.careercompass.jobanalysis.exception.InvalidJobAnalysisRequestException;
 import com.careercompass.jobanalysis.exception.JobAnalysisInputNotFoundException;
@@ -226,6 +227,18 @@ public class JobAnalysisService {
                         jobAnalysis.getUserId()
                 )
                 .orElseThrow(JobAnalysisInputNotFoundException::new);
+    }
+
+    /**
+     * 기능: 실행 중인 분석 작업의 현재 단계를 갱신한다.
+     * 반환 값: 없음.
+     */
+    @Transactional
+    public void advanceStep(UUID jobAnalysisId, JobAnalysisStep step) {
+        jobAnalysisRepository.findById(jobAnalysisId).ifPresent(jobAnalysis -> {
+            jobAnalysis.advanceStep(step, Instant.now(clock));
+            jobAnalysisRepository.save(jobAnalysis);
+        });
     }
 
     /**

@@ -11,8 +11,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -26,8 +24,6 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class Work24JobSearchClient {
 
-    private static final Logger log = LoggerFactory.getLogger(Work24JobSearchClient.class);
-    private static final int DEBUG_LOG_MAX_LENGTH = 500;
     private static final String LIST_API_PATH = "/cm/openApi/call/wk/callOpenApiSvcInfo210L01.do";
 
     private final RestClient restClient;
@@ -49,20 +45,7 @@ public class Work24JobSearchClient {
      */
     public List<JobPostingCandidate> search(String keyword, int display) {
         String rawXml = fetchRawXml(keyword, display);
-        log.warn(
-                "work24_search_raw_response keyword={} rawXmlPrefix={}",
-                keyword,
-                rawXml == null
-                        ? null
-                        : rawXml.substring(0, Math.min(rawXml.length(), DEBUG_LOG_MAX_LENGTH))
-        );
-        List<JobPostingCandidate> candidates = parse(rawXml);
-        log.warn(
-                "work24_search_parsed keyword={} candidateCount={}",
-                keyword,
-                candidates.size()
-        );
-        return candidates;
+        return parse(rawXml);
     }
 
     private String fetchRawXml(String keyword, int display) {
@@ -95,10 +78,21 @@ public class Work24JobSearchClient {
         }
     }
 
+    /**
+     * 기능: 고용24 목록 응답 XML을 파싱한다. 인증 실패·오류 응답은 성공 스키마의
+     * `<total>` 필드가 없거나 `<wanted>`와 맞지 않게 와서, 이 값으로 정상 0건과
+     * 오류 응답을 구분한다(오류 응답의 실제 필드명은 아직 확인하지 못했다 — 확인 필요).
+     */
     private List<JobPostingCandidate> parse(String rawXml) {
         try {
             Work24SearchApiResponse response = xmlMapper.readValue(rawXml, Work24SearchApiResponse.class);
+            if (response.total() == null) {
+                throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
+            }
             List<Work24WantedItem> items = response.wanted() != null ? response.wanted() : List.of();
+            if (response.total() > 0 && items.isEmpty()) {
+                throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
+            }
             return items.stream()
                     .map(item -> new JobPostingCandidate(
                             item.wantedAuthNo(),
@@ -116,6 +110,7 @@ public class Work24JobSearchClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record Work24SearchApiResponse(
+            Integer total,
             @JacksonXmlElementWrapper(useWrapping = false)
             @JacksonXmlProperty(localName = "wanted")
             List<Work24WantedItem> wanted
