@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -43,13 +44,13 @@ import org.springframework.stereotype.Component;
 public class JobAnalysisWorker {
 
     private static final Logger log = LoggerFactory.getLogger(JobAnalysisWorker.class);
-    private static final int SEARCH_RESULT_LIMIT = 5;
 
     private final JobAnalysisService jobAnalysisService;
     private final Work24JobSearchClient work24JobSearchClient;
     private final Work24JobDetailFetcher work24JobDetailFetcher;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private final Clock clock;
+    private final int searchResultLimit;
 
     /**
      * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
@@ -63,13 +64,15 @@ public class JobAnalysisWorker {
             Work24JobSearchClient work24JobSearchClient,
             Work24JobDetailFetcher work24JobDetailFetcher,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
-            Clock clock
+            Clock clock,
+            @Value("${job-analysis.worker.search-result-limit}") int searchResultLimit
     ) {
         this.jobAnalysisService = jobAnalysisService;
         this.work24JobSearchClient = work24JobSearchClient;
         this.work24JobDetailFetcher = work24JobDetailFetcher;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
         this.clock = clock;
+        this.searchResultLimit = searchResultLimit;
     }
 
     /**
@@ -94,7 +97,7 @@ public class JobAnalysisWorker {
 
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
             List<JobPostingCandidate> candidates =
-                    work24JobSearchClient.search(keyword, SEARCH_RESULT_LIMIT);
+                    work24JobSearchClient.search(keyword, searchResultLimit);
 
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
             List<JobAnalysisPosting> savedPostings = extractCandidates(jobAnalysisId, candidates);
@@ -147,15 +150,18 @@ public class JobAnalysisWorker {
     ) throws JsonProcessingException {
         String sourceText = work24JobDetailFetcher.fetchSourceText(candidate.providerPostingId());
         UUID jobPostingId = UUID.randomUUID();
+        UUID extractionTaskId = UUID.randomUUID();
         PythonJobPostingExtractionEnvelope.Data data = pythonJobPostingExtractionClient.extract(
                 jobPostingId.toString(),
-                UUID.randomUUID().toString(),
+                extractionTaskId.toString(),
                 sourceText
         );
         return JobAnalysisPosting.create(
                 UUID.randomUUID(),
                 jobAnalysisId,
                 candidate.providerPostingId(),
+                jobPostingId,
+                extractionTaskId,
                 candidate.companyName(),
                 candidate.originalJobTitle(),
                 candidate.sourceUrl(),

@@ -7,6 +7,7 @@ import com.careercompass.jobsearch.exception.Work24AccessFailure;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -26,7 +27,6 @@ import org.springframework.web.client.RestClientException;
 public class Work24JobDetailFetcher {
 
     private static final String DETAIL_PAGE_PATH = "/wk/a/b/1500/empDetailAuthView.do";
-    private static final int MAX_SOURCE_TEXT_LENGTH = 8000;
     private static final String REDACTED = "[REDACTED]";
 
     /**
@@ -41,9 +41,14 @@ public class Work24JobDetailFetcher {
             Pattern.compile("0\\d{1,2}[-.\\s]?\\d{3,4}[-.\\s]?\\d{4}");
 
     private final RestClient restClient;
+    private final int maxSourceTextLength;
 
-    public Work24JobDetailFetcher(@Qualifier("work24ApiRestClient") RestClient restClient) {
+    public Work24JobDetailFetcher(
+            @Qualifier("work24ApiRestClient") RestClient restClient,
+            @Value("${work24.detail.max-source-text-length}") int maxSourceTextLength
+    ) {
         this.restClient = restClient;
+        this.maxSourceTextLength = maxSourceTextLength;
     }
 
     /**
@@ -88,8 +93,8 @@ public class Work24JobDetailFetcher {
                 throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
             }
             String redactedText = redactContactInfo(text);
-            return redactedText.length() > MAX_SOURCE_TEXT_LENGTH
-                    ? redactedText.substring(0, MAX_SOURCE_TEXT_LENGTH)
+            return redactedText.length() > maxSourceTextLength
+                    ? redactedText.substring(0, maxSourceTextLength)
                     : redactedText;
         } catch (Work24AccessException exception) {
             throw exception;

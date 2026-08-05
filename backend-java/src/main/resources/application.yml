@@ -50,10 +50,13 @@ work24:
     auth-key: ${WORK24_API_KEY}
     connect-timeout: ${WORK24_API_CONNECT_TIMEOUT:3s}
     read-timeout: ${WORK24_API_READ_TIMEOUT:10s}
+  detail:
+    max-source-text-length: ${WORK24_DETAIL_MAX_SOURCE_TEXT_LENGTH:8000}
 
 job-analysis:
   worker:
     fixed-delay-ms: ${JOB_ANALYSIS_WORKER_FIXED_DELAY_MS:5000}
+    search-result-limit: ${JOB_ANALYSIS_WORKER_SEARCH_RESULT_LIMIT:5}
 
 technology-tag:
   policy:
