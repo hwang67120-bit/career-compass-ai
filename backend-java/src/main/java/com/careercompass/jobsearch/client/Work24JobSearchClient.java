@@ -11,6 +11,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -24,6 +26,8 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class Work24JobSearchClient {
 
+    private static final Logger log = LoggerFactory.getLogger(Work24JobSearchClient.class);
+    private static final int DEBUG_LOG_MAX_LENGTH = 500;
     private static final String LIST_API_PATH = "/cm/openApi/call/wk/callOpenApiSvcInfo210L01.do";
 
     private final RestClient restClient;
@@ -45,7 +49,20 @@ public class Work24JobSearchClient {
      */
     public List<JobPostingCandidate> search(String keyword, int display) {
         String rawXml = fetchRawXml(keyword, display);
-        return parse(rawXml);
+        log.warn(
+                "work24_search_raw_response keyword={} rawXmlPrefix={}",
+                keyword,
+                rawXml == null
+                        ? null
+                        : rawXml.substring(0, Math.min(rawXml.length(), DEBUG_LOG_MAX_LENGTH))
+        );
+        List<JobPostingCandidate> candidates = parse(rawXml);
+        log.warn(
+                "work24_search_parsed keyword={} candidateCount={}",
+                keyword,
+                candidates.size()
+        );
+        return candidates;
     }
 
     private String fetchRawXml(String keyword, int display) {
