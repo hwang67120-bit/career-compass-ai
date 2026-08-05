@@ -25,6 +25,8 @@ public class PythonJobPostingExtractionClient {
     private static final String EXTRACTED_STATUS = "EXTRACTED";
     private static final Set<String> EXPECTED_MODEL_EXECUTION_STAGES =
             Set.of("CORE_EXTRACTION", "RESPONSIBILITY_EXTRACTION");
+    private static final Set<String> ALLOWED_MODEL_EXECUTION_PROVIDERS =
+            Set.of("ollama", "gemini");
 
     private final RestClient restClient;
     private final String internalServiceToken;
@@ -66,28 +68,30 @@ public class PythonJobPostingExtractionClient {
         if (envelope == null || envelope.data() == null) {
             throw failureFromEnvelope(envelope);
         }
-        validateData(jobPostingId, envelope.data());
+        validateData(jobPostingId, extractionTaskId, envelope.data());
         return envelope.data();
     }
 
     /**
      * 기능: Python 응답을 계약 스키마로 다시 검증한다(계약 2절 Java 책임). 요청과
-     * 다른 jobPostingId, EXTRACTED가 아닌 상태, 빈 extraction이나 modelExecutions의
-     * stage 중복·누락은 저장 전에 걸러낸다.
+     * 다른 jobPostingId·extractionTaskId, EXTRACTED가 아닌 상태, 빈 extraction이나
+     * modelExecutions의 stage·provider·model 오류는 저장 전에 걸러낸다.
      */
     private void validateData(
             String requestedJobPostingId,
+            String requestedExtractionTaskId,
             PythonJobPostingExtractionEnvelope.Data data
     ) {
         if (!requestedJobPostingId.equals(data.jobPostingId())
+                || !requestedExtractionTaskId.equals(data.extractionTaskId())
                 || !EXTRACTED_STATUS.equals(data.status())
                 || data.extraction() == null
-                || !hasExpectedModelExecutionStages(data.modelExecutions())) {
+                || !hasExpectedModelExecutions(data.modelExecutions())) {
             throw new PythonExtractionException(PythonExtractionFailure.RESPONSE_INVALID);
         }
     }
 
-    private boolean hasExpectedModelExecutionStages(Object modelExecutions) {
+    private boolean hasExpectedModelExecutions(Object modelExecutions) {
         if (!(modelExecutions instanceof List<?> executions)) {
             return false;
         }
@@ -97,7 +101,16 @@ public class PythonJobPostingExtractionClient {
                 return false;
             }
             Object stage = executionMap.get("stage");
+            Object provider = executionMap.get("provider");
+            Object model = executionMap.get("model");
             if (!(stage instanceof String stageName) || !stages.add(stageName)) {
+                return false;
+            }
+            if (!(provider instanceof String providerName)
+                    || !ALLOWED_MODEL_EXECUTION_PROVIDERS.contains(providerName)) {
+                return false;
+            }
+            if (!(model instanceof String modelName) || modelName.isBlank()) {
                 return false;
             }
         }

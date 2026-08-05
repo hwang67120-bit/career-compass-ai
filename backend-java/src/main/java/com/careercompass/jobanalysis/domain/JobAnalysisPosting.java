@@ -26,6 +26,12 @@ public class JobAnalysisPosting {
     @Column(name = "provider_posting_id", nullable = false, length = 100)
     private String providerPostingId;
 
+    @Column(name = "job_posting_id")
+    private UUID jobPostingId;
+
+    @Column(name = "extraction_task_id")
+    private UUID extractionTaskId;
+
     @Column(name = "company_name", length = 200)
     private String companyName;
 
@@ -51,6 +57,8 @@ public class JobAnalysisPosting {
             UUID id,
             UUID jobAnalysisId,
             String providerPostingId,
+            UUID jobPostingId,
+            UUID extractionTaskId,
             String companyName,
             String originalJobTitle,
             String sourceUrl,
@@ -61,6 +69,8 @@ public class JobAnalysisPosting {
         this.id = id;
         this.jobAnalysisId = jobAnalysisId;
         this.providerPostingId = providerPostingId;
+        this.jobPostingId = jobPostingId;
+        this.extractionTaskId = extractionTaskId;
         this.companyName = companyName;
         this.originalJobTitle = originalJobTitle;
         this.sourceUrl = sourceUrl;
@@ -73,6 +83,8 @@ public class JobAnalysisPosting {
             UUID id,
             UUID jobAnalysisId,
             String providerPostingId,
+            UUID jobPostingId,
+            UUID extractionTaskId,
             String companyName,
             String originalJobTitle,
             String sourceUrl,
@@ -84,6 +96,8 @@ public class JobAnalysisPosting {
                 id,
                 jobAnalysisId,
                 providerPostingId,
+                jobPostingId,
+                extractionTaskId,
                 companyName,
                 originalJobTitle,
                 sourceUrl,
@@ -103,6 +117,14 @@ public class JobAnalysisPosting {
 
     public String getProviderPostingId() {
         return providerPostingId;
+    }
+
+    public UUID getJobPostingId() {
+        return jobPostingId;
+    }
+
+    public UUID getExtractionTaskId() {
+        return extractionTaskId;
     }
 
     public String getCompanyName() {

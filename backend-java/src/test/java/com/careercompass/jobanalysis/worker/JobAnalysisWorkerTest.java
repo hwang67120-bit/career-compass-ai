@@ -1,6 +1,7 @@
 package com.careercompass.jobanalysis.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -65,7 +66,8 @@ class JobAnalysisWorkerTest {
                 work24JobSearchClient,
                 work24JobDetailFetcher,
                 pythonJobPostingExtractionClient,
-                clock
+                clock,
+                5
         );
 
         jobAnalysis = JobAnalysis.createQueued(
@@ -114,6 +116,16 @@ class JobAnalysisWorkerTest {
         verify(jobAnalysisService).recordExtractedPostings(eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
         verify(jobAnalysisService, never()).markAnalysisFailed(any());
+
+        ArgumentCaptor<String> jobPostingIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pythonJobPostingExtractionClient, times(2))
+                .extract(jobPostingIdCaptor.capture(), anyString(), anyString());
+        List<String> sentJobPostingIds = jobPostingIdCaptor.getAllValues();
+        assertThat(sentJobPostingIds).doesNotContain("posting-1", "posting-2");
+        assertThat(sentJobPostingIds).allSatisfy(
+                jobPostingId -> assertThatCode(() -> UUID.fromString(jobPostingId))
+                        .doesNotThrowAnyException());
+        assertThat(sentJobPostingIds).doesNotHaveDuplicates();
     }
 
     @Test
