@@ -99,7 +99,8 @@ public class JobAnalysisWorker {
             log.warn(
                     "job_analysis_processing_failed jobAnalysisId={} failure={}",
                     jobAnalysisId,
-                    exception.getClass().getSimpleName()
+                    exception.getClass().getSimpleName(),
+                    exception
             );
             jobAnalysisService.markAnalysisFailed(jobAnalysisId);
         }
@@ -122,7 +123,8 @@ public class JobAnalysisWorker {
                                 + "providerPostingId={} failure={}",
                         jobAnalysisId,
                         candidate.providerPostingId(),
-                        exception.getClass().getSimpleName()
+                        exception.getClass().getSimpleName(),
+                        exception
                 );
             }
         }
