@@ -83,23 +83,20 @@ public class Work24JobSearchClient {
     }
 
     /**
-     * 기능: 고용24 목록 응답 XML을 파싱한다. 인증 실패·오류 응답은 성공 스키마의
-     * `<total>` 필드가 없거나 `<wanted>`와 맞지 않게 와서, 이 값으로 정상 0건과
-     * 오류 응답을 구분한다(오류 응답의 실제 필드명은 아직 확인하지 못했다 — 확인 필요).
-     *
-     * 2026-08-05 임시 진단 로그(코덱스 사용량 한도 공백기 대응) — 검증에 실패했을 때만
-     * 원문 앞부분을 남긴다. 실제 오류 스키마를 확인하면 제거해야 한다.
+     * 기능: 고용24 목록 응답 XML을 파싱한다. 인증·서비스 신청 오류는 성공 스키마의
+     * `<total>` 필드가 없는 대신 `<GO24><error>...</error></GO24>` 형태로 와서(실제
+     * 확인됨, 2026-08-05), 이 값으로 정상 0건과 오류 응답을 구분한다.
      */
     private List<JobPostingCandidate> parse(String rawXml) {
         try {
             Work24SearchApiResponse response = xmlMapper.readValue(rawXml, Work24SearchApiResponse.class);
             if (response.total() == null) {
-                logInvalidResponse(rawXml);
+                logRejectedResponse(rawXml);
                 throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
             }
             List<Work24WantedItem> items = response.wanted() != null ? response.wanted() : List.of();
             if (response.total() > 0 && items.isEmpty()) {
-                logInvalidResponse(rawXml);
+                logRejectedResponse(rawXml);
                 throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE);
             }
             return items.stream()
@@ -113,18 +110,37 @@ public class Work24JobSearchClient {
                     ))
                     .toList();
         } catch (JsonProcessingException exception) {
-            logInvalidResponse(rawXml);
+            logRejectedResponse(rawXml);
             throw new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE, exception);
         }
     }
 
-    private void logInvalidResponse(String rawXml) {
+    /**
+     * 기능: 검증에 실패한 응답의 원인을 남긴다. `<GO24><error>` 형태로 확인되면 그
+     * 메시지만 남기고, 아직 확인 못 한 다른 형태면 임시로 원문 앞부분을 남긴다
+     * (2026-08-05 임시 작업, 코덱스 사용량 한도 공백기 대응 — 다른 형태도 확인되면
+     * 원문 로그는 제거해야 한다).
+     */
+    private void logRejectedResponse(String rawXml) {
+        String errorMessage = parseKnownErrorMessage(rawXml);
+        if (errorMessage != null) {
+            log.warn("work24_search_rejected errorMessage={}", errorMessage);
+            return;
+        }
         log.warn(
                 "work24_search_invalid_response rawXmlPrefix={}",
                 rawXml == null
                         ? null
                         : rawXml.substring(0, Math.min(rawXml.length(), DEBUG_LOG_MAX_LENGTH))
         );
+    }
+
+    private String parseKnownErrorMessage(String rawXml) {
+        try {
+            return xmlMapper.readValue(rawXml, Work24ErrorResponse.class).error();
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -144,5 +160,9 @@ public class Work24JobSearchClient {
             String region,
             String wantedInfoUrl
     ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record Work24ErrorResponse(String error) {
     }
 }
