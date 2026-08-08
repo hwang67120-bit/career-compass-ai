@@ -27,7 +27,6 @@ import org.springframework.web.client.RestClientException;
 public class Work24JobSearchClient {
 
     private static final Logger log = LoggerFactory.getLogger(Work24JobSearchClient.class);
-    private static final int DEBUG_LOG_MAX_LENGTH = 1000;
     private static final String LIST_API_PATH = "/cm/openApi/call/wk/callOpenApiSvcInfo210L01.do";
 
     private final RestClient restClient;
@@ -53,6 +52,9 @@ public class Work24JobSearchClient {
     }
 
     private String fetchRawXml(String keyword, int display) {
+        if (properties.authKey() == null || properties.authKey().isBlank()) {
+            throw new Work24AccessException(Work24AccessFailure.NOT_CONFIGURED);
+        }
         try {
             return restClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -117,22 +119,12 @@ public class Work24JobSearchClient {
 
     /**
      * 기능: 검증에 실패한 응답의 원인을 남긴다. `<GO24><error>` 형태로 확인되면 그
-     * 메시지만 남기고, 아직 확인 못 한 다른 형태면 임시로 원문 앞부분을 남긴다
-     * (2026-08-05 임시 작업, 코덱스 사용량 한도 공백기 대응 — 다른 형태도 확인되면
-     * 원문 로그는 제거해야 한다).
+     * 메시지만 남기고, 그 외 형태는 원문을 남기지 않는다(PR #48 리뷰 반영 — Provider
+     * 원문 응답을 로그에 남기지 않는다).
      */
     private void logRejectedResponse(String rawXml) {
         String errorMessage = parseKnownErrorMessage(rawXml);
-        if (errorMessage != null) {
-            log.warn("work24_search_rejected errorMessage={}", errorMessage);
-            return;
-        }
-        log.warn(
-                "work24_search_invalid_response rawXmlPrefix={}",
-                rawXml == null
-                        ? null
-                        : rawXml.substring(0, Math.min(rawXml.length(), DEBUG_LOG_MAX_LENGTH))
-        );
+        log.warn("work24_search_rejected errorMessage={}", errorMessage != null ? errorMessage : "알 수 없음");
     }
 
     private String parseKnownErrorMessage(String rawXml) {

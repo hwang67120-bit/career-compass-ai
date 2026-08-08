@@ -815,11 +815,17 @@
                 ? "성공적으로 추출된 채용공고가 없습니다."
                 : "저장된 채용공고 결과가 없습니다.";
         }
+        const hasDevSample = postings.some((posting) => posting.provider === "DEV_SAMPLE");
         const summary = postings
-            .map((posting) =>
-                `${posting.companyName || "회사명 미상"} · ${posting.originalJobTitle || "직무명 미상"}`)
+            .map((posting) => {
+                const providerTag = posting.provider ? `[${posting.provider}] ` : "";
+                return `${providerTag}${posting.companyName || "회사명 미상"} · ${posting.originalJobTitle || "직무명 미상"}`;
+            })
             .join(", ");
-        return `${postings.length}건 추출: ${summary}`;
+        const devSampleWarning = hasDevSample
+            ? " ※ 개발용 샘플 데이터입니다. 실제 채용 시장 데이터가 아닙니다."
+            : "";
+        return `${postings.length}건 추출: ${summary}${devSampleWarning}`;
     }
 
     function shortCommit(commitSha) {

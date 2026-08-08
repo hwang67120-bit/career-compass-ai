@@ -4,16 +4,21 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Locale;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * `authKey`는 실제 채용정보 API 승인이 없어도(예: 개발 환경에서 DEV_SAMPLE Provider를
+ * 쓸 때) 애플리케이션이 시작할 수 있어야 해서 필수 검증을 걸지 않는다 — 실제로 Work24를
+ * 호출하는 시점({@link com.careercompass.jobsearch.client.Work24JobSearchClient})에서
+ * 비어 있으면 그때 실패로 처리한다.
+ */
 @Validated
 @ConfigurationProperties(prefix = "work24.api")
 public record Work24ApiProperties(
         @NotNull URI baseUrl,
-        @NotBlank String authKey,
+        String authKey,
         @NotNull Duration connectTimeout,
         @NotNull Duration readTimeout
 ) {

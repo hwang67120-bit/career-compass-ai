@@ -11,10 +11,10 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
-import com.careercompass.jobsearch.client.Work24JobDetailFetcher;
-import com.careercompass.jobsearch.client.Work24JobSearchClient;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
+import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
 import com.careercompass.jobsearch.exception.Work24AccessException;
+import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -46,8 +47,7 @@ public class JobAnalysisWorker {
     private static final Logger log = LoggerFactory.getLogger(JobAnalysisWorker.class);
 
     private final JobAnalysisService jobAnalysisService;
-    private final Work24JobSearchClient work24JobSearchClient;
-    private final Work24JobDetailFetcher work24JobDetailFetcher;
+    private final ObjectProvider<JobPostingProvider> jobPostingProvider;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private final Clock clock;
     private final int searchResultLimit;
@@ -61,15 +61,13 @@ public class JobAnalysisWorker {
 
     public JobAnalysisWorker(
             JobAnalysisService jobAnalysisService,
-            Work24JobSearchClient work24JobSearchClient,
-            Work24JobDetailFetcher work24JobDetailFetcher,
+            ObjectProvider<JobPostingProvider> jobPostingProvider,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
             Clock clock,
             @Value("${job-analysis.worker.search-result-limit}") int searchResultLimit
     ) {
         this.jobAnalysisService = jobAnalysisService;
-        this.work24JobSearchClient = work24JobSearchClient;
-        this.work24JobDetailFetcher = work24JobDetailFetcher;
+        this.jobPostingProvider = jobPostingProvider;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
         this.clock = clock;
         this.searchResultLimit = searchResultLimit;
@@ -91,16 +89,21 @@ public class JobAnalysisWorker {
     private void processClaimedAnalysis(JobAnalysis jobAnalysis) {
         UUID jobAnalysisId = jobAnalysis.getId();
         try {
+            JobPostingProvider provider = jobPostingProvider.getIfAvailable();
+            if (provider == null) {
+                throw new JobPostingProviderNotConfiguredException();
+            }
+
             UserProfileVersion profileVersion =
                     jobAnalysisService.loadFixedProfileVersion(jobAnalysis);
             String keyword = profileVersion.getTargetJobTitle();
 
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
-            List<JobPostingCandidate> candidates =
-                    work24JobSearchClient.search(keyword, searchResultLimit);
+            List<JobPostingCandidate> candidates = provider.search(keyword, searchResultLimit);
 
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
-            List<JobAnalysisPosting> savedPostings = extractCandidates(jobAnalysisId, candidates);
+            List<JobAnalysisPosting> savedPostings =
+                    extractCandidates(jobAnalysisId, provider, candidates);
 
             if (savedPostings.isEmpty()) {
                 jobAnalysisService.markAnalysisFailed(jobAnalysisId);
@@ -120,6 +123,7 @@ public class JobAnalysisWorker {
 
     private List<JobAnalysisPosting> extractCandidates(
             UUID jobAnalysisId,
+            JobPostingProvider provider,
             List<JobPostingCandidate> candidates
     ) {
         Instant now = Instant.now(clock);
@@ -127,7 +131,7 @@ public class JobAnalysisWorker {
         for (JobPostingCandidate candidate : candidates) {
             try {
                 savedPostings.add(
-                        extractOneCandidate(jobAnalysisId, candidate, now));
+                        extractOneCandidate(jobAnalysisId, provider, candidate, now));
             } catch (Work24AccessException | PythonExtractionException
                     | JsonProcessingException exception) {
                 log.warn(
@@ -145,10 +149,11 @@ public class JobAnalysisWorker {
 
     private JobAnalysisPosting extractOneCandidate(
             UUID jobAnalysisId,
+            JobPostingProvider provider,
             JobPostingCandidate candidate,
             Instant now
     ) throws JsonProcessingException {
-        String sourceText = work24JobDetailFetcher.fetchSourceText(candidate.providerPostingId());
+        String sourceText = provider.fetchSourceText(candidate);
         UUID jobPostingId = UUID.randomUUID();
         UUID extractionTaskId = UUID.randomUUID();
         PythonJobPostingExtractionEnvelope.Data data = pythonJobPostingExtractionClient.extract(
@@ -160,6 +165,7 @@ public class JobAnalysisWorker {
                 UUID.randomUUID(),
                 jobAnalysisId,
                 candidate.providerPostingId(),
+                provider.providerName(),
                 jobPostingId,
                 extractionTaskId,
                 candidate.companyName(),
