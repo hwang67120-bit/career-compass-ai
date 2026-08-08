@@ -21,11 +21,10 @@ import java.util.UUID;
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
-import com.careercompass.jobsearch.client.Work24JobDetailFetcher;
-import com.careercompass.jobsearch.client.Work24JobSearchClient;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.Work24AccessException;
 import com.careercompass.jobsearch.exception.Work24AccessFailure;
+import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
@@ -34,9 +33,10 @@ import com.careercompass.userprofile.domain.UserProfileVersion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * {@link JobAnalysisWorker}의 오케스트레이션 로직만 검증한다(실제 Work24·Python 호출
+ * {@link JobAnalysisWorker}의 오케스트레이션 로직만 검증한다(실제 Provider·Python 호출
  * 없음, Spring 컨텍스트 없음) — 2026-08-04 임시 작업.
  */
 class JobAnalysisWorkerTest {
@@ -45,26 +45,28 @@ class JobAnalysisWorkerTest {
             "10000000-0000-0000-0000-000000000001");
 
     private JobAnalysisService jobAnalysisService;
-    private Work24JobSearchClient work24JobSearchClient;
-    private Work24JobDetailFetcher work24JobDetailFetcher;
+    private JobPostingProvider jobPostingProvider;
+    private ObjectProvider<JobPostingProvider> jobPostingProviderObjectProvider;
     private PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private JobAnalysisWorker worker;
     private JobAnalysis jobAnalysis;
     private UserProfileVersion profileVersion;
 
+    @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
         jobAnalysisService = org.mockito.Mockito.mock(JobAnalysisService.class);
-        work24JobSearchClient = org.mockito.Mockito.mock(Work24JobSearchClient.class);
-        work24JobDetailFetcher = org.mockito.Mockito.mock(Work24JobDetailFetcher.class);
+        jobPostingProvider = org.mockito.Mockito.mock(JobPostingProvider.class);
+        jobPostingProviderObjectProvider = org.mockito.Mockito.mock(ObjectProvider.class);
+        when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(jobPostingProvider);
+        when(jobPostingProvider.providerName()).thenReturn("WORK24");
         pythonJobPostingExtractionClient =
                 org.mockito.Mockito.mock(PythonJobPostingExtractionClient.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-04T00:00:00Z"), ZoneOffset.UTC);
 
         worker = new JobAnalysisWorker(
                 jobAnalysisService,
-                work24JobSearchClient,
-                work24JobDetailFetcher,
+                jobPostingProviderObjectProvider,
                 pythonJobPostingExtractionClient,
                 clock,
                 5
@@ -90,21 +92,34 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(work24JobSearchClient, never()).search(anyString(), any(Integer.class));
+        verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
         verify(jobAnalysisService, never()).recordExtractedPostings(any(), any());
         verify(jobAnalysisService, never()).markAnalysisFailed(any());
+    }
+
+    @Test
+    void pollAndProcessOne_withNoProviderConfigured_marksAnalysisFailed() {
+        when(jobAnalysisService.claimNextQueuedAnalysis())
+                .thenReturn(Optional.of(jobAnalysis));
+        when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(null);
+
+        worker.pollAndProcessOne();
+
+        verify(jobAnalysisService).markAnalysisFailed(JOB_ANALYSIS_ID);
+        verify(jobAnalysisService, never()).loadFixedProfileVersion(any());
+        verify(jobAnalysisService, never()).recordExtractedPostings(any(), any());
     }
 
     @Test
     void pollAndProcessOne_withAllCandidatesSucceeding_recordsAllPostings() {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
-        when(work24JobSearchClient.search(eq("백엔드 개발자"), any(Integer.class)))
+        when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of(
                         candidate("posting-1"),
                         candidate("posting-2")
                 ));
-        when(work24JobDetailFetcher.fetchSourceText(anyString()))
+        when(jobPostingProvider.fetchSourceText(any(JobPostingCandidate.class)))
                 .thenReturn("채용공고 본문");
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenReturn(extractionData());
@@ -115,6 +130,8 @@ class JobAnalysisWorkerTest {
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
         verify(jobAnalysisService).recordExtractedPostings(eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
+        assertThat(captor.getValue()).allSatisfy(
+                posting -> assertThat(posting.getProvider()).isEqualTo("WORK24"));
         verify(jobAnalysisService, never()).markAnalysisFailed(any());
 
         ArgumentCaptor<String> jobPostingIdCaptor = ArgumentCaptor.forClass(String.class);
@@ -132,14 +149,13 @@ class JobAnalysisWorkerTest {
     void pollAndProcessOne_withOneCandidateFailingExtraction_recordsOnlySuccessfulOnes() {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
-        when(work24JobSearchClient.search(eq("백엔드 개발자"), any(Integer.class)))
-                .thenReturn(List.of(
-                        candidate("posting-1"),
-                        candidate("posting-2")
-                ));
-        when(work24JobDetailFetcher.fetchSourceText("posting-1"))
+        JobPostingCandidate failingCandidate = candidate("posting-1");
+        JobPostingCandidate succeedingCandidate = candidate("posting-2");
+        when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
+                .thenReturn(List.of(failingCandidate, succeedingCandidate));
+        when(jobPostingProvider.fetchSourceText(failingCandidate))
                 .thenThrow(new Work24AccessException(Work24AccessFailure.SERVICE_UNAVAILABLE));
-        when(work24JobDetailFetcher.fetchSourceText("posting-2"))
+        when(jobPostingProvider.fetchSourceText(succeedingCandidate))
                 .thenReturn("채용공고 본문");
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenReturn(extractionData());
@@ -157,9 +173,9 @@ class JobAnalysisWorkerTest {
     void pollAndProcessOne_withAllCandidatesFailingExtraction_marksAnalysisFailed() {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
-        when(work24JobSearchClient.search(eq("백엔드 개발자"), any(Integer.class)))
+        when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of(candidate("posting-1")));
-        when(work24JobDetailFetcher.fetchSourceText(anyString()))
+        when(jobPostingProvider.fetchSourceText(any(JobPostingCandidate.class)))
                 .thenReturn("채용공고 본문");
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenThrow(new PythonExtractionException(PythonExtractionFailure.UNAVAILABLE));
@@ -174,7 +190,7 @@ class JobAnalysisWorkerTest {
     void pollAndProcessOne_withSearchThrowing_marksAnalysisFailed() {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
-        when(work24JobSearchClient.search(eq("백엔드 개발자"), any(Integer.class)))
+        when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenThrow(new Work24AccessException(Work24AccessFailure.SERVICE_UNAVAILABLE));
 
         worker.pollAndProcessOne();

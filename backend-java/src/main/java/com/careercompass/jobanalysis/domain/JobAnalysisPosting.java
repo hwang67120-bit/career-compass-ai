@@ -26,6 +26,9 @@ public class JobAnalysisPosting {
     @Column(name = "provider_posting_id", nullable = false, length = 100)
     private String providerPostingId;
 
+    @Column(name = "provider", length = 50)
+    private String provider;
+
     @Column(name = "job_posting_id")
     private UUID jobPostingId;
 
@@ -57,6 +60,7 @@ public class JobAnalysisPosting {
             UUID id,
             UUID jobAnalysisId,
             String providerPostingId,
+            String provider,
             UUID jobPostingId,
             UUID extractionTaskId,
             String companyName,
@@ -69,6 +73,7 @@ public class JobAnalysisPosting {
         this.id = id;
         this.jobAnalysisId = jobAnalysisId;
         this.providerPostingId = providerPostingId;
+        this.provider = provider;
         this.jobPostingId = jobPostingId;
         this.extractionTaskId = extractionTaskId;
         this.companyName = companyName;
@@ -83,6 +88,7 @@ public class JobAnalysisPosting {
             UUID id,
             UUID jobAnalysisId,
             String providerPostingId,
+            String provider,
             UUID jobPostingId,
             UUID extractionTaskId,
             String companyName,
@@ -96,6 +102,7 @@ public class JobAnalysisPosting {
                 id,
                 jobAnalysisId,
                 providerPostingId,
+                provider,
                 jobPostingId,
                 extractionTaskId,
                 companyName,
@@ -117,6 +124,10 @@ public class JobAnalysisPosting {
 
     public String getProviderPostingId() {
         return providerPostingId;
+    }
+
+    public String getProvider() {
+        return provider;
     }
 
     public UUID getJobPostingId() {

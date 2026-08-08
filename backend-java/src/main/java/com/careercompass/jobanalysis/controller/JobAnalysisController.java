@@ -89,6 +89,7 @@ public class JobAnalysisController {
         try {
             return new JobAnalysisPostingResponse(
                     posting.getProviderPostingId(),
+                    posting.getProvider(),
                     posting.getCompanyName(),
                     posting.getOriginalJobTitle(),
                     posting.getSourceUrl(),
