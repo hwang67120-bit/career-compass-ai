@@ -256,7 +256,11 @@ public class JobAnalysisService {
     }
 
     /**
-     * 기능: 실제로 추출에 성공한 채용공고 결과를 저장하고 작업을 부분 완료로 표시한다.
+     * 기능: 추출에 성공한 채용공고 결과를 내부 중간 산출물로 저장하고 작업을 실패로
+     * 표시한다. 확정 계약의 PARTIALLY_COMPLETED는 비교 결과가 하나 이상 생성된 뒤 후속
+     * 단계가 실패해야 하는데, 이번 범위는 COMPARING_EVIDENCE를 실행하지 않아 이 조건을
+     * 충족할 수 없다(코덱스 확인, PR #48). 여기서 저장하는 결과는 개발 연결 검증용
+     * 중간 산출물이며 사용자용 완료 결과로 노출하지 않는다.
      * 반환 값: 없음.
      */
     @Transactional
@@ -267,10 +271,10 @@ public class JobAnalysisService {
         JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
                 .orElseThrow(JobAnalysisInputNotFoundException::new);
         postings.forEach(jobAnalysisPostingRepository::save);
-        jobAnalysis.markPartiallyCompleted(Instant.now(clock));
+        jobAnalysis.markFailed(Instant.now(clock));
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
-                "job_analysis_partially_completed jobAnalysisId={} postingCount={}",
+                "job_analysis_extraction_only_marked_failed jobAnalysisId={} postingCount={}",
                 jobAnalysisId,
                 postings.size()
         );
