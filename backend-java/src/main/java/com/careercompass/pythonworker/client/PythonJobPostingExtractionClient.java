@@ -39,6 +39,10 @@ public class PythonJobPostingExtractionClient {
     ) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.extractConnectTimeout())
+                // Python(uvicorn/h11)은 평문 HTTP/1.1만 처리한다 — JDK HttpClient 기본값인
+                // HTTP/2는 h2c 업그레이드를 시도해 "Unsupported upgrade request" 오류를
+                // 일으킨다(실제 확인됨, 2026-08-09).
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(properties.extractReadTimeout());
