@@ -1,5 +1,6 @@
 package com.careercompass.pythonworker.client;
 
+import java.net.http.HttpClient;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionRequest;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -26,7 +28,7 @@ public class PythonJobPostingExtractionClient {
     private static final Set<String> EXPECTED_MODEL_EXECUTION_STAGES =
             Set.of("CORE_EXTRACTION", "RESPONSIBILITY_EXTRACTION");
     private static final Set<String> ALLOWED_MODEL_EXECUTION_PROVIDERS =
-            Set.of("ollama", "gemini");
+            Set.of("OLLAMA", "GEMINI");
 
     private final RestClient restClient;
     private final String internalServiceToken;
@@ -35,7 +37,14 @@ public class PythonJobPostingExtractionClient {
             RestClient.Builder builder,
             PythonWorkerProperties properties
     ) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.extractConnectTimeout())
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.extractReadTimeout());
+
         this.restClient = builder
+                .requestFactory(requestFactory)
                 .baseUrl(properties.baseUrl())
                 .build();
         this.internalServiceToken = properties.internalToken();

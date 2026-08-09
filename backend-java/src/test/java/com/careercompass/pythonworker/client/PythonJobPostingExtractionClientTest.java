@@ -35,8 +35,8 @@ class PythonJobPostingExtractionClientTest {
     private static final String EXTRACTION_TASK_ID = "25a89eb8-224f-4457-ae6f-53dc32414f0d";
     private static final String VALID_MODEL_EXECUTIONS = """
             [
-              {"stage":"CORE_EXTRACTION","provider":"ollama","model":"core-model"},
-              {"stage":"RESPONSIBILITY_EXTRACTION","provider":"gemini","model":"resp-model"}
+              {"stage":"CORE_EXTRACTION","provider":"OLLAMA","model":"core-model"},
+              {"stage":"RESPONSIBILITY_EXTRACTION","provider":"GEMINI","model":"resp-model"}
             ]
             """;
 
@@ -94,7 +94,7 @@ class PythonJobPostingExtractionClientTest {
     @Test
     void extract_withMissingModelExecutionStage_throwsResponseInvalid() {
         String modelExecutions = """
-                [{"stage":"CORE_EXTRACTION","provider":"ollama","model":"core-model"}]
+                [{"stage":"CORE_EXTRACTION","provider":"OLLAMA","model":"core-model"}]
                 """;
         expectExtractCall().andRespond(withSuccess(
                 envelope(JOB_POSTING_ID, EXTRACTION_TASK_ID, "EXTRACTED", modelExecutions),
@@ -109,7 +109,7 @@ class PythonJobPostingExtractionClientTest {
         String modelExecutions = """
                 [
                   {"stage":"CORE_EXTRACTION","provider":"unknown-provider","model":"core-model"},
-                  {"stage":"RESPONSIBILITY_EXTRACTION","provider":"ollama","model":"resp-model"}
+                  {"stage":"RESPONSIBILITY_EXTRACTION","provider":"OLLAMA","model":"resp-model"}
                 ]
                 """;
         expectExtractCall().andRespond(withSuccess(
@@ -124,8 +124,8 @@ class PythonJobPostingExtractionClientTest {
     void extract_withBlankModelExecutionModel_throwsResponseInvalid() {
         String modelExecutions = """
                 [
-                  {"stage":"CORE_EXTRACTION","provider":"ollama","model":""},
-                  {"stage":"RESPONSIBILITY_EXTRACTION","provider":"ollama","model":"resp-model"}
+                  {"stage":"CORE_EXTRACTION","provider":"OLLAMA","model":""},
+                  {"stage":"RESPONSIBILITY_EXTRACTION","provider":"OLLAMA","model":"resp-model"}
                 ]
                 """;
         expectExtractCall().andRespond(withSuccess(

@@ -8,5 +8,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface JobAnalysisPostingRepository extends JpaRepository<JobAnalysisPosting, UUID> {
 
-    List<JobAnalysisPosting> findByJobAnalysisId(UUID jobAnalysisId);
+    List<JobAnalysisPosting> findByJobAnalysisIdOrderByCreatedAtAsc(UUID jobAnalysisId);
 }

@@ -101,6 +101,11 @@ public class JobAnalysisWorker {
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
             List<JobPostingCandidate> candidates = provider.search(keyword, searchResultLimit);
 
+            if (candidates.isEmpty()) {
+                jobAnalysisService.recordEmptySearchResult(jobAnalysisId);
+                return;
+            }
+
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
             List<JobAnalysisPosting> savedPostings =
                     extractCandidates(jobAnalysisId, provider, candidates);

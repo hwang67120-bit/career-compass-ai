@@ -28,12 +28,6 @@ public class JobAnalysisController {
 
     private final JobAnalysisService jobAnalysisService;
     private final ApiResponseFactory responseFactory;
-
-    /**
-     * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
-     * 만든다 — 저장된 JSON 문자열은 com.fasterxml.jackson(2.x)으로 만들어졌다
-     * (확인 필요, 계획 파일 참고).
-     */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public JobAnalysisController(
@@ -57,10 +51,6 @@ public class JobAnalysisController {
                 .body(responseFactory.success(null));
     }
 
-    /**
-     * 2026-08-04 임시 작업(코덱스 사용량 한도 공백기 대응) — 지금은 상태·단계와 저장된
-     * 채용공고 추출 결과만 반환한다. SSE·재연결 이벤트는 아직 없다(확인 필요, 계획 파일 참고).
-     */
     @GetMapping("/{jobAnalysisId}")
     public ResponseEntity<ApiResponse<JobAnalysisResponse>> getJobAnalysis(
             @PathVariable UUID jobAnalysisId
