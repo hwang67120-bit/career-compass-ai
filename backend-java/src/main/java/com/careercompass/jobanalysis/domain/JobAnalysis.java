@@ -49,6 +49,10 @@ public class JobAnalysis {
     @Column(name = "total_units", nullable = false)
     private int totalUnits;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_code", length = 50)
+    private JobAnalysisFailureCode failureCode;
+
     @Version
     @Column(name = "lock_version", nullable = false)
     private Long lockVersion;
@@ -152,6 +156,10 @@ public class JobAnalysis {
         return totalUnits;
     }
 
+    public JobAnalysisFailureCode getFailureCode() {
+        return failureCode;
+    }
+
     public Long getLockVersion() {
         return lockVersion;
     }
@@ -178,20 +186,15 @@ public class JobAnalysis {
         this.updatedAt = now;
     }
 
-    public void markPartiallyCompleted(Instant now) {
-        this.analysisStatus = JobAnalysisStatus.PARTIALLY_COMPLETED;
-        this.currentStep = JobAnalysisStep.EXTRACTING_JOB_POSTINGS;
-        this.updatedAt = now;
-    }
-
     public void markCompleted(Instant now) {
         this.analysisStatus = JobAnalysisStatus.COMPLETED;
-        this.currentStep = JobAnalysisStep.EXTRACTING_JOB_POSTINGS;
+        this.currentStep = JobAnalysisStep.FINISHED;
         this.updatedAt = now;
     }
 
-    public void markFailed(Instant now) {
+    public void markFailed(Instant now, JobAnalysisFailureCode failureCode) {
         this.analysisStatus = JobAnalysisStatus.FAILED;
+        this.failureCode = failureCode;
         this.updatedAt = now;
     }
 }
