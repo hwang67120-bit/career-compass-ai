@@ -111,6 +111,21 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
+    void pollAndProcessOne_withEmptySearchResult_recordsCompletedNotFailed() {
+        when(jobAnalysisService.claimNextQueuedAnalysis())
+                .thenReturn(Optional.of(jobAnalysis));
+        when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
+                .thenReturn(List.of());
+
+        worker.pollAndProcessOne();
+
+        verify(jobAnalysisService).recordEmptySearchResult(JOB_ANALYSIS_ID);
+        verify(jobAnalysisService, never()).markAnalysisFailed(any());
+        verify(jobAnalysisService, never()).recordExtractedPostings(any(), any());
+        verify(jobPostingProvider, never()).fetchSourceText(any());
+    }
+
+    @Test
     void pollAndProcessOne_withAllCandidatesSucceeding_recordsAllPostings() {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));

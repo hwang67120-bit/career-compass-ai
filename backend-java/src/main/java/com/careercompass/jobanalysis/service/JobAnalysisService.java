@@ -242,6 +242,20 @@ public class JobAnalysisService {
     }
 
     /**
+     * 기능: 공식 Provider의 검색 결과가 정상적으로 0건일 때 작업을 완료로 표시한다
+     * (developer-job-analysis-api.md "부분 완료와 실패": 0건 응답은 실패가 아니다).
+     * 반환 값: 없음.
+     */
+    @Transactional
+    public void recordEmptySearchResult(UUID jobAnalysisId) {
+        jobAnalysisRepository.findById(jobAnalysisId).ifPresent(jobAnalysis -> {
+            jobAnalysis.markCompleted(Instant.now(clock));
+            jobAnalysisRepository.save(jobAnalysis);
+            log.info("job_analysis_completed_no_postings jobAnalysisId={}", jobAnalysisId);
+        });
+    }
+
+    /**
      * 기능: 실제로 추출에 성공한 채용공고 결과를 저장하고 작업을 부분 완료로 표시한다.
      * 반환 값: 없음.
      */
@@ -298,6 +312,6 @@ public class JobAnalysisService {
      */
     @Transactional(readOnly = true)
     public List<JobAnalysisPosting> listPostings(UUID jobAnalysisId) {
-        return jobAnalysisPostingRepository.findByJobAnalysisId(jobAnalysisId);
+        return jobAnalysisPostingRepository.findByJobAnalysisIdOrderByCreatedAtAsc(jobAnalysisId);
     }
 }

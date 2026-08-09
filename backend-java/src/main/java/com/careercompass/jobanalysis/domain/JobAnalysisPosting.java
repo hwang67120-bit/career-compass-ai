@@ -8,11 +8,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/**
- * Python이 실제로 구조화 추출한 채용공고 한 건의 결과다. 이번 범위에서는 Java가
- * extraction·modelExecutions 내용을 직접 조작하지 않고 저장·조회에만 쓰므로, 구조화된
- * 컬럼이 아니라 JSON 원문 그대로(TEXT)를 저장한다.
- */
 @Entity
 @Table(name = "job_analysis_posting")
 public class JobAnalysisPosting {
@@ -26,13 +21,13 @@ public class JobAnalysisPosting {
     @Column(name = "provider_posting_id", nullable = false, length = 100)
     private String providerPostingId;
 
-    @Column(name = "provider", length = 50)
+    @Column(name = "provider", nullable = false, length = 50)
     private String provider;
 
-    @Column(name = "job_posting_id")
+    @Column(name = "job_posting_id", nullable = false)
     private UUID jobPostingId;
 
-    @Column(name = "extraction_task_id")
+    @Column(name = "extraction_task_id", nullable = false)
     private UUID extractionTaskId;
 
     @Column(name = "company_name", length = 200)
