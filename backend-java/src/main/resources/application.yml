@@ -60,10 +60,11 @@ work24:
     max-source-text-length: ${WORK24_DETAIL_MAX_SOURCE_TEXT_LENGTH:8000}
 
 # 2026-08-05 임시 작업 — 승인된 채용 API가 없어 개발 환경에서 파이프라인을 검증하기 위한
-# 값(PR #49, docs/claude-dev-sample-provider-handoff.md). dev-sample은 dev 프로필에서만
-# 선택 가능하다(JobPostingProvider 조건부 빈 참고).
+# 값(PR #49, docs/claude-dev-sample-provider-handoff.md). 기본값은 미설정(빈 값)이라
+# work24·dev-sample 둘 다 선택되지 않는다 — 명시적으로 설정해야만 Provider가 활성화된다
+# (코덱스 확인, PR #48: Work24는 개인정보 제거·DOM 표본 검증 전까지 기본으로 쓰지 않음).
 job-search:
-  provider: ${JOB_SEARCH_PROVIDER:work24}
+  provider: ${JOB_SEARCH_PROVIDER:}
 
 job-analysis:
   worker:

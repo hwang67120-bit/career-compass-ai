@@ -63,6 +63,16 @@
         FINISHED: "완료 처리 중"
     };
 
+    const JOB_ANALYSIS_FAILURE_MESSAGES = {
+        COMPARISON_STAGE_NOT_IMPLEMENTED:
+            "채용공고 검색·추출 연결은 확인됐지만 비교 단계가 구현되지 않아 분석 결과를 생성하지 못했습니다.",
+        DEPENDENCY_UNAVAILABLE: "분석 서버 또는 외부 서비스에 연결하지 못했습니다.",
+        DEPENDENCY_INVALID_RESPONSE: "분석 서버 또는 외부 서비스가 예상과 다른 응답을 반환했습니다.",
+        ALL_EXTRACTIONS_FAILED: "검색된 채용공고에서 분석 가능한 정보를 추출하지 못했습니다.",
+        JOB_POSTING_PROVIDER_NOT_CONFIGURED: "채용공고 검색 설정이 되어 있지 않습니다."
+    };
+    const DEFAULT_JOB_ANALYSIS_FAILURE_MESSAGE = "분석 작업이 실패했습니다.";
+
     let analysisPollingToken = null;
 
     function stopAnalysisPolling() {
@@ -766,7 +776,7 @@
     }
 
     function renderJobAnalysisState(statusEntry, jobAnalysis) {
-        const {analysisStatus, currentStep, postings} = jobAnalysis;
+        const {analysisStatus, currentStep, completedUnits, totalUnits, failureCode} = jobAnalysis;
         switch (analysisStatus) {
             case "QUEUED":
                 setLogEntryText(statusEntry, "분석 작업 대기 중");
@@ -785,17 +795,20 @@
                 break;
             case "PARTIALLY_COMPLETED":
                 setLogEntryText(statusEntry, "일부 완료");
-                setLogEntryDetail(statusEntry, describePostings(postings, true));
+                setLogEntryDetail(statusEntry, `진행 단위 ${completedUnits}/${totalUnits}`);
                 markLogEntryDone(statusEntry);
                 break;
             case "COMPLETED":
                 setLogEntryText(statusEntry, "분석 완료");
-                setLogEntryDetail(statusEntry, describePostings(postings, false));
+                setLogEntryDetail(statusEntry, `진행 단위 ${completedUnits}/${totalUnits}`);
                 markLogEntryDone(statusEntry);
                 break;
             case "FAILED":
                 setLogEntryText(statusEntry, "분석 실패");
-                setLogEntryDetail(statusEntry, "분석 작업이 실패했습니다.");
+                setLogEntryDetail(
+                    statusEntry,
+                    JOB_ANALYSIS_FAILURE_MESSAGES[failureCode] || DEFAULT_JOB_ANALYSIS_FAILURE_MESSAGE
+                );
                 markLogEntryFailed(statusEntry);
                 break;
             case "CANCELLED":
@@ -807,25 +820,6 @@
                 setLogEntryText(statusEntry, analysisStatus);
                 setLogEntryDetail(statusEntry, null);
         }
-    }
-
-    function describePostings(postings, isPartial) {
-        if (!postings || postings.length === 0) {
-            return isPartial
-                ? "성공적으로 추출된 채용공고가 없습니다."
-                : "저장된 채용공고 결과가 없습니다.";
-        }
-        const hasDevSample = postings.some((posting) => posting.provider === "DEV_SAMPLE");
-        const summary = postings
-            .map((posting) => {
-                const providerTag = posting.provider ? `[${posting.provider}] ` : "";
-                return `${providerTag}${posting.companyName || "회사명 미상"} · ${posting.originalJobTitle || "직무명 미상"}`;
-            })
-            .join(", ");
-        const devSampleWarning = hasDevSample
-            ? " ※ 개발용 샘플 데이터입니다. 실제 채용 시장 데이터가 아닙니다."
-            : "";
-        return `${postings.length}건 추출: ${summary}${devSampleWarning}`;
     }
 
     function shortCommit(commitSha) {

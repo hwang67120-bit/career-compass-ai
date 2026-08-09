@@ -1,6 +1,7 @@
 package com.careercompass.jobanalysis.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -218,6 +219,68 @@ class JobAnalysisIntegrationTest {
                         .value("projectSourceIds"));
 
         assertThat(countJobAnalyses()).isZero();
+    }
+
+    @Test
+    void getJobAnalysis_forCurrentUser_returnsStatusWithoutPostingsOrExtraction()
+            throws Exception {
+        UUID userProfileId = saveProfile();
+        MvcResult created = mockMvc.perform(post(PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody(
+                                userProfileId,
+                                1,
+                                sourceIdJson(PROJECT_SOURCE_ID)
+                        )))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        UUID jobAnalysisId = jobAnalysisIdFrom(created);
+
+        mockMvc.perform(get(PATH + "/" + jobAnalysisId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(jobAnalysisId.toString()))
+                .andExpect(jsonPath("$.data.analysisStatus").value("QUEUED"))
+                .andExpect(jsonPath("$.data.currentStep").value("VALIDATING_INPUTS"))
+                .andExpect(jsonPath("$.data.completedUnits").value(0))
+                .andExpect(jsonPath("$.data.totalUnits").value(0))
+                .andExpect(jsonPath("$.data.failureCode").doesNotExist())
+                .andExpect(jsonPath("$.data.postings").doesNotExist())
+                .andExpect(jsonPath("$.data.extraction").doesNotExist())
+                .andExpect(jsonPath("$.data.modelExecutions").doesNotExist());
+    }
+
+    @Test
+    void getJobAnalysis_forAnotherUsersAnalysis_returnsNotFound() throws Exception {
+        UUID userProfileId = saveProfile();
+        UUID otherUsersJobAnalysisId = UUID.randomUUID();
+        insertJobAnalysis(otherUsersJobAnalysisId, OTHER_USER_ID, userProfileId);
+
+        mockMvc.perform(get(PATH + "/" + otherUsersJobAnalysisId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.errorType").value("JOB_ANALYSIS_NOT_FOUND"));
+    }
+
+    private UUID jobAnalysisIdFrom(MvcResult result) {
+        String location = result.getResponse().getHeader("Location");
+        return UUID.fromString(location.substring((PATH + "/").length()));
+    }
+
+    private void insertJobAnalysis(UUID jobAnalysisId, UUID userId, UUID userProfileId) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO job_analysis (
+                    id, user_id, user_profile_id, user_profile_version,
+                    analysis_status, current_step, completed_units, total_units,
+                    lock_version, queued_at, updated_at
+                )
+                VALUES (?, ?, ?, 1, 'QUEUED', 'VALIDATING_INPUTS', 0, 0, 0, ?, ?)
+                """,
+                jobAnalysisId,
+                userId,
+                userProfileId,
+                Timestamp.from(Instant.parse("2026-08-04T00:00:00Z")),
+                Timestamp.from(Instant.parse("2026-08-04T00:00:00Z"))
+        );
     }
 
     private UUID saveProfile() throws Exception {

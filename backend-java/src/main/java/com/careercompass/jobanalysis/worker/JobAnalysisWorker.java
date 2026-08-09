@@ -8,12 +8,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
+import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
 import com.careercompass.jobsearch.exception.Work24AccessException;
+import com.careercompass.jobsearch.exception.Work24AccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
@@ -111,19 +113,35 @@ public class JobAnalysisWorker {
                     extractCandidates(jobAnalysisId, provider, candidates);
 
             if (savedPostings.isEmpty()) {
-                jobAnalysisService.markAnalysisFailed(jobAnalysisId);
+                jobAnalysisService.markAnalysisFailed(
+                        jobAnalysisId, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
             } else {
-                jobAnalysisService.recordExtractedPostings(jobAnalysisId, savedPostings);
+                jobAnalysisService.recordExtractionOnlyFailure(jobAnalysisId, savedPostings);
             }
+        } catch (JobPostingProviderNotConfiguredException exception) {
+            logProcessingFailure(jobAnalysisId, exception);
+            jobAnalysisService.markAnalysisFailed(
+                    jobAnalysisId, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
+        } catch (Work24AccessException exception) {
+            logProcessingFailure(jobAnalysisId, exception);
+            JobAnalysisFailureCode failureCode = exception.getFailure() == Work24AccessFailure.INVALID_RESPONSE
+                    ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
+                    : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
+            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (RuntimeException exception) {
-            log.warn(
-                    "job_analysis_processing_failed jobAnalysisId={} failure={}",
-                    jobAnalysisId,
-                    exception.getClass().getSimpleName(),
-                    exception
-            );
-            jobAnalysisService.markAnalysisFailed(jobAnalysisId);
+            logProcessingFailure(jobAnalysisId, exception);
+            jobAnalysisService.markAnalysisFailed(
+                    jobAnalysisId, JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE);
         }
+    }
+
+    private void logProcessingFailure(UUID jobAnalysisId, RuntimeException exception) {
+        log.warn(
+                "job_analysis_processing_failed jobAnalysisId={} failure={}",
+                jobAnalysisId,
+                exception.getClass().getSimpleName(),
+                exception
+        );
     }
 
     private List<JobAnalysisPosting> extractCandidates(

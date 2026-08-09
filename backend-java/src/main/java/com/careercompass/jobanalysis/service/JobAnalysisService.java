@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
+import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.dto.CreateJobAnalysisRequest;
@@ -264,14 +265,14 @@ public class JobAnalysisService {
      * 반환 값: 없음.
      */
     @Transactional
-    public void recordExtractedPostings(
+    public void recordExtractionOnlyFailure(
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings
     ) {
         JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
                 .orElseThrow(JobAnalysisInputNotFoundException::new);
         postings.forEach(jobAnalysisPostingRepository::save);
-        jobAnalysis.markFailed(Instant.now(clock));
+        jobAnalysis.markFailed(Instant.now(clock), JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
                 "job_analysis_extraction_only_marked_failed jobAnalysisId={} postingCount={}",
@@ -281,15 +282,19 @@ public class JobAnalysisService {
     }
 
     /**
-     * 기능: 검색·추출이 전부 실패했을 때 작업을 실패로 표시한다.
+     * 기능: 작업을 주어진 원인으로 실패 표시한다.
      * 반환 값: 없음.
      */
     @Transactional
-    public void markAnalysisFailed(UUID jobAnalysisId) {
+    public void markAnalysisFailed(UUID jobAnalysisId, JobAnalysisFailureCode failureCode) {
         jobAnalysisRepository.findById(jobAnalysisId).ifPresent(jobAnalysis -> {
-            jobAnalysis.markFailed(Instant.now(clock));
+            jobAnalysis.markFailed(Instant.now(clock), failureCode);
             jobAnalysisRepository.save(jobAnalysis);
-            log.warn("job_analysis_failed jobAnalysisId={}", jobAnalysisId);
+            log.warn(
+                    "job_analysis_failed jobAnalysisId={} failureCode={}",
+                    jobAnalysisId,
+                    failureCode
+            );
         });
     }
 

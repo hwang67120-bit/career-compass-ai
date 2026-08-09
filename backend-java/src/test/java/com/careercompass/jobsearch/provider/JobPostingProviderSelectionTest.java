@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
- * PR #49(docs/claude-dev-sample-provider-handoff.md) 확정 원칙 1·2번 검증: 개발용
- * 샘플 Provider는 dev 프로필과 job-search.provider=dev-sample이 모두 있어야만 선택되고,
- * 운영·기본 프로필에서는 절대 만들어지지 않는다.
+ * PR #48 코덱스 확인 사항 검증: 기본값은 Provider 미설정 상태이고, work24·dev-sample
+ * 모두 명시적으로 설정해야만 선택된다. dev-sample은 dev 프로필이 아니면 절대 만들어지지
+ * 않는다(운영·기본 프로필에서 개인정보 미검증 Work24가 우연히 기본으로 켜지지 않게 한다).
  */
 class JobPostingProviderSelectionTest {
 
@@ -21,12 +21,23 @@ class JobPostingProviderSelectionTest {
             .withBean(Work24JobDetailFetcher.class, () -> mock(Work24JobDetailFetcher.class));
 
     @Test
-    void withDefaultConfig_selectsWork24Provider() {
+    void withNoPropertyConfigured_selectsNoProvider() {
         contextRunner.run(context -> {
-            assertThat(context).hasSingleBean(JobPostingProvider.class);
-            assertThat(context).hasSingleBean(Work24JobPostingProvider.class);
+            assertThat(context).doesNotHaveBean(JobPostingProvider.class);
+            assertThat(context).doesNotHaveBean(Work24JobPostingProvider.class);
             assertThat(context).doesNotHaveBean(DevSampleJobPostingProvider.class);
         });
+    }
+
+    @Test
+    void withWork24PropertyExplicit_selectsWork24Provider() {
+        contextRunner
+                .withPropertyValues("job-search.provider=work24")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(JobPostingProvider.class);
+                    assertThat(context).hasSingleBean(Work24JobPostingProvider.class);
+                    assertThat(context).doesNotHaveBean(DevSampleJobPostingProvider.class);
+                });
     }
 
     @Test

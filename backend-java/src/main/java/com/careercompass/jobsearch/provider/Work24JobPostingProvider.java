@@ -9,16 +9,17 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link JobPostingProvider} 경계 뒤에서 고용24 공식 API를 호출하는 기본 구현이다.
- * `job-search.provider`가 명시적으로 다른 값(예: dev-sample)이 아니면 이 구현이
- * 선택된다(운영 기본값).
+ * {@link JobPostingProvider} 경계 뒤에서 고용24 공식 API를 호출하는 구현이다.
+ * `job-search.provider=work24`를 명시적으로 설정해야만 선택된다 — 기본으로 선택되지
+ * 않는다. 개인 회원 계정으로는 실제 호출이 거부됨을 확인했고(2026-08-05), 상세 페이지
+ * 실제 DOM 표본·담당자 정보 제거가 검증되기 전까지는 기본 Provider로 쓰지 않는다
+ * (코덱스 확인, PR #48).
  */
 @Component
 @ConditionalOnProperty(
         prefix = "job-search",
         name = "provider",
-        havingValue = "work24",
-        matchIfMissing = true
+        havingValue = "work24"
 )
 public class Work24JobPostingProvider implements JobPostingProvider {
 
