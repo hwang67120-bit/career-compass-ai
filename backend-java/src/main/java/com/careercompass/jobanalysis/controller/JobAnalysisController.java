@@ -5,9 +5,13 @@ import java.util.UUID;
 
 import com.careercompass.common.web.ApiResponse;
 import com.careercompass.common.web.ApiResponseFactory;
+import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.dto.CreateJobAnalysisRequest;
+import com.careercompass.jobanalysis.dto.JobAnalysisResponse;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,5 +43,27 @@ public class JobAnalysisController {
                         "/api/v1/job-analyses/" + jobAnalysisId
                 ))
                 .body(responseFactory.success(null));
+    }
+
+    @GetMapping("/{jobAnalysisId}")
+    public ResponseEntity<ApiResponse<JobAnalysisResponse>> getJobAnalysis(
+            @PathVariable UUID jobAnalysisId
+    ) {
+        JobAnalysis jobAnalysis =
+                jobAnalysisService.getCurrentUserJobAnalysis(jobAnalysisId);
+        return ResponseEntity.ok(responseFactory.success(toResponse(jobAnalysis)));
+    }
+
+    private JobAnalysisResponse toResponse(JobAnalysis jobAnalysis) {
+        return new JobAnalysisResponse(
+                jobAnalysis.getId(),
+                jobAnalysis.getAnalysisStatus().name(),
+                jobAnalysis.getCurrentStep().name(),
+                jobAnalysis.getCompletedUnits(),
+                jobAnalysis.getTotalUnits(),
+                jobAnalysis.getFailureCode() != null
+                        ? jobAnalysis.getFailureCode().name()
+                        : null
+        );
     }
 }

@@ -1,0 +1,9 @@
+package com.careercompass.jobanalysis.domain;
+
+public enum JobAnalysisFailureCode {
+    COMPARISON_STAGE_NOT_IMPLEMENTED,
+    JOB_POSTING_PROVIDER_NOT_CONFIGURED,
+    DEPENDENCY_UNAVAILABLE,
+    DEPENDENCY_INVALID_RESPONSE,
+    ALL_EXTRACTIONS_FAILED
+}
