@@ -27,7 +27,7 @@ class PublicEmploymentJobPostingProviderSelectionTest {
     @Test
     void withDifferentProviderProperty_selectsNoPublicEmploymentProvider() {
         contextRunner
-                .withPropertyValues("job-search.provider=work24")
+                .withPropertyValues("job-search.provider=dev-sample")
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(JobPostingProvider.class);
                     assertThat(context).doesNotHaveBean(PublicEmploymentJobPostingProvider.class);

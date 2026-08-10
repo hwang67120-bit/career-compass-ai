@@ -16,8 +16,6 @@ import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessFailure;
-import com.careercompass.jobsearch.exception.Work24AccessException;
-import com.careercompass.jobsearch.exception.Work24AccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
@@ -36,8 +34,8 @@ import org.springframework.stereotype.Component;
 /**
  * 대기 중인 {@link JobAnalysis}를 하나씩 선점해 실제로 진행시킨다.
  *
- * 2026-08-04 임시 작업(코덱스 사용량 한도 공백기 대응) — 지금은 검색(Work24)과 추출(Python)
- * 두 단계만 실제로 연결한다. 조건판정·유사도 비교(COMPARING_EVIDENCE 이후)는 Python 쪽에
+ * 현재는 검색(공공취업정보 API)과 추출(Python) 두 단계만 실제로 연결한다.
+ * 조건판정·유사도 비교(COMPARING_EVIDENCE 이후)는 Python 쪽에
  * 아직 API가 없어서 이번 범위에 없다(docs/current-work.md, 계획 파일 참고) — 코덱스가
  * 돌아오면 이어서 확장해야 한다.
  *
@@ -78,7 +76,7 @@ public class JobAnalysisWorker {
     }
 
     /**
-     * 기능: 매 tick마다 대기 중인 작업을 하나만 선점해 처리한다. 외부 호출(Work24·Python)은
+     * 기능: 매 tick마다 대기 중인 작업을 하나만 선점해 처리한다. 외부 호출(공공취업정보·Python)은
      * 선점 트랜잭션이 끝난 뒤 트랜잭션 밖에서 실행한다(backend-job-processing-and-sse.md 확정 사항).
      */
     @Scheduled(fixedDelayString = "${job-analysis.worker.fixed-delay-ms}")
@@ -124,12 +122,6 @@ public class JobAnalysisWorker {
             logProcessingFailure(jobAnalysisId, exception);
             jobAnalysisService.markAnalysisFailed(
                     jobAnalysisId, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
-        } catch (Work24AccessException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            JobAnalysisFailureCode failureCode = exception.getFailure() == Work24AccessFailure.INVALID_RESPONSE
-                    ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
-                    : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
-            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (PublicEmploymentAccessException exception) {
             logProcessingFailure(jobAnalysisId, exception);
             JobAnalysisFailureCode failureCode =
@@ -164,11 +156,20 @@ public class JobAnalysisWorker {
             try {
                 savedPostings.add(
                         extractOneCandidate(jobAnalysisId, provider, candidate, now));
-            } catch (Work24AccessException | PublicEmploymentAccessException | PythonExtractionException
-                    | JsonProcessingException exception) {
+            } catch (PythonExtractionException exception) {
                 log.warn(
                         "job_analysis_posting_extraction_failed jobAnalysisId={} "
-                                + "providerPostingId={} failure={}",
+                                + "providerPostingId={} failure={} responseViolation={}",
+                        jobAnalysisId,
+                        candidate.providerPostingId(),
+                        exception.getFailure(),
+                        exception.getResponseViolation(),
+                        exception
+                );
+            } catch (PublicEmploymentAccessException | JsonProcessingException exception) {
+                log.warn(
+                        "job_analysis_posting_extraction_failed jobAnalysisId={} "
+                                + "providerPostingId={} failure={} responseViolation=none",
                         jobAnalysisId,
                         candidate.providerPostingId(),
                         exception.getClass().getSimpleName(),

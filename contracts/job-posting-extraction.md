@@ -3,11 +3,11 @@
 상태: **부분 확정 — API 스키마와 모델 실행 단계는 확정, 텍스트 최대 길이와
 `jobTitle` 누락 처리 정책은 확인 필요**
 
-이 계약은 Java가 사람인·고용24 같은 공식 채용 API에서 확보한 채용공고 원문을 Python이 구조화하는 내부 API를 정의한다. PDF·이력서 계약에는 의존하지 않는다.
+이 계약은 Java가 인사혁신처 공공취업정보 API에서 확보한 채용공고 원문을 Python이 구조화하는 내부 API를 정의한다. PDF·이력서 계약에는 의존하지 않는다.
 
 - 입력은 PDF가 아니라 **텍스트**다. 사용자가 직접 입력하지 않고,
   [`job-search-tool.md`](job-search-tool.md) 계약으로 Java가 공식 채용 API
-  (사람인·고용24)에서 받아온다.
+  (인사혁신처 공공취업정보 조회 서비스)에서 받아온다.
 - Java는 HTML·스크립트·이메일·전화번호와 채용 담당자 정보를 제거한 최소
   `sourceText`만 Python에 전달한다. Python은 Gemini 외부 전송 직전에
   이메일·전화번호 제거를 다시 수행한다.
@@ -20,7 +20,7 @@
 
 ## 1. 실행 경계
 
-1. Java가 [`job-search-tool.md`](job-search-tool.md) 계약으로 사람인·고용24 공식 API에서
+1. Java가 [`job-search-tool.md`](job-search-tool.md) 계약으로 인사혁신처 공공취업정보 API에서
    채용공고 원문(`sourceText`)을 받는다.
 2. Java가 텍스트 길이와 기본 검증을 수행한다.
 3. Java가 `JobPosting`을 등록하고 별도의 `ExtractionTask`를 생성한다.
@@ -188,7 +188,7 @@ Ollama(로컬)가 재시도까지 실패하면 Gemini(외부 API)로 폴백한�
 
 ## 8. 확인 필요
 
-- 채용공고 텍스트 최대 길이는 사람인·고용24 실제 표본 길이를 측정한 뒤 Java와 Python의 동일한 전용 설정으로 확정해야 한다.
+- 채용공고 텍스트 최대 길이는 공공취업정보 API 실제 표본 길이를 측정한 뒤 Java와 Python의 동일한 전용 설정으로 확정해야 한다.
 - `jobTitle`이 채워지지 않는 경우(9절 참고) Java가 어떻게 처리할지 — 재시도, 사용자 직접 입력 등.
 - 7절의 Java 전처리와 Python 연락처 제거 정규식을 실제 Provider 원문 표본으로 검증해야 한다.
 

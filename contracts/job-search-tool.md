@@ -1,6 +1,6 @@
 # 채용공고 검색 도구 계약
 
-상태: **부분 확정 — API 경계와 보안 원칙은 구현 기준, 제공자 활성화와 제한 수치는 확인 필요**
+상태: **부분 확정 — API 경계와 공공취업정보 Provider는 구현 기준, 필터 실응답과 제한 수치는 확인 필요**
 
 이 문서는 분석 중 Python이 사용할 수 있는 유일한 외부 채용공고 검색 통로를
 정의한다. Java와 Python 구현보다 이 계약을 먼저 변경하며, 계약에 없는 URL,
@@ -12,6 +12,7 @@
 - [Java–Python 연결 방식](../docs/architecture/java-python-connection.md)
 - [채용공고 구조화 추출 계약](job-posting-extraction.md)
 - [기술 태그 해석 계약](technology-tag-resolution.md)
+- [공공기관 개발 직군 검색 키워드](../docs/architecture/public-institution-search-keywords.md)
 
 ## 1. 목적과 신뢰 경계
 
@@ -38,29 +39,20 @@ Python 검색 계획
 
 ## 2. 제공자 정책
 
-연동 후보는 공식 API를 제공하는 다음 두 곳이다.
+운영 Provider는 공공데이터포털의 **인사혁신처_공공취업정보 조회 서비스** 하나다.
+사람인과 고용24는 운영 데이터 출처로 사용하지 않는다. 개발 샘플 Provider는
+`dev` 프로필의 연결 확인에만 사용하며 운영 결과로 저장하지 않는다.
 
-1. 사람인 채용정보 API
-2. 고용24 Open API
+Provider 선택과 인증키는 Java 서버 설정이 소유하며 Python과 LLM은 선택하거나
+변경할 수 없다. MVP에서는 Provider 병렬 호출, 대체 Provider 호출과 자동 재시도를
+사용하지 않는다.
 
-실제 활성화는 API 사용 등록, 이용약관, 재가공·보관 범위와 자격증명 발급을
-확인한 Provider에 한한다. 활성 Provider와 호출 우선순위는 Java 서버 설정이
-소유하며 Python은 선택하거나 변경할 수 없다.
-
-MVP에서는 측정되지 않은 병렬 호출과 자동 재시도를 사용하지 않는다.
-
-1. 활성 Provider가 없으면 구성 오류로 처리하고 외부 호출을 시도하지 않는다.
-2. 설정된 우선순위의 첫 Provider를 호출한다.
-3. `SUCCESS_RESULTS`이면 즉시 반환하고 다음 Provider를 호출하지 않는다.
-4. `SUCCESS_EMPTY`, `UNAVAILABLE`, `INVALID_RESPONSE`이면 다음 활성 Provider를
-   호출한다.
-5. 연결 실패, 타임아웃, 일시 장애는 `UNAVAILABLE`에 포함한다.
-6. 하나 이상의 `SUCCESS_EMPTY`가 있고 이후 Provider에서도 결과를 얻지
-   못하면 성공한 빈 목록을 반환한다.
-7. 정상 결과와 정상 빈 결과가 없고 모든 활성 Provider가 `UNAVAILABLE`이면
-   503 `JOB_PROVIDERS_UNAVAILABLE`을 반환한다.
-8. 정상 결과와 정상 빈 결과가 없고 하나 이상의 Provider가 `INVALID_RESPONSE`이면
-   502 `JOB_PROVIDER_INVALID_RESPONSE`을 반환한다.
+1. 공공취업정보 Provider가 없거나 인증키가 없으면 구성 오류로 처리한다.
+2. 정상 결과가 하나 이상이면 `SUCCESS_RESULTS`를 반환한다.
+3. 정상 응답이지만 결과가 없으면 `SUCCESS_EMPTY`와 빈 목록을 반환한다.
+4. 연결 실패, 타임아웃과 일시 장애는 `UNAVAILABLE`로 처리한다.
+5. HTTP 성공이어도 XML 계약, 필수값 또는 공공기관 필터 검증에 실패하면
+   `INVALID_RESPONSE`로 처리한다.
 
 ## 3. 내부 API
 
@@ -171,7 +163,7 @@ HTTP 상태는 200 OK다.
   "data": {
     "jobAnalysisId": "9b12bb6a-8c88-441e-8395-462344107726",
     "toolCallId": "e61357d9-8284-42c6-b234-f86576ccfe6c",
-    "status": "FALLBACK_COMPLETED",
+    "status": "COMPLETED",
     "criteria": {
       "targetJobTitle": "백엔드 개발자",
       "skillKeywords": ["Java", "Spring Framework", "PostgreSQL"],
@@ -182,13 +174,7 @@ HTTP 상태는 200 OK다.
     },
     "providerAttempts": [
       {
-        "provider": "SARAMIN",
-        "status": "UNAVAILABLE",
-        "resultCount": 0,
-        "errorType": "PROVIDER_TIMEOUT"
-      },
-      {
-        "provider": "WORK24",
+        "provider": "PUBLIC_EMPLOYMENT",
         "status": "SUCCESS_RESULTS",
         "resultCount": 1,
         "errorType": null
@@ -196,11 +182,11 @@ HTTP 상태는 200 OK다.
     ],
     "jobPostings": [
       {
-        "provider": "WORK24",
-        "providerPostingId": "provider-posting-123",
-        "sourceUrl": "https://example.invalid/job/123",
-        "companyName": "예시회사",
-        "originalJobTitle": "Java 백엔드 개발자",
+        "provider": "PUBLIC_EMPLOYMENT",
+        "providerPostingId": "public-employment-posting-123",
+        "sourceUrl": null,
+        "companyName": "예시 공공기관",
+        "originalJobTitle": "전산개발 분야 채용",
         "publishedDate": "2026-08-01",
         "closingDate": "2026-08-31",
         "employmentType": "정규직",
@@ -221,20 +207,14 @@ HTTP 상태는 200 OK다.
 
 | 필드 | 허용값 | 의미 |
 |---|---|---|
-| data.status | COMPLETED | 두 번째 이후 Provider를 호출하지 않고 첫 Provider의 `SUCCESS_RESULTS`로 종료하거나, 다음 활성 Provider가 없어 첫 Provider의 `SUCCESS_EMPTY`로 종료한 경우 |
-| data.status | FALLBACK_COMPLETED | 두 번째 이후 Provider를 실제로 호출했고 최종적으로 `SUCCESS_RESULTS` 또는 `SUCCESS_EMPTY`를 반환한 경우 |
+| data.status | COMPLETED | 공공취업정보 Provider가 `SUCCESS_RESULTS` 또는 `SUCCESS_EMPTY`로 종료한 경우 |
 | Provider 상태 | SUCCESS_RESULTS | 정상 결과가 하나 이상 |
 | Provider 상태 | SUCCESS_EMPTY | 정상 응답이지만 결과 없음 |
 | Provider 상태 | UNAVAILABLE | 연결 실패, 제한시간 초과 또는 일시 장애 |
 | Provider 상태 | INVALID_RESPONSE | HTTP 성공이지만 계약·크기·형식 검증 실패 |
 
-`FALLBACK_COMPLETED`는 앞 Provider의 `SUCCESS_EMPTY`를 보존한 상태에서 이후
-Provider가 `UNAVAILABLE` 또는 `INVALID_RESPONSE`로 끝나 빈 목록을 반환하는
-경우도 포함한다. `data.status`는 활성 Provider 개수가 아니라 두 번째 이후
-Provider의 실제 호출 여부로 결정한다.
-
-providerAttempts는 실제 호출 순서대로 반환한다. 호출하지 않은 Provider는
-포함하지 않는다. 빈 결과는 오류가 아니며 jobPostings를 빈 배열로 반환한다.
+providerAttempts에는 공공취업정보 Provider의 실제 호출 결과만 반환한다.
+빈 결과는 오류가 아니며 jobPostings를 빈 배열로 반환한다.
 
 ### 공고 필드 규칙
 
@@ -258,8 +238,8 @@ Java는 원문 값과 정규화 값을 구분하며 AI 결과로 원문 사실�
 2. 정규화한 공식 sourceUrl이 같으면 동일 공고 후보로 연결한다.
 3. 회사명, 원문 직무명, 게시일과 근무 위치가 같으면 중복 후보로 표시한다.
 
-2번과 3번만으로 서로 다른 Provider 공고를 자동 삭제하지 않는다. 대표 공고와
-모든 출처 이력을 함께 보존해 시장 수요가 부풀려지지 않게 한다.
+2번과 3번만으로 서로 다른 공고를 자동 삭제하지 않는다. 중복 후보와 출처 이력을
+보존해 시장 수요가 부풀려지지 않게 한다.
 
 ## 8. 실패 응답
 
@@ -291,7 +271,7 @@ Java는 원문 값과 정규화 값을 구분하며 AI 결과로 원문 사실�
 | 429 | JOB_SEARCH_TOOL_LIMIT_EXCEEDED | false | 분석별 호출 또는 결과 한도 초과 |
 | 502 | JOB_PROVIDER_INVALID_RESPONSE | true | 활성 Provider 응답 계약 위반 |
 | 503 | JOB_PROVIDERS_NOT_CONFIGURED | false | 활성 Provider 없음 |
-| 503 | JOB_PROVIDERS_UNAVAILABLE | true | 모든 활성 Provider 일시 장애 |
+| 503 | JOB_PROVIDERS_UNAVAILABLE | true | 공공취업정보 Provider 일시 장애 |
 
 오류 응답과 일반 로그에는 내부 예외, API 키, 토큰, Provider 원문 응답과 공고
 원문 전체를 포함하지 않는다.
@@ -314,21 +294,21 @@ Java가 저장할 값:
 - 분석과 근거 확인에 필요하지 않은 홍보·탐색 문구
 
 도구 호출 성공·실패와 분석 단계 변경은 같은 짧은 DB 트랜잭션으로 저장한다.
-전체 분석은 일부 Provider 실패만으로 즉시 실패하지 않으며, 사용 가능한 결과가
-있으면 후속 구조화·비교를 진행하고 최종 결과에서 부분 완료 사유를 표시한다.
+일부 공고 상세 조회나 Python 추출이 실패해도 성공한 공고가 있으면 후속 단계를
+진행하고 최종 결과에서 부분 완료 사유를 표시한다.
 
 ## 10. 설정 항목
 
 다음 값은 코드에 하드코딩하지 않고 ConfigurationProperties와 환경변수로
 관리한다.
 
-- 활성 Provider와 호출 우선순위
-- Provider별 Base URL, API 키와 호출 빈도
+- 활성 Provider
+- 공공취업정보 API Base URL, 인증키와 호출 빈도
 - 연결·응답 제한시간
 - 최대 응답 바이트와 압축 해제 후 최대 크기
 - 최대 기술 키워드 개수와 개별 길이
 - 분석별 최대 도구 호출 횟수와 최대 결과 수
-- 전체 Provider 동시 실행 수와 실행기 대기열 크기
+- 전체 외부 호출 동시 실행 수와 실행기 대기열 크기
 
 실제 측정값이 없으므로 이 계약은 숫자 기본값을 확정하지 않는다.
 
@@ -336,9 +316,9 @@ Java가 저장할 값:
 
 Java와 Python은 같은 JSON 예제로 다음을 검증한다.
 
-1. 첫 Provider 정상 결과와 정상 0건
-2. 첫 Provider 실패 후 fallback 성공
-3. 모든 Provider 정상 0건과 모든 Provider 사용 불가
+1. 공공취업정보 Provider 정상 결과와 정상 0건
+2. 인증키 누락·거부와 Provider 일시 장애
+3. 공공취업정보 XML 응답 계약 위반
 4. 잘못된 UUID, 추가 필드와 검색 기준 위반
 5. 실행 중이 아닌 작업과 취소 요청 상태
 6. 같은 toolCallId의 완료 응답 재사용, 실행 중과 충돌 요청
@@ -357,16 +337,16 @@ Java와 Python은 같은 JSON 예제로 다음을 검증한다.
 
 다음 항목은 구현 전에 사용자 확인 또는 실제 측정이 필요하다.
 
-- 사람인·고용24 중 실제 API 등록과 이용 조건 확인을 마친 Provider
-- Provider 호출 우선순위
+- 실제 인증키로 `Instt_se=g03`, `Pblanc_ty=e08`가 공공기관 채용공고만
+  반환하는지 확인
+- 키워드별 실제 검색 결과와 누락률 측정
 - 각 제한값과 제한 초과 시 사용자에게 표시할 대기 안내
 - 최소 sourceText와 공고 변경 이력의 보관 기간
 - STARTED 상태에서 서버가 중단된 도구 호출의 복구 기준
 
 ## 13. 공식 참고 자료
 
-- [사람인 채용정보 API 안내](https://oapi.saramin.co.kr/guide/info)
-- [고용24 Open API 소개](https://www.work24.go.kr/cm/e/a/0110/selectOpenApiIntro.do)
+- [인사혁신처_공공취업정보 조회 서비스](https://www.data.go.kr/data/15156780/openapi.do)
 - [Spring Boot 외부 설정과 ConfigurationProperties](https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties)
 - [Spring Framework RestClient](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html#rest-restclient)
 - [Spring 트랜잭션 관리](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative.html)

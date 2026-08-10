@@ -2,7 +2,6 @@ package com.careercompass.pythonworker.client;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import com.careercompass.common.observability.RequestCorrelationContext;
@@ -11,6 +10,7 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionRequest;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
+import com.careercompass.pythonworker.exception.PythonExtractionResponseViolation;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -81,47 +81,51 @@ public class PythonJobPostingExtractionClient {
             String requestedExtractionTaskId,
             PythonJobPostingExtractionEnvelope.Data data
     ) {
-        if (!requestedJobPostingId.equals(data.jobPostingId())
-                || !requestedExtractionTaskId.equals(data.extractionTaskId())
-                || !EXTRACTED_STATUS.equals(data.status())
-                || data.extraction() == null
-                || !hasExpectedModelExecutions(data.modelExecutions())) {
-            throw new PythonExtractionException(
-                    PythonExtractionFailure.RESPONSE_INVALID,
-                    ("jobPostingIdMatch=%s extractionTaskIdMatch=%s status=%s extractionPresent=%s "
-                            + "modelExecutions=%s").formatted(
-                                    requestedJobPostingId.equals(data.jobPostingId()),
-                                    requestedExtractionTaskId.equals(data.extractionTaskId()),
-                                    data.status(),
-                                    data.extraction() != null,
-                                    data.modelExecutions()));
+        if (!requestedJobPostingId.equals(data.jobPostingId())) {
+            throw responseInvalid(PythonExtractionResponseViolation.JOB_POSTING_ID_MISMATCH);
+        }
+        if (!requestedExtractionTaskId.equals(data.extractionTaskId())) {
+            throw responseInvalid(PythonExtractionResponseViolation.EXTRACTION_TASK_ID_MISMATCH);
+        }
+        if (!EXTRACTED_STATUS.equals(data.status())) {
+            throw responseInvalid(PythonExtractionResponseViolation.STATUS_INVALID);
+        }
+        if (data.extraction() == null) {
+            throw responseInvalid(PythonExtractionResponseViolation.EXTRACTION_MISSING);
+        }
+        if (!hasExpectedModelExecutions(data.modelExecutions())) {
+            throw responseInvalid(PythonExtractionResponseViolation.MODEL_EXECUTIONS_INVALID);
         }
     }
 
-    private boolean hasExpectedModelExecutions(Object modelExecutions) {
-        if (!(modelExecutions instanceof List<?> executions)) {
+    private boolean hasExpectedModelExecutions(
+            List<PythonJobPostingExtractionEnvelope.ModelExecution> modelExecutions
+    ) {
+        if (modelExecutions == null) {
             return false;
         }
         Set<String> stages = new HashSet<>();
-        for (Object execution : executions) {
-            if (!(execution instanceof Map<?, ?> executionMap)) {
+        for (PythonJobPostingExtractionEnvelope.ModelExecution execution : modelExecutions) {
+            if (execution == null || execution.stage() == null || !stages.add(execution.stage())) {
                 return false;
             }
-            Object stage = executionMap.get("stage");
-            Object provider = executionMap.get("provider");
-            Object model = executionMap.get("model");
-            if (!(stage instanceof String stageName) || !stages.add(stageName)) {
+            if (!ALLOWED_MODEL_EXECUTION_PROVIDERS.contains(execution.provider())) {
                 return false;
             }
-            if (!(provider instanceof String providerName)
-                    || !ALLOWED_MODEL_EXECUTION_PROVIDERS.contains(providerName)) {
-                return false;
-            }
-            if (!(model instanceof String modelName) || modelName.isBlank()) {
+            if (execution.model() == null || execution.model().isBlank()) {
                 return false;
             }
         }
         return stages.equals(EXPECTED_MODEL_EXECUTION_STAGES);
+    }
+
+    private PythonExtractionException responseInvalid(
+            PythonExtractionResponseViolation responseViolation
+    ) {
+        return new PythonExtractionException(
+                PythonExtractionFailure.RESPONSE_INVALID,
+                responseViolation
+        );
     }
 
     private PythonExtractionException failureFromEnvelope(
