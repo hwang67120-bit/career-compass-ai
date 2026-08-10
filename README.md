@@ -134,10 +134,26 @@ erDiagram
 
 ```text
 career-compass-ai/
-├─ backend-java/   Java 사용자 API, 보안, 저장과 분석 제어
-├─ ai-python/      저장소 근거 추출, 임베딩과 의미 유사도
-├─ contracts/      Java–Python 요청·응답 계약
-├─ docs/           API, 정책, 설계와 결정 기록
+├─ backend-java/                          Spring Boot 4 / Java 21
+│  └─ src/main/java/com/careercompass/
+│     ├─ security/       GitHub OAuth 로그인, 인증·인가, 내부 서비스 토큰 검증
+│     ├─ user/           사용자 계정
+│     ├─ userprofile/    목표 직무·기술 태그로 구성된 사용자 프로필
+│     ├─ projectsource/  공개 GitHub 저장소 검증·등록
+│     ├─ technologytag/  표준 기술 태그 검색, 내부 태그 정규화(Python·계약 연동)
+│     ├─ jobanalysis/    분석 작업 생성·상태 관리(QUEUED까지 구현, 이후 단계는 PR #48 리뷰 중)
+│     ├─ pythonworker/   Python 상태 확인·채용공고 추출 호출 클라이언트
+│     └─ common/         설정, requestId 기반 요청 추적, 공통 웹 처리
+├─ ai-python/                             FastAPI
+│  └─ app/
+│     ├─ job_postings/   채용공고 원문 구조화 추출 API — 현재 유일하게 Java와 연결된 기능
+│     ├─ providers/      Ollama(기본)·Gemini(폴백) 모델 provider
+│     ├─ services/       임베딩·유사도·랭킹·저장소 근거 추출 로직(Java 미연결, 비교 단계 미착수)
+│     ├─ guardrails/     내부 서비스 토큰 인증
+│     ├─ health/         Python 상태 확인 API
+│     └─ documents/      PDF 추출(2026-08-03 MVP 제외 결정, 코드는 정리 전까지 유지)
+├─ contracts/      Java–Python 요청·응답 계약(job-posting-extraction, technology-tag-resolution 등)
+├─ docs/           API 명세, 아키텍처 결정과 현재 작업 상태(작업 공유용 문서)
 ├─ deploy/         배포 설정
 └─ postman/        HTTP 통합 검증 자료
 ```
