@@ -1,5 +1,7 @@
 package com.careercompass.pythonworker.dto;
 
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -16,7 +18,15 @@ public record PythonJobPostingExtractionEnvelope(
             String extractionTaskId,
             String status,
             Object extraction,
-            Object modelExecutions
+            List<ModelExecution> modelExecutions
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ModelExecution(
+            String stage,
+            String provider,
+            String model
     ) {
     }
 

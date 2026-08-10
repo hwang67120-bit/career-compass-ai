@@ -56,7 +56,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "github.api.connect-timeout=3s",
         "github.api.read-timeout=8s",
         "python.worker.internal-token=integration-test-token",
-        "work24.api.auth-key=integration-test-key",
         "test.user-id=30000000-0000-0000-0000-000000000003"
 })
 class JobAnalysisWorkerIntegrationTest {
@@ -93,7 +92,7 @@ class JobAnalysisWorkerIntegrationTest {
         insertProjectSource(PROJECT_SOURCE_ID, TEST_USER_ID);
 
         jobPostingProvider = mock(JobPostingProvider.class);
-        when(jobPostingProvider.providerName()).thenReturn("WORK24");
+        when(jobPostingProvider.providerName()).thenReturn("PUBLIC_EMPLOYMENT");
         pythonJobPostingExtractionClient = mock(PythonJobPostingExtractionClient.class);
 
         ObjectProvider<JobPostingProvider> objectProvider = mock(ObjectProvider.class);

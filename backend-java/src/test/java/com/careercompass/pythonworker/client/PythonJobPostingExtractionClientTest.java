@@ -11,6 +11,7 @@ import com.careercompass.pythonworker.config.PythonWorkerProperties;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
+import com.careercompass.pythonworker.exception.PythonExtractionResponseViolation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -81,7 +82,8 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.JOB_POSTING_ID_MISMATCH);
     }
 
     @Test
@@ -91,7 +93,8 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.EXTRACTION_TASK_ID_MISMATCH);
     }
 
     @Test
@@ -101,7 +104,8 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.STATUS_INVALID);
     }
 
     @Test
@@ -114,7 +118,8 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.MODEL_EXECUTIONS_INVALID);
     }
 
     @Test
@@ -130,7 +135,8 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.MODEL_EXECUTIONS_INVALID);
     }
 
     @Test
@@ -146,15 +152,23 @@ class PythonJobPostingExtractionClientTest {
                 MediaType.APPLICATION_JSON
         ));
 
-        assertThatFailsWithResponseInvalid();
+        assertThatFailsWithResponseInvalid(
+                PythonExtractionResponseViolation.MODEL_EXECUTIONS_INVALID);
     }
 
-    private void assertThatFailsWithResponseInvalid() {
-        assertThatThrownBy(() -> client.extract(JOB_POSTING_ID, EXTRACTION_TASK_ID, "채용공고 본문"))
+    private void assertThatFailsWithResponseInvalid(
+            PythonExtractionResponseViolation expectedViolation
+    ) {
+        assertThatThrownBy(() -> client.extract(JOB_POSTING_ID, EXTRACTION_TASK_ID, "source"))
                 .isInstanceOf(PythonExtractionException.class)
-                .satisfies(exception -> assertThat(
-                        ((PythonExtractionException) exception).getFailure())
-                        .isEqualTo(PythonExtractionFailure.RESPONSE_INVALID));
+                .satisfies(exception -> {
+                    PythonExtractionException extractionException =
+                            (PythonExtractionException) exception;
+                    assertThat(extractionException.getFailure())
+                            .isEqualTo(PythonExtractionFailure.RESPONSE_INVALID);
+                    assertThat(extractionException.getResponseViolation())
+                            .isEqualTo(expectedViolation);
+                });
     }
 
     private ResponseActions expectExtractCall() {

@@ -490,9 +490,9 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 
 - [`contracts/job-search-tool.md`](../contracts/job-search-tool.md) — Python은 임의 인터넷 접속 권한이
   없고, 분석 중 공고 검색이 필요하면 Java가 제공하는 내부 API(`POST /internal/v1/tools/job-search`)만
-  호출한다. Java가 **사람인 공식 채용정보 API**, **고용24 Open API** 순서로 호출해 공식 데이터만
-  가져온다 — 사용자 URL 입력도, 잡코리아·게임잡·원티드·알바몬·취업24 같은 화이트리스트 도메인
-  직접 조회도, SSRF 방어 로직도 이제 필요 없다.
+  호출한다. Java가 **인사혁신처 공공취업정보 조회 서비스**만 호출해 공공기관 채용 데이터를
+  가져온다. 사람인과 고용24는 사용하지 않으며, 사용자 URL 입력이나 민간 채용 사이트 직접
+  조회도 지원하지 않는다.
 - [`docs/api/developer-job-analysis-api.md`](../docs/api/developer-job-analysis-api.md) — 사용자
   분석 프로필(희망 직무·수기 기술), 프로젝트 출처 선택, 분석 작업(상태·이벤트·취소·부분 완료·결과)의
   전체 사용자 API. Python 책임을 "저장소 근거 추출, 검색 기준 후보 생성, 공고 구조화, 임베딩, 의미
@@ -537,4 +537,5 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 | 2026-07-29 | Python 내부 분석 기능 | 구현 완료로 통칭 | `UNIT_TESTED` | 원격 Python 브랜치의 코드·테스트·README 확인 |
 | 2026-07-29 | Java GitHub OAuth | 구현 완료로 통칭 | `UNIT_TESTED` | 자동 테스트와 로컬 HTTP 확인, 실제 GitHub 브라우저 로그인 미실행 |
 | 2026-07-29 | Java Python 문서 추출 클라이언트 | `IMPLEMENTED` | `UNIT_TESTED` | Java 21에서 대상 클라이언트 테스트와 전체 89개 테스트를 캐시 없이 실행해 통과 |
-| 2026-07-31 | 채용공고 외부 조회 | URL 화이트리스트·SSRF 방어(제안) | 폐기, `contracts/job-search-tool.md`(사람인·고용24 공식 API)로 대체 | Codex가 develop에 제안 계약 merge, 사용자 확인 |
+| 2026-07-31 | 채용공고 외부 조회 | URL 화이트리스트·SSRF 방어(제안) | 공식 Provider 계약으로 대체 | Codex가 develop에 제안 계약 merge, 사용자 확인 |
+| 2026-08-10 | 운영 채용공고 Provider | 사람인·고용24 후보 | 인사혁신처 공공취업정보 API만 사용 | 고용24 기업회원 제한 확인 및 공공데이터포털 개발계정 승인 |
