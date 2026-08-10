@@ -14,6 +14,8 @@ import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
+import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
+import com.careercompass.jobsearch.exception.PublicEmploymentAccessFailure;
 import com.careercompass.jobsearch.exception.Work24AccessException;
 import com.careercompass.jobsearch.exception.Work24AccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
@@ -128,6 +130,13 @@ public class JobAnalysisWorker {
                     ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
                     : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
             jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
+        } catch (PublicEmploymentAccessException exception) {
+            logProcessingFailure(jobAnalysisId, exception);
+            JobAnalysisFailureCode failureCode =
+                    exception.getFailure() == PublicEmploymentAccessFailure.INVALID_RESPONSE
+                    ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
+                    : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
+            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (RuntimeException exception) {
             logProcessingFailure(jobAnalysisId, exception);
             jobAnalysisService.markAnalysisFailed(
@@ -155,7 +164,7 @@ public class JobAnalysisWorker {
             try {
                 savedPostings.add(
                         extractOneCandidate(jobAnalysisId, provider, candidate, now));
-            } catch (Work24AccessException | PythonExtractionException
+            } catch (Work24AccessException | PublicEmploymentAccessException | PythonExtractionException
                     | JsonProcessingException exception) {
                 log.warn(
                         "job_analysis_posting_extraction_failed jobAnalysisId={} "

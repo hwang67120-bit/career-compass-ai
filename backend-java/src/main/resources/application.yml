@@ -59,12 +59,20 @@ work24:
   detail:
     max-source-text-length: ${WORK24_DETAIL_MAX_SOURCE_TEXT_LENGTH:8000}
 
-# 2026-08-05 임시 작업 — 승인된 채용 API가 없어 개발 환경에서 파이프라인을 검증하기 위한
-# 값(PR #49, docs/claude-dev-sample-provider-handoff.md). 기본값은 미설정(빈 값)이라
-# work24·dev-sample 둘 다 선택되지 않는다 — 명시적으로 설정해야만 Provider가 활성화된다
-# (코덱스 확인, PR #48: Work24는 개인정보 제거·DOM 표본 검증 전까지 기본으로 쓰지 않음).
+public-employment:
+  api:
+    base-url: ${PUBLIC_EMPLOYMENT_API_BASE_URL:https://apis.data.go.kr/1760000/PblJobService}
+    service-key: ${PUBLIC_EMPLOYMENT_API_SERVICE_KEY:}
+    connect-timeout: ${PUBLIC_EMPLOYMENT_API_CONNECT_TIMEOUT:3s}
+    read-timeout: ${PUBLIC_EMPLOYMENT_API_READ_TIMEOUT:10s}
+    max-source-text-length: ${JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH:8000}
+    sort-order: ${PUBLIC_EMPLOYMENT_API_SORT_ORDER:1}
+
+# 승인된 인사혁신처 공공취업 API를 기본 Provider로 사용한다. Work24와 dev-sample은
+# JOB_SEARCH_PROVIDER를 명시했을 때만 선택한다.
+# PUBLIC_EMPLOYMENT_API_SERVICE_KEY에는 공공데이터포털의 Decoding 인증키를 설정한다.
 job-search:
-  provider: ${JOB_SEARCH_PROVIDER:}
+  provider: ${JOB_SEARCH_PROVIDER:public-employment}
 
 job-analysis:
   worker:
