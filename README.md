@@ -84,13 +84,32 @@ flowchart TB
 
 분석 시작·상태·이벤트·취소·결과 API는 [개발자 채용공고 분석 API](docs/api/developer-job-analysis-api.md)를 구현 기준으로 사용합니다.
 
+### Python 내부 API (ai-python)
+
+브라우저가 직접 호출하지 않고 Java `pythonworker`만 호출하는 내부 API입니다. 모든 요청에 `X-Internal-Token` 헤더가 필요합니다.
+
+| Method | Endpoint | 기능 | 상태 |
+|---|---|---|---|
+| `GET` | `/internal/v1/health` | Python 상태 확인 | 구현, Java 연결 확인 |
+| `POST` | `/internal/v1/job-postings/extract` | 채용공고 원문 구조화 추출(Ollama, 실패 시 Gemini 폴백) | 구현, Java 연결(PR #48 검증 중) |
+
+계약: [채용공고 추출 계약](contracts/job-posting-extraction.md). 저장소 근거 추출·임베딩·유사도·랭킹(`ai-python/app/services`)은 아직 API로 노출되지 않아 Java가 호출할 수 없습니다.
+
 ## 데이터 구조
 
 ```mermaid
 erDiagram
     USER_ACCOUNT ||--o{ EXTERNAL_IDENTITY : owns
     USER_ACCOUNT ||--o{ PROJECT_SOURCE : owns
+    USER_ACCOUNT ||--o| USER_PROFILE : owns
+    USER_ACCOUNT ||--o{ JOB_ANALYSIS : requests
     TECHNOLOGY_TAG ||--o{ TECHNOLOGY_TAG_ALIAS : has
+    TECHNOLOGY_TAG ||--o{ USER_PROFILE_TECHNOLOGY_TAG : references
+    USER_PROFILE ||--o{ USER_PROFILE_VERSION : has
+    USER_PROFILE_VERSION ||--o{ USER_PROFILE_TECHNOLOGY_TAG : has
+    USER_PROFILE_VERSION ||--o{ JOB_ANALYSIS : "based on"
+    JOB_ANALYSIS ||--o{ JOB_ANALYSIS_PROJECT_SOURCE : selects
+    PROJECT_SOURCE ||--o{ JOB_ANALYSIS_PROJECT_SOURCE : "selected by"
 
     USER_ACCOUNT {
         UUID id PK
@@ -126,7 +145,46 @@ erDiagram
         UUID technology_tag_id FK
         VARCHAR alias
     }
+    USER_PROFILE {
+        UUID id PK
+        UUID user_id FK
+        INTEGER current_version
+        BIGINT lock_version
+    }
+    USER_PROFILE_VERSION {
+        UUID id PK
+        UUID user_profile_id FK
+        INTEGER profile_version
+        VARCHAR target_job_title
+        VARCHAR content_fingerprint
+    }
+    USER_PROFILE_TECHNOLOGY_TAG {
+        UUID id PK
+        UUID user_profile_version_id FK
+        UUID technology_tag_id FK
+        VARCHAR raw_name
+        VARCHAR normalized_name
+        VARCHAR source_type
+        INTEGER display_order
+    }
+    JOB_ANALYSIS {
+        UUID id PK
+        UUID user_id FK
+        UUID user_profile_id FK
+        INTEGER user_profile_version FK
+        VARCHAR analysis_status
+        VARCHAR current_step
+        INTEGER completed_units
+        INTEGER total_units
+    }
+    JOB_ANALYSIS_PROJECT_SOURCE {
+        UUID job_analysis_id FK
+        UUID project_source_id FK
+        INTEGER selection_order
+    }
 ```
+
+`job_analysis`는 분석 대상 저장소를 `job_analysis_project_source`로 선택해 참조하고, 어떤 확정된 프로필 버전을 근거로 실행됐는지 `user_profile_id`+`user_profile_version`으로 고정합니다. `analysis_status`·`current_step` 값의 정의는 [분석 작업과 SSE 설계](docs/architecture/backend-job-processing-and-sse.md)를 기준으로 합니다. 채용공고 추출 결과를 저장하는 테이블(`job_analysis_posting`)과 실패 원인 코드(`failure_code`)는 PR #48에서 추가 중이며 develop에는 아직 없습니다.
 
 이미 적용된 `V1__create_user_document.sql`은 Flyway 이력 보호를 위해 수정하거나 삭제하지 않습니다. `user_document` 테이블은 현재 API와 분석에서 사용하지 않으며, 실제 데이터와 테이블 삭제는 별도 신규 마이그레이션 승인을 받아야 합니다.
 
