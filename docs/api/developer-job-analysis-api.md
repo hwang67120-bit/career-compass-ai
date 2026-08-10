@@ -305,5 +305,4 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 - [Spring MVC annotated controllers](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller.html)
 - [Spring MVC asynchronous requests and SSE](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html)
 - [Spring Security CSRF](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html)
-- [사람인 채용정보 API 안내](https://oapi.saramin.co.kr/guide/info)
-- [고용24 Open API 소개](https://www.work24.go.kr/cm/e/a/0110/selectOpenApiIntro.do)
+- [인사혁신처_공공취업정보 조회 서비스](https://www.data.go.kr/data/15156780/openapi.do)

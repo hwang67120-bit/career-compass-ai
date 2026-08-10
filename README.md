@@ -58,7 +58,7 @@ flowchart TB
     JAVA --> POSTGRES["PostgreSQL / Flyway"]
     JAVA --> GITHUB["GitHub OAuth / REST API"]
     JAVA -. "내부 토큰 + requestId" .-> PYTHON["FastAPI / Python"]
-    PYTHON -. "서버가 허용한 내부 도구만" .-> JOBAPI["사람인·고용24 공식 API"]
+    PYTHON -. "서버가 허용한 내부 도구만" .-> JOBAPI["인사혁신처 공공취업정보 API"]
 ```
 
 - Java는 인증·인가, 사용자 소유권, 공식 외부 API 호출, 상태 저장과 규칙 판정을 담당합니다.

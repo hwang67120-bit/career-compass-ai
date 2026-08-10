@@ -32,7 +32,7 @@ X-Request-Id: {uuid}
 - Python과 LLM은 임의 URL에 접근하지 않고 Java 내부 검색 도구만 호출한다.
 - Java는 분석 상태·고정 프로필·저장소 근거와 멱등 키를 검증한다.
 - URL, Provider 선택, API 키와 호출 한도는 Java 설정이 소유한다.
-- Provider는 측정 전 병렬화하지 않고 설정 우선순위에 따라 순차 fallback한다.
+- 운영 Provider는 인사혁신처 공공취업정보 API 하나이며 병렬 호출이나 대체 Provider 호출을 하지 않는다.
 - 외부 API 호출은 DB 트랜잭션 밖에서 실행한다.
 - 성공 결과는 최소 공고 원문, 출처, 수집 시각과 변경 지문을 포함한다.
 

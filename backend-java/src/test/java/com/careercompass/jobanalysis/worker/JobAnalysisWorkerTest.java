@@ -23,8 +23,8 @@ import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
-import com.careercompass.jobsearch.exception.Work24AccessException;
-import com.careercompass.jobsearch.exception.Work24AccessFailure;
+import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
+import com.careercompass.jobsearch.exception.PublicEmploymentAccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
@@ -60,7 +60,7 @@ class JobAnalysisWorkerTest {
         jobPostingProvider = org.mockito.Mockito.mock(JobPostingProvider.class);
         jobPostingProviderObjectProvider = org.mockito.Mockito.mock(ObjectProvider.class);
         when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(jobPostingProvider);
-        when(jobPostingProvider.providerName()).thenReturn("WORK24");
+        when(jobPostingProvider.providerName()).thenReturn("PUBLIC_EMPLOYMENT");
         pythonJobPostingExtractionClient =
                 org.mockito.Mockito.mock(PythonJobPostingExtractionClient.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-04T00:00:00Z"), ZoneOffset.UTC);
@@ -148,7 +148,7 @@ class JobAnalysisWorkerTest {
         verify(jobAnalysisService).recordExtractionOnlyFailure(eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
         assertThat(captor.getValue()).allSatisfy(
-                posting -> assertThat(posting.getProvider()).isEqualTo("WORK24"));
+                posting -> assertThat(posting.getProvider()).isEqualTo("PUBLIC_EMPLOYMENT"));
         verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
 
         ArgumentCaptor<String> jobPostingIdCaptor = ArgumentCaptor.forClass(String.class);
@@ -171,7 +171,8 @@ class JobAnalysisWorkerTest {
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of(failingCandidate, succeedingCandidate));
         when(jobPostingProvider.fetchSourceText(failingCandidate))
-                .thenThrow(new Work24AccessException(Work24AccessFailure.SERVICE_UNAVAILABLE));
+                .thenThrow(new PublicEmploymentAccessException(
+                        PublicEmploymentAccessFailure.SERVICE_UNAVAILABLE));
         when(jobPostingProvider.fetchSourceText(succeedingCandidate))
                 .thenReturn("채용공고 본문");
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
@@ -209,7 +210,8 @@ class JobAnalysisWorkerTest {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
-                .thenThrow(new Work24AccessException(Work24AccessFailure.SERVICE_UNAVAILABLE));
+                .thenThrow(new PublicEmploymentAccessException(
+                        PublicEmploymentAccessFailure.SERVICE_UNAVAILABLE));
 
         worker.pollAndProcessOne();
 
@@ -224,7 +226,8 @@ class JobAnalysisWorkerTest {
         when(jobAnalysisService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
-                .thenThrow(new Work24AccessException(Work24AccessFailure.INVALID_RESPONSE));
+                .thenThrow(new PublicEmploymentAccessException(
+                        PublicEmploymentAccessFailure.INVALID_RESPONSE));
 
         worker.pollAndProcessOne();
 
@@ -238,7 +241,7 @@ class JobAnalysisWorkerTest {
                 "예시회사",
                 "백엔드 개발자",
                 "서울",
-                "https://www.work24.go.kr/wk/a/b/1500/empDetailAuthView.do?wantedAuthNo="
+                "https://www.gojobs.go.kr/apmView.do?empmnsn="
                         + providerPostingId,
                 null
         );
