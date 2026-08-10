@@ -5,32 +5,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.time.Duration;
+
 import com.careercompass.pythonworker.config.PythonWorkerProperties;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.restclient.test.autoconfigure.RestClientTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseActions;
+import org.springframework.web.client.RestClient;
 
 /**
  * 계약: contracts/job-posting-extraction.md 4·5절. 저장 전 재검증(validateData)이
  * 실제로 요청과 다른 jobPostingId·extractionTaskId, EXTRACTED가 아닌 상태, 잘못된
  * modelExecutions를 걸러내는지 확인한다 — PR #48 리뷰에서 이 검증이 없다고 지적됨.
+ *
+ * `@RestClientTest` 대신 RestClient.Builder에 Mock 서버를 직접 바인딩해서 완성된
+ * RestClient를 생성자에 넘긴다 — 클라이언트 생성자가 자체적으로 requestFactory를
+ * 재설정하던 이전 구조에서는 이 Mock 바인딩이 실제 네트워크 호출로 덮어써졌다
+ * (코덱스가 PR #48 테스트 7건 실패로 확인, 원인은 PythonWorkerClientConfig로 분리).
  */
-@RestClientTest(PythonJobPostingExtractionClient.class)
-@EnableConfigurationProperties(PythonWorkerProperties.class)
-@TestPropertySource(properties = {
-        "python.worker.base-url=http://python-worker.test",
-        "python.worker.internal-token=test-internal-service-token"
-})
 class PythonJobPostingExtractionClientTest {
 
+    private static final String BASE_URL = "http://python-worker.test";
     private static final String JOB_POSTING_ID = "7b94df20-7e9f-4df7-bc90-408306e1fcd6";
     private static final String EXTRACTION_TASK_ID = "25a89eb8-224f-4457-ae6f-53dc32414f0d";
     private static final String VALID_MODEL_EXECUTIONS = """
@@ -40,11 +40,24 @@ class PythonJobPostingExtractionClientTest {
             ]
             """;
 
-    @Autowired
     private PythonJobPostingExtractionClient client;
-
-    @Autowired
     private MockRestServiceServer server;
+
+    @BeforeEach
+    void setUp() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        server = MockRestServiceServer.bindTo(builder).build();
+        client = new PythonJobPostingExtractionClient(builder.build(), properties());
+    }
+
+    private PythonWorkerProperties properties() {
+        return new PythonWorkerProperties(
+                BASE_URL,
+                "test-internal-service-token",
+                Duration.ofSeconds(3),
+                Duration.ofSeconds(10)
+        );
+    }
 
     @Test
     void extract_withValidResponse_returnsData() {

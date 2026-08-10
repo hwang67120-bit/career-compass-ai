@@ -1,6 +1,5 @@
 package com.careercompass.pythonworker.client;
 
-import java.net.http.HttpClient;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +11,7 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionRequest;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -34,23 +33,10 @@ public class PythonJobPostingExtractionClient {
     private final String internalServiceToken;
 
     public PythonJobPostingExtractionClient(
-            RestClient.Builder builder,
+            @Qualifier("pythonJobPostingExtractionRestClient") RestClient restClient,
             PythonWorkerProperties properties
     ) {
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(properties.extractConnectTimeout())
-                // Python(uvicorn/h11)은 평문 HTTP/1.1만 처리한다 — JDK HttpClient 기본값인
-                // HTTP/2는 h2c 업그레이드를 시도해 "Unsupported upgrade request" 오류를
-                // 일으킨다(실제 확인됨, 2026-08-09).
-                .version(HttpClient.Version.HTTP_1_1)
-                .build();
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(properties.extractReadTimeout());
-
-        this.restClient = builder
-                .requestFactory(requestFactory)
-                .baseUrl(properties.baseUrl())
-                .build();
+        this.restClient = restClient;
         this.internalServiceToken = properties.internalToken();
     }
 
@@ -100,7 +86,15 @@ public class PythonJobPostingExtractionClient {
                 || !EXTRACTED_STATUS.equals(data.status())
                 || data.extraction() == null
                 || !hasExpectedModelExecutions(data.modelExecutions())) {
-            throw new PythonExtractionException(PythonExtractionFailure.RESPONSE_INVALID);
+            throw new PythonExtractionException(
+                    PythonExtractionFailure.RESPONSE_INVALID,
+                    ("jobPostingIdMatch=%s extractionTaskIdMatch=%s status=%s extractionPresent=%s "
+                            + "modelExecutions=%s").formatted(
+                                    requestedJobPostingId.equals(data.jobPostingId()),
+                                    requestedExtractionTaskId.equals(data.extractionTaskId()),
+                                    data.status(),
+                                    data.extraction() != null,
+                                    data.modelExecutions()));
         }
     }
 

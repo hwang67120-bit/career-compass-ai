@@ -8,6 +8,11 @@ public class PythonExtractionException extends RuntimeException {
         this.failure = failure;
     }
 
+    public PythonExtractionException(PythonExtractionFailure failure, String message) {
+        super(message);
+        this.failure = failure;
+    }
+
     public PythonExtractionException(PythonExtractionFailure failure, Throwable cause) {
         super(cause);
         this.failure = failure;
