@@ -84,6 +84,17 @@ flowchart TB
 
 분석 시작·상태·이벤트·취소·결과 API는 [개발자 채용공고 분석 API](docs/api/developer-job-analysis-api.md)를 구현 기준으로 사용합니다.
 
+### Python 내부 API (ai-python)
+
+브라우저가 직접 호출하지 않고 Java `pythonworker`만 호출하는 내부 API입니다. 모든 요청에 `X-Internal-Token` 헤더가 필요합니다.
+
+| Method | Endpoint | 기능 | 상태 |
+|---|---|---|---|
+| `GET` | `/internal/v1/health` | Python 상태 확인 | 구현, Java 연결 확인 |
+| `POST` | `/internal/v1/job-postings/extract` | 채용공고 원문 구조화 추출(Ollama, 실패 시 Gemini 폴백) | 구현, Java 연결(PR #48 검증 중) |
+
+계약: [채용공고 추출 계약](contracts/job-posting-extraction.md). 저장소 근거 추출·임베딩·유사도·랭킹(`ai-python/app/services`)은 아직 API로 노출되지 않아 Java가 호출할 수 없습니다.
+
 ## 데이터 구조
 
 ```mermaid
