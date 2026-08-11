@@ -509,6 +509,42 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 /internal/v1/tools/job-search`를 호출하는 클라이언트를 만드는 것 자체는 이 문서에 아직 없는 새
 작업이다 — Java 구현이 끝나고 실제 연결을 시작할 때 범위를 정한다.
 
+## 채용공고 근거 의미 유사도 — Gemini 임베딩 제외, LLM-as-judge로 전환 검토 (2026-08-11)
+
+`contracts/job-evidence-similarity.md`(제안 상태, 아직 구현 안 함)의 `EMBEDDING_COSINE` 후보를
+좁히는 결정과 재검증이다.
+
+**결정**: Gemini는 제약(rate limit 등)이 있어 임베딩 모델 후보에서 제외한다. Gemini의 사용
+범위는 (1) 채용공고 추출에서 Ollama 실패 시 폴백(순차 대체, 2026-08-04 구현), (2) 오프라인
+교차검증 스크립트로 한정하고, 상시 병행 호출(임베딩 포함)에는 쓰지 않는다 — 토큰 소비가 크고
+아직 토큰을 아끼는 로직(캐싱·부분 재추출 등)이 없다. `ai-python/.env.example`의
+`GEMINI_MODEL`·`GEMINI_EMBEDDING_MODEL` 주석에 반영했다.
+
+**재검증**: `ai-python/evaluation/job_evidence_similarity_spike.py`(신규)로 nomic-embed-text를
+문단 단위가 아니라 `job-evidence-similarity.md`가 실제로 비교할 짧은 근거 문장
+(RESPONSIBILITY/TECHNOLOGY 단위)으로 재확인했다.
+
+| 비교 | 정답 쌍 | 오답 쌍(최대) | 판정 |
+|---|---|---|---|
+| RESPONSIBILITY(백엔드 담당 업무 vs 백엔드/프론트엔드 프로젝트 경험) | 0.9948 | 0.9980 | 실패(역전) |
+| SKILL/TECHNOLOGY, 완전 동일 문자열(Spring Boot) | 1.0000 | 0.9595 | 판정은 OK지만 마진 얇음 |
+| SKILL/TECHNOLOGY, 다른 언어명(Python vs Java/React) | 정답 쌍 없음 | 1.0000 / 1.0000 | 무관한 기술명도 최대치로 붙음 |
+
+**결론**: 2026-07-28 문단 단위 실험에서 나타난 역전이 짧은 문장 단위에서도 재현된다.
+SKILL/TECHNOLOGY도 완전히 동일한 문자열일 때만 신뢰할 수 있고, 다른 기술명끼리는 오히려
+최대 유사도로 붙는다 — nomic-embed-text는 근거 종류와 무관하게 이 도메인에서 짧은 텍스트의
+의미 구분력이 전반적으로 낮다. Gemini도 후보에서 빠지면서 **`EMBEDDING_COSINE`은 현재 후보
+모델이 없고, `LLM_JUDGE`(Ollama)가 유일한 실행 가능 경로**다. 표본이 6개 근거 쌍으로 작아
+정식 결론은 아니다(확인 필요).
+
+**반영한 문서**: `docs/architecture/embedding-similarity.md`(실험 결과·결정 추가),
+`contracts/job-evidence-similarity.md`(provider를 `OLLAMA`만 허용, 품질 게이트에 결정 반영,
+"구현 전 확인 필요" 1번을 LLM-as-judge 평가로 교체), `ai-python/.env.example`.
+
+**다음 단계(확인 필요)**: `LLM_JUDGE` 방식의 실제 품질 평가(같은 fixture로 Ollama에
+관련도 판정을 직접 시켜보는 것)는 아직 안 했다 — 이 계약은 여전히 제안 상태이며 구현 전
+확인 필요 항목이 남아 있다.
+
 ## Java 현재 검증 상태
 
 | 기능 | 현재 상태 | 확인 근거 | 다음 단계 |
@@ -539,3 +575,4 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 | 2026-07-29 | Java Python 문서 추출 클라이언트 | `IMPLEMENTED` | `UNIT_TESTED` | Java 21에서 대상 클라이언트 테스트와 전체 89개 테스트를 캐시 없이 실행해 통과 |
 | 2026-07-31 | 채용공고 외부 조회 | URL 화이트리스트·SSRF 방어(제안) | 공식 Provider 계약으로 대체 | Codex가 develop에 제안 계약 merge, 사용자 확인 |
 | 2026-08-10 | 운영 채용공고 Provider | 사람인·고용24 후보 | 인사혁신처 공공취업정보 API만 사용 | 고용24 기업회원 제한 확인 및 공공데이터포털 개발계정 승인 |
+| 2026-08-11 | 채용공고 근거 유사도 임베딩 모델 | Ollama·Gemini 후보 검토 중 | 둘 다 제외, LLM_JUDGE(Ollama)만 실행 가능 경로 | `job_evidence_similarity_spike.py` 재검증(짧은 근거 문장 단위 역전 재현) + Gemini 제약으로 임베딩 후보 제외 결정 |

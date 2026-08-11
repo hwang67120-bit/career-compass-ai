@@ -89,7 +89,9 @@ X-Request-Id: {uuid}
 - `EMBEDDING_COSINE`은 평가에서 범위를 확정한 `score`만 반환한다.
 - `LLM_JUDGE`는 `RELATED` 또는 `NOT_RELATED`인 `judgment`만 반환한다.
 - LLM 판정은 별도 보정 전 숫자 점수와 confidence를 반환하지 않는다.
-- provider는 실제 실행한 `OLLAMA` 또는 `GEMINI`, model은 실제 모델 이름이다.
+- provider는 `OLLAMA`만 허용한다. Gemini는 2026-08-11 결정으로 이 엔드포인트(임베딩·LLM-as-judge
+  실시간 호출)에 쓰지 않는다 — Ollama 추출 실패 시 폴백과 오프라인 교차검증 스크립트에만 한정한다
+  ([embedding-similarity.md](../docs/architecture/embedding-similarity.md) 참고). model은 실제 모델 이름이다.
 
 ## 계산 불가
 
@@ -117,8 +119,11 @@ X-Request-Id: {uuid}
 
 2026-08-11 `nomic-embed-text` 재평가에서 같은 백엔드 업무는 `0.9948`, 관련 없는
 프론트엔드 업무는 `0.9980`이었고 Python–Java와 Python–React가 모두 `1.0000`이었다.
-따라서 이 모델과 현재 계산법은 품질 게이트 실패다. Gemini 할당량 소진은 일시적 제약일 뿐
-모델 선택 근거가 아니다.
+따라서 이 모델과 현재 계산법은 품질 게이트 실패다. Gemini는 별도 결정으로 임베딩 후보에서
+제외됐다(할당량 문제가 아니라 제약 있는 외부 API를 실시간 경로에 상시 쓰지 않는다는 원칙 —
+[embedding-similarity.md](../docs/architecture/embedding-similarity.md) 2026-08-11 결정 참고).
+따라서 `EMBEDDING_COSINE`은 현재 후보 모델이 없고, `LLM_JUDGE`(Ollama)가 유일한 실행 가능
+경로다.
 
 ## 저장·오류·보안
 
@@ -146,7 +151,7 @@ NaN·Infinity, provider와 model을 검증한다. 계약 위반 응답은 저장
 
 ## 구현 전 확인 필요
 
-1. 동일 fixture로 Gemini 임베딩과 Ollama LLM-as-judge 재평가
+1. Ollama LLM-as-judge 방식의 품질 평가 (임베딩은 Ollama·Gemini 모두 후보에서 빠져 재평가 대상이 아님)
 2. 최종 method, provider, model과 출력 척도
 3. 사용자 프로젝트 근거의 생성·확인·버전 관리
 4. 최고 근거 개수, 배열·문장 제한과 모델 변경 정책
