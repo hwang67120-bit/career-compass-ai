@@ -240,6 +240,9 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 일치율은 비교 가능한 항목만 분모에 포함한다. `NEEDS_REVIEW`와
 `NOT_APPLICABLE`은 제외한다. 유사도는 합격 확률이나 실제 능력 보장이 아니다.
 
+상세 응답 필드, 상태별 HTTP 응답과 프론트 표시 규칙은
+[채용공고 분석 결과 API](job-analysis-result-api.md) 제안을 따른다.
+
 ## 저장 정책
 
 저장:

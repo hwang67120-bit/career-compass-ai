@@ -17,6 +17,8 @@
 | 기능 | 문서 | 상태 |
 |---|---|---|
 | PDF 문서 추출 | [document-extraction.md](document-extraction.md) | 폐기 — MVP 입력에서 제거 |
+| 기술 태그 정규화 | [technology-tag-resolution.md](technology-tag-resolution.md) | 확정 |
+| 채용공고 근거 의미 비교 | [job-evidence-similarity.md](job-evidence-similarity.md) | 제안 — 후보 품질 평가·사용자 승인 필요 |
 | 채용공고 검색 도구 | [job-search-tool.md](job-search-tool.md) | 부분 확정 — 제공자·제한 수치 확인 필요 |
 | 채용공고 구조화 추출 | [job-posting-extraction.md](job-posting-extraction.md) | 제안 — 코덱스 확인 필요 |
 
