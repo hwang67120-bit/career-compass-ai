@@ -10,11 +10,7 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.restclient.test.autoconfigure.RestClientTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseActions;
 
@@ -23,12 +19,6 @@ import org.springframework.test.web.client.ResponseActions;
  * 실제로 요청과 다른 jobPostingId·extractionTaskId, EXTRACTED가 아닌 상태, 잘못된
  * modelExecutions를 걸러내는지 확인한다 — PR #48 리뷰에서 이 검증이 없다고 지적됨.
  */
-@RestClientTest(PythonJobPostingExtractionClient.class)
-@EnableConfigurationProperties(PythonWorkerProperties.class)
-@TestPropertySource(properties = {
-        "python.worker.base-url=http://python-worker.test",
-        "python.worker.internal-token=test-internal-service-token"
-})
 class PythonJobPostingExtractionClientTest {
 
     private static final String JOB_POSTING_ID = "7b94df20-7e9f-4df7-bc90-408306e1fcd6";
@@ -40,10 +30,7 @@ class PythonJobPostingExtractionClientTest {
             ]
             """;
 
-    @Autowired
     private PythonJobPostingExtractionClient client;
-
-    @Autowired
     private MockRestServiceServer server;
 
     @Test
