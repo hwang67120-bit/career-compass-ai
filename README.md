@@ -184,6 +184,8 @@ Java·Python 단위 테스트
 
 ## 주요 문서
 
+- [영어·코드 용어 한글 뜻](docs/glossary.md)
+
 - [현재 작업 상태](docs/current-work.md)
 - [공공기관 채용공고 분석 책임 경계](docs/architecture/public-institution-job-analysis.md)
 - [공공기관 개발 직군 검색 키워드](docs/architecture/public-institution-search-keywords.md)

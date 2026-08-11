@@ -22,6 +22,13 @@
 - Spring Security JWT: https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
 - Spring Security 비밀번호 저장: https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html
 
+## 문서 용어 표시 규칙
+
+- 프로젝트 공통 영어·코드 용어의 한글 뜻은 [공통 용어집](docs/glossary.md)을 기준으로 사용한다.
+- README, `docs`, `contracts`와 PR 설명에서 영어 용어가 처음 등장할 때 `영어(한글 뜻)` 형식으로 작성한다.
+- 코드 식별자, JSON 필드, 환경변수, enum과 로그 값은 영어 원문을 유지하고 표나 설명에서 한글 뜻을 함께 제공한다.
+- 한글 번역 없이 영어 용어만 나열하거나, 같은 영어 용어를 문서마다 다른 한글 뜻으로 번역하지 않는다.
+- 새 공통 용어를 도입하면 코드·계약 변경 전에 용어집의 뜻과 책임 범위를 먼저 추가한다.
 ## 프로젝트 영역
 
 - `backend-java`: Java 서버, 사용자 API, 인증·인가, 비즈니스 정책, 데이터 저장, Python 작업 제어와 최종 판정
