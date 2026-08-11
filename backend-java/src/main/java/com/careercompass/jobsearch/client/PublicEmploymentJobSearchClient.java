@@ -2,6 +2,7 @@ package com.careercompass.jobsearch.client;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -84,7 +85,6 @@ public class PublicEmploymentJobSearchClient {
         PublicEmploymentItem item = requireBody(response).item();
         if (item == null
                 || !providerPostingId.equals(item.idx())
-                || !isPublicInstitutionPosting(item)
                 || item.contents() == null
                 || item.contents().isBlank()) {
             throw invalidResponse();
@@ -101,22 +101,22 @@ public class PublicEmploymentJobSearchClient {
     private byte[] fetchListXml(String keyword, int display) {
         return fetchXml(LIST_API_PATH, uriBuilder -> uriBuilder
                 .path(LIST_API_PATH)
-                .queryParam("serviceKey", requireServiceKey())
+                .queryParam("serviceKey", "{serviceKey}")
                 .queryParam("pageNo", 1)
                 .queryParam("numOfRows", display)
                 .queryParam("Pblanc_ty", PUBLIC_INSTITUTION_POSTING_TYPE)
                 .queryParam("Instt_se", PUBLIC_INSTITUTION_TYPE)
                 .queryParam("Kwrd", keyword)
                 .queryParam("Sort_order", properties.sortOrder())
-                .build());
+                .build(Map.of("serviceKey", requireServiceKey())));
     }
 
     private byte[] fetchDetailXml(String providerPostingId) {
         return fetchXml(DETAIL_API_PATH, uriBuilder -> uriBuilder
                 .path(DETAIL_API_PATH)
-                .queryParam("serviceKey", requireServiceKey())
+                .queryParam("serviceKey", "{serviceKey}")
                 .queryParam("idx", providerPostingId)
-                .build());
+                .build(Map.of("serviceKey", requireServiceKey())));
     }
 
     private byte[] fetchXml(
@@ -208,8 +208,8 @@ public class PublicEmploymentJobSearchClient {
     }
 
     private boolean isPublicInstitutionPosting(PublicEmploymentItem item) {
-        return PUBLIC_INSTITUTION_TYPE.equals(item.type01())
-                && PUBLIC_INSTITUTION_POSTING_TYPE.equals(item.type02());
+        return PUBLIC_INSTITUTION_POSTING_TYPE.equals(item.type01())
+                && PUBLIC_INSTITUTION_TYPE.equals(item.type02());
     }
 
     private JobPostingCandidate toCandidate(PublicEmploymentItem item) {
