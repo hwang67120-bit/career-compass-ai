@@ -112,20 +112,20 @@ Accept: application/json
         },
         "similarityResult": {
           "status": "CALCULATED",
-          "metric": "NORMALIZED_COSINE",
+          "method": "LLM_JUDGE",
           "items": [
             {
               "jobEvidenceId": "job-responsibility-1",
-              "dimension": "RESPONSIBILITY",
               "status": "CALCULATED",
               "bestMatchUserEvidenceId": "project-responsibility-1",
-              "score": 0.82,
+              "score": null,
+              "judgment": "RELATED",
               "unavailableReason": null
             }
           ],
           "modelExecution": {
             "provider": "OLLAMA",
-            "model": "configured-embedding-model-name"
+            "model": "evaluated-model-name"
           }
         }
       }
@@ -212,6 +212,10 @@ comparableCount = matchedCount + mismatchedCount
 `NOT_CALCULABLE`은 정상적으로 확인된 정보 부족이며 점수 0이 아니다. `FAILED`는 시스템
 장애이므로 근거 부족과 구분한다. 유사도 점수는 Java 조건 판정이나 필수조건 충족 여부를
 변경하지 않는다.
+MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPONSIBILITY`뿐이다.
+필수·우대 기술은 Java의 `conditionResult`가 판정한다. `method`는 후보 평가 후 확정하며
+임베딩 방식은 `score`만, LLM 판정 방식은 `judgment`만 반환한다.
+`overallSimilarity`는 만들지 않는다.
 
 ## 7. 근거
 
@@ -243,7 +247,7 @@ comparableCount = matchedCount + mismatchedCount
   {
     "jobPostingId": "7b94df20-7e9f-4df7-bc90-408306e1fcd6",
     "section": "SIMILARITY_RESULT",
-    "failureCode": "EMBEDDING_MODEL_UNAVAILABLE"
+    "failureCode": "SEMANTIC_COMPARISON_MODEL_UNAVAILABLE"
   }
 ]
 ```
@@ -296,6 +300,7 @@ comparableCount = matchedCount + mismatchedCount
 6. 사용자에게 반환할 최소 근거 문장의 최대 길이
 7. 결과 보관 기간과 사용자가 결과를 삭제하는 API
 8. 과거 결과의 모델 버전 변경·재계산 정책
+9. 동일 fixture 평가를 통과한 의미 비교 method, provider와 model
 
 이 항목을 확정하기 전에는 DTO, enum, 저장 테이블, 결과 Controller와 프론트 차트를
 구현하지 않는다.
