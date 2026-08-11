@@ -68,7 +68,6 @@ X-Request-Id: {uuid}
         "jobEvidenceId": "job-responsibility-1",
         "status": "CALCULATED",
         "bestMatchUserEvidenceId": "project-responsibility-1",
-        "score": null,
         "judgment": "RELATED",
         "unavailableReason": null
       }
@@ -85,13 +84,11 @@ X-Request-Id: {uuid}
 ```
 
 - `status`: `CALCULATED`, `PARTIALLY_CALCULATED`, `NOT_CALCULABLE`
-- `method`: `EMBEDDING_COSINE` 또는 `LLM_JUDGE`
-- `EMBEDDING_COSINE`은 평가에서 범위를 확정한 `score`만 반환한다.
+- `method`: `LLM_JUDGE`
 - `LLM_JUDGE`는 `RELATED` 또는 `NOT_RELATED`인 `judgment`만 반환한다.
 - LLM 판정은 별도 보정 전 숫자 점수와 confidence를 반환하지 않는다.
-- provider는 `OLLAMA`만 허용한다. Gemini는 2026-08-11 결정으로 이 엔드포인트(임베딩·LLM-as-judge
-  실시간 호출)에 쓰지 않는다 — Ollama 추출 실패 시 폴백과 오프라인 교차검증 스크립트에만 한정한다
-  ([embedding-similarity.md](../docs/architecture/embedding-similarity.md) 참고). model은 실제 모델 이름이다.
+- provider는 실제 분석을 실행한 `OLLAMA` 또는 `GEMINI`, model은 실제 모델 이름이다.
+- Ollama가 기본이며 Gemini는 폴백과 제한적인 교차검증에 사용한다.
 
 ## 계산 불가
 
@@ -119,11 +116,8 @@ X-Request-Id: {uuid}
 
 2026-08-11 `nomic-embed-text` 재평가에서 같은 백엔드 업무는 `0.9948`, 관련 없는
 프론트엔드 업무는 `0.9980`이었고 Python–Java와 Python–React가 모두 `1.0000`이었다.
-따라서 이 모델과 현재 계산법은 품질 게이트 실패다. Gemini는 별도 결정으로 임베딩 후보에서
-제외됐다(할당량 문제가 아니라 제약 있는 외부 API를 실시간 경로에 상시 쓰지 않는다는 원칙 —
-[embedding-similarity.md](../docs/architecture/embedding-similarity.md) 2026-08-11 결정 참고).
-따라서 `EMBEDDING_COSINE`은 현재 후보 모델이 없고, `LLM_JUDGE`(Ollama)가 유일한 실행 가능
-경로다.
+따라서 이 모델과 현재 계산법은 품질 게이트 실패다. Gemini 할당량 소진은 일시적 제약일 뿐
+모델 선택 근거가 아니다.
 
 ## 저장·오류·보안
 
@@ -138,21 +132,20 @@ Python은 영구 저장하지 않는다. Java는 식별자, 항목 결과, metho
 | 502 | `SEMANTIC_COMPARISON_RESPONSE_INVALID` | false |
 | 503 | `SEMANTIC_COMPARISON_MODEL_UNAVAILABLE` | true |
 
-Java는 식별자, 결과 개수, 근거 참조, enum, method별 null 조합, score 범위,
-NaN·Infinity, provider와 model을 검증한다. 계약 위반 응답은 저장하지 않는다.
+Java는 식별자, 결과 개수, 근거 참조, enum, judgment, provider와 model을 검증한다. 계약 위반 응답은 저장하지 않는다.
 
 ## 공동 계약 테스트
 
 1. 담당 업무와 프로젝트 업무 정상 비교 및 다른 category 거부
 2. 근거 부족의 `NOT_CALCULABLE`
-3. 결과 개수·순서, 식별자와 method별 null 조합 검증
+3. 결과 개수·순서, 식별자와 judgment 검증
 4. 내부 토큰 누락·불일치와 선택 모델 장애
 5. Java와 Python을 함께 실행한 실제 HTTP 요청
 
 ## 구현 전 확인 필요
 
-1. Ollama LLM-as-judge 방식의 품질 평가 (임베딩은 Ollama·Gemini 모두 후보에서 빠져 재평가 대상이 아님)
-2. 최종 method, provider, model과 출력 척도
+1. 합성공고 fixture로 Ollama 기본·Gemini 폴백 LLM_JUDGE 품질 평가
+2. 최종 provider, model과 LLM 판정 enum
 3. 사용자 프로젝트 근거의 생성·확인·버전 관리
 4. 최고 근거 개수, 배열·문장 제한과 모델 변경 정책
 5. `NOT_CALCULABLE`을 정상 완료로 볼지 여부

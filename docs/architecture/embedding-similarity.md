@@ -52,32 +52,25 @@
 
 배치로 여러 텍스트를 같이 넣어도 개별 벡터가 달라지지 않는 것은 별도로 확인했다 (계산 버그가 아님).
 
-**결론**: 로컬 Ollama 계열 임베딩(`nomic-embed-text`, 그리고 임베딩 전용이 아닌 `qwen2.5`)은 이 프로젝트의 한국어 이력서·채용공고 도메인에서 비슷한 직무끼리 구분하는 능력이 낮았다. Gemini의 `gemini-embedding-001`(3072차원)만 기대한 순서대로 구분했다 — 다만 이후 Gemini는 별도 사유로 임베딩 후보에서 제외됐다(아래 2026-08-11 결정 참고). `app/providers/embedding.py`에는 `OllamaEmbeddingProvider`와 `GeminiEmbeddingProvider`가 모두 구현돼 있다.
+**결론**: 로컬 Ollama 계열 임베딩(`nomic-embed-text`, 그리고 임베딩 전용이 아닌 `qwen2.5`)은 이 프로젝트의 한국어 이력서·채용공고 도메인에서 비슷한 직무끼리 구분하는 능력이 낮았다. Gemini의 `gemini-embedding-001`(3072차원)만 기대한 순서대로 구분했다. 그래서 `app/providers/embedding.py`에 `OllamaEmbeddingProvider`와 `GeminiEmbeddingProvider`를 모두 구현해뒀고, 현재는 **Gemini 쪽이 실사용에 더 근접한 후보**다.
 
 이 실험은 표본이 6~8개 문장 수준으로 작아 정식 평가([training-data-standards.md](training-data-standards.md) 기준의 골드 데이터)는 아니다 — 정식 결론이 아니라 다음 모델 선정 논의의 출발점으로만 쓴다.
 
-## 결정 — Gemini를 임베딩 후보에서 제외 (2026-08-11)
+## MVP 결정 — 임베딩 호출 제외, 분석 모델 유지 (2026-08-11)
 
-위 실험에서는 Gemini가 유일하게 도메인을 구분했지만, Gemini는 제약(rate limit 등)이 있어 임베딩 모델 후보에서 제외하기로 결정했다. Gemini의 사용 범위는 (1) Ollama 추출 실패 시 폴백(순차 대체), (2) 오프라인 교차검증 스크립트로 한정하며, 상시 병행 호출(임베딩 포함)에는 쓰지 않는다 — 토큰 소비가 크고 아직 토큰을 아끼는 로직이 없다.
+MVP 분석 경로에서는 Ollama·Gemini 임베딩 생성과 코사인 유사도 계산에 토큰·실행 자원을
+사용하지 않는다. 기존 임베딩 코드와 환경변수는 실험 재현용으로 남기며 운영 분석에서는
+호출하지 않는다.
 
-그 결과 로컬(Ollama) 임베딩도 도메인 구분에 실패했고 Gemini도 후보에서 빠지면서, 임베딩 코사인 유사도 방식 자체가 이 프로젝트에 적합한지 재검토가 필요해졌다. `ai-python/evaluation/job_evidence_similarity_spike.py`에서 짧은 근거 문장(문단이 아니라 RESPONSIBILITY/TECHNOLOGY 단위) 기준으로 nomic-embed-text를 재검증했으며, 대안으로 임베딩 코사인 유사도가 아니라 **Ollama LLM-as-judge**(LLM이 직접 관련도를 판단) 방식을 검토하고 있다.
+Gemini API나 분석 기능을 제거하는 결정은 아니다. Ollama와 Gemini는 채용공고 추출과 근거
+기반 LLM 분석에 집중한다. Ollama를 기본 Provider로 사용하고 Gemini는 실패 시 폴백과
+제한적인 교차검증에 사용하며 상시 병행 호출은 하지 않는다.
 
-## 스파이크 결과 — 짧은 근거 문장 단위 재검증 (2026-08-11)
-
-`job_evidence_similarity_spike.py`를 nomic-embed-text로 실행한 결과:
-
-| 비교 | 정답 쌍 | 오답 쌍(최대) | 판정 |
-|---|---|---|---|
-| RESPONSIBILITY (백엔드 담당 업무 vs 백엔드/프론트엔드 프로젝트 경험) | 0.9948 | 0.9980 | 실패(역전) |
-| SKILL/TECHNOLOGY, 완전 동일 문자열 (Spring Boot vs Spring Boot/React) | 1.0000 | 0.9595 | 판정은 OK지만 마진이 얇음 |
-| SKILL/TECHNOLOGY, 서로 다른 언어명 (Python vs Java, Python vs React) | 정답 쌍 없음(둘 다 오답) | 1.0000 / 1.0000 | 무관한 기술명끼리도 최대치로 붙음 |
-
-**결론**: 문단 단위(2026-07-28 실험)에서 나타난 역전 문제가 짧은 문장 단위에서도 그대로 재현된다(RESPONSIBILITY). SKILL/TECHNOLOGY도 겉보기엔 판정 로직상 "OK"로 나오지만, 실제로는 **완전히 동일한 문자열일 때만 신뢰할 수 있고, "Python"과 "Java"처럼 서로 다른 기술명은 오히려 최대 유사도(1.0000)로 붙는다** — 즉 SKILL/TECHNOLOGY 근거도 온전히 신뢰할 수 없다. nomic-embed-text는 근거 종류와 무관하게 이 도메인에서 짧은 텍스트의 의미 구분력이 전반적으로 낮다고 보는 게 더 정확하다.
-
-이 역시 표본이 작아(6개 근거 쌍) 정식 결론은 아니며, 다음 단계 논의의 출발점이다.
-
+의미 비교의 다음 후보는 `LLM_JUDGE`지만 아직 품질 평가 전이다. 합성공고 fixture로
+구분력·근거 타당성·반복 안정성을 확인하기 전에는 구현 완료로 표현하지 않는다.
 ## 확인 필요
 
-- 임베딩 코사인 유사도를 완전히 폐기하고 LLM-as-judge(Ollama)로 전환할지 — RESPONSIBILITY뿐 아니라 SKILL/TECHNOLOGY도 완전 동일 문자열이 아니면 신뢰할 수 없는 것으로 확인됨(위 스파이크 결과)
+- 실제 사용할 임베딩 모델 — 위 실험 결과상 Gemini가 유력하지만, 더 큰 표본과 정식 평가 자료로 재검증 필요
+- 로컬(Ollama) 임베딩을 계속 병행할지, 아니면 임베딩만 Gemini로 통일할지 (메인 LLM은 Ollama 우선 원칙과 별개로 결정 필요)
 - 최소 품질 기준의 구체적인 수치
 - 벡터 저장 위치 (초기 단순 저장 vs `pgvector` vs 별도 VectorDB) — 노션 의존성 문서에 이미 조건부로 남아 있음, 데이터 규모가 생기기 전까지 미정
