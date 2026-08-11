@@ -36,6 +36,7 @@ Gemini로 폴백한다. 오늘 채용공고 비교 평가에서 Ollama 통과율
    구성에서도 이미 숨겨져 있던 정보다.
 """
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 
@@ -48,6 +49,8 @@ from app.schemas.job_posting import (
     JobPostingResponsibilityExtraction,
 )
 from app.services.performance_tracking import StageOperation, measure_stage
+
+_logger = logging.getLogger("app.job_posting_extraction")
 
 _EvidenceLinkedPayload = JobPostingCoreExtraction | JobPostingResponsibilityExtraction | JobPostingExtraction
 
@@ -157,6 +160,10 @@ async def _extract_core_with_retry(
     try:
         validate_evidence(candidate, source_text)
     except JobPostingEvidenceValidationError:
+        _logger.info(
+            "[재시도] 직무명·기술 추출 근거 검증 실패 (provider=%s) → 모델 언로드 후 1회 재시도",
+            provider.provider_name,
+        )
         await provider.unload_model()
         with measure_stage(provider.provider_name, StageOperation.EXTRACT_JOB_POSTING):
             candidate = await provider.extract_job_posting(source_text)
@@ -173,6 +180,10 @@ async def _extract_responsibilities_with_retry(
     try:
         validate_evidence(candidate, source_text)
     except JobPostingEvidenceValidationError:
+        _logger.info(
+            "[재시도] 담당 업무 추출 근거 검증 실패 (provider=%s) → 모델 언로드 후 1회 재시도",
+            provider.provider_name,
+        )
         await provider.unload_model()
         with measure_stage(
             provider.provider_name, StageOperation.EXTRACT_JOB_POSTING_RESPONSIBILITIES
@@ -315,6 +326,19 @@ async def extract_job_posting_profile(
 
     merged = _merge_core_and_responsibilities(core, responsibilities)
     extraction = filter_unevidenced_candidates(merged)
+    _logger.info(
+        "[채용공고 추출 완료] 직무명 추출됨=%s, 필수기술 %d개, 우대기술 %d개, "
+        "담당업무 %d개, 근거 %d개 "
+        "| 직무명·기술: %s/%s%s "
+        "| 담당업무: %s/%s%s",
+        extraction.job_title is not None,
+        len(extraction.required_skills), len(extraction.preferred_skills),
+        len(extraction.responsibilities), len(extraction.evidence),
+        core_execution_provider, core_execution_model,
+        " (Gemini 폴백)" if core_error is not None else "",
+        responsibility_execution_provider, responsibility_execution_model,
+        " (Gemini 폴백)" if responsibilities_error is not None else "",
+    )
     return JobPostingExtractionResult(
         extraction=extraction,
         model_executions=[

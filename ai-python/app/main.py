@@ -14,6 +14,12 @@ from app.job_postings.router import router as job_postings_router
 from app.providers.ollama_process import ensure_ollama_running
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
 
+# uvicorn 기본 로깅 설정은 uvicorn.* 로거만 다루고 root 로거는 그대로 둔다(레벨
+# WARNING). app.* 로거는 root로 전파되는데 root에 핸들러가 없으면 INFO 로그가
+# 조용히 버려진다 — app.performance, app.job_posting_extraction의 INFO 로그가
+# 안 보이던 원인이었다.
+logging.basicConfig(level=logging.INFO)
+
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
