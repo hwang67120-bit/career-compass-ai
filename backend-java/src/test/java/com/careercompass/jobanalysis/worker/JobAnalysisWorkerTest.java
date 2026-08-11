@@ -94,7 +94,8 @@ class JobAnalysisWorkerTest {
         worker.pollAndProcessOne();
 
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
-        verify(jobAnalysisService, never()).recordExtractionOnlyFailure(any(), any());
+        verify(jobAnalysisService, never())
+                .recordExtractionCompletedWithoutComparison(any(), any());
         verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
     }
 
@@ -109,7 +110,8 @@ class JobAnalysisWorkerTest {
         verify(jobAnalysisService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
         verify(jobAnalysisService, never()).loadFixedProfileVersion(any());
-        verify(jobAnalysisService, never()).recordExtractionOnlyFailure(any(), any());
+        verify(jobAnalysisService, never())
+                .recordExtractionCompletedWithoutComparison(any(), any());
     }
 
     @Test
@@ -123,7 +125,8 @@ class JobAnalysisWorkerTest {
 
         verify(jobAnalysisService).recordEmptySearchResult(JOB_ANALYSIS_ID);
         verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
-        verify(jobAnalysisService, never()).recordExtractionOnlyFailure(any(), any());
+        verify(jobAnalysisService, never())
+                .recordExtractionCompletedWithoutComparison(any(), any());
         verify(jobPostingProvider, never()).fetchSourceText(any());
     }
 
@@ -145,7 +148,8 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionOnlyFailure(eq(JOB_ANALYSIS_ID), captor.capture());
+        verify(jobAnalysisService).recordExtractionCompletedWithoutComparison(
+                eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
         assertThat(captor.getValue()).allSatisfy(
                 posting -> assertThat(posting.getProvider()).isEqualTo("PUBLIC_EMPLOYMENT"));
@@ -182,7 +186,8 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionOnlyFailure(eq(JOB_ANALYSIS_ID), captor.capture());
+        verify(jobAnalysisService).recordExtractionCompletedWithoutComparison(
+                eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).getProviderPostingId()).isEqualTo("posting-2");
     }
@@ -202,7 +207,8 @@ class JobAnalysisWorkerTest {
 
         verify(jobAnalysisService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
-        verify(jobAnalysisService, never()).recordExtractionOnlyFailure(any(), any());
+        verify(jobAnalysisService, never())
+                .recordExtractionCompletedWithoutComparison(any(), any());
     }
 
     @Test

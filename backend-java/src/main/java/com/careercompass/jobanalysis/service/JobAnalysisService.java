@@ -257,25 +257,30 @@ public class JobAnalysisService {
     }
 
     /**
-     * 기능: 추출에 성공한 채용공고 결과를 내부 중간 산출물로 저장하고 작업을 실패로
-     * 표시한다. 확정 계약의 PARTIALLY_COMPLETED는 비교 결과가 하나 이상 생성된 뒤 후속
-     * 단계가 실패해야 하는데, 이번 범위는 COMPARING_EVIDENCE를 실행하지 않아 이 조건을
-     * 충족할 수 없다(코덱스 확인, PR #48). 여기서 저장하는 결과는 개발 연결 검증용
-     * 중간 산출물이며 사용자용 완료 결과로 노출하지 않는다.
+     * 기능: 추출에 성공한 채용공고를 저장하고 비교 단계로 전환한 뒤, 비교 결과가 아직
+     * 구현되지 않은 작업을 실패로 표시한다. 확정 계약의 PARTIALLY_COMPLETED는 비교
+     * 결과가 하나 이상 생성된 뒤 후속 단계가 실패해야 한다. 여기서 저장하는 결과는
+     * 개발 연결 검증용 중간 산출물이며 사용자용 완료 결과로 노출하지 않는다.
+     * 화면에서는 공고 추출 성공과 비교 분석 미완료를 구분한다.
      * 반환 값: 없음.
      */
     @Transactional
-    public void recordExtractionOnlyFailure(
+    public void recordExtractionCompletedWithoutComparison(
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings
     ) {
         JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
                 .orElseThrow(JobAnalysisInputNotFoundException::new);
         postings.forEach(jobAnalysisPostingRepository::save);
-        jobAnalysis.markFailed(Instant.now(clock), JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
+        Instant now = Instant.now(clock);
+        jobAnalysis.advanceStep(JobAnalysisStep.COMPARING_EVIDENCE, now);
+        jobAnalysis.markFailed(
+                now,
+                JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
-                "job_analysis_extraction_only_marked_failed jobAnalysisId={} postingCount={}",
+                "job_analysis_extraction_completed_comparison_unavailable "
+                        + "jobAnalysisId={} postingCount={}",
                 jobAnalysisId,
                 postings.size()
         );
