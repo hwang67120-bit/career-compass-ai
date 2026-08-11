@@ -65,7 +65,7 @@
 
     const JOB_ANALYSIS_FAILURE_MESSAGES = {
         COMPARISON_STAGE_NOT_IMPLEMENTED:
-            "채용공고 검색·추출 연결은 확인됐지만 비교 단계가 구현되지 않아 분석 결과를 생성하지 못했습니다.",
+            "채용공고 정보 추출은 완료했지만 비교 분석은 아직 완료되지 않았습니다.",
         DEPENDENCY_UNAVAILABLE: "분석 서버 또는 외부 서비스에 연결하지 못했습니다.",
         DEPENDENCY_INVALID_RESPONSE: "분석 서버 또는 외부 서비스가 예상과 다른 응답을 반환했습니다.",
         ALL_EXTRACTIONS_FAILED: "검색된 채용공고에서 분석 가능한 정보를 추출하지 못했습니다.",
@@ -804,6 +804,15 @@
                 markLogEntryDone(statusEntry);
                 break;
             case "FAILED":
+                if (failureCode === "COMPARISON_STAGE_NOT_IMPLEMENTED") {
+                    setLogEntryText(statusEntry, "공고 정보 추출 완료");
+                    setLogEntryDetail(
+                        statusEntry,
+                        JOB_ANALYSIS_FAILURE_MESSAGES[failureCode]
+                    );
+                    markLogEntryDone(statusEntry);
+                    break;
+                }
                 setLogEntryText(statusEntry, "분석 실패");
                 setLogEntryDetail(
                     statusEntry,

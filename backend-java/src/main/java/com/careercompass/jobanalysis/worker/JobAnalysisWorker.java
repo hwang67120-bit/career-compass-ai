@@ -116,7 +116,8 @@ public class JobAnalysisWorker {
                 jobAnalysisService.markAnalysisFailed(
                         jobAnalysisId, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
             } else {
-                jobAnalysisService.recordExtractionOnlyFailure(jobAnalysisId, savedPostings);
+                jobAnalysisService.recordExtractionCompletedWithoutComparison(
+                        jobAnalysisId, savedPostings);
             }
         } catch (JobPostingProviderNotConfiguredException exception) {
             logProcessingFailure(jobAnalysisId, exception);

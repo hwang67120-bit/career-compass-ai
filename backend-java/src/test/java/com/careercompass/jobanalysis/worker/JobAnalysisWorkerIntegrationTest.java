@@ -132,6 +132,7 @@ class JobAnalysisWorkerIntegrationTest {
                 jobAnalysisId
         );
         assertThat(row.get("analysis_status")).isEqualTo("FAILED");
+        assertThat(row.get("current_step")).isEqualTo("COMPARING_EVIDENCE");
         assertThat(row.get("failure_code")).isEqualTo("COMPARISON_STAGE_NOT_IMPLEMENTED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM job_analysis_posting WHERE job_analysis_id = ?",

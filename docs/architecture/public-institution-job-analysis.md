@@ -224,6 +224,10 @@ DTO, enum과 저장 테이블을 만들지 않는다.
 - 검색 결과 0건은 Provider가 정상 응답한 경우 오류가 아닌 빈 `COMPLETED`다.
 - 공고 추출만 성공하고 비교 결과가 없으면 사용자 분석 결과가 아니므로
   `PARTIALLY_COMPLETED`로 표시하지 않는다.
+- 공고 추출이 하나 이상 성공하면 `currentStep=COMPARING_EVIDENCE`로 전환한 뒤
+  비교 단계를 시작한다. 비교 결과가 아직 구현되지 않은 현재 범위에서는 전체 상태를
+  `FAILED`, 실패 원인을 `COMPARISON_STAGE_NOT_IMPLEMENTED`로 저장한다. 화면은 이 경우
+  공고 추출 성공과 비교 분석 미완료를 분리해서 안내한다.
 - 하나 이상의 비교 결과가 저장된 뒤 후속 단계 일부가 실패한 경우에만
   `PARTIALLY_COMPLETED`를 사용한다.
 - 비교 결과와 결과 API가 구현되기 전 연결 검증은 기술 데모이며 완성된 분석

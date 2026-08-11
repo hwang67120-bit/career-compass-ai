@@ -262,6 +262,10 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 
 - 하나 이상의 비교 결과 뒤 일부 단계가 실패하면 `PARTIALLY_COMPLETED`로 저장한다.
 - 공식 제공자의 0건 응답은 실패가 아니라 빈 결과의 `COMPLETED`다.
+- 하나 이상의 공고 추출에 성공하면 현재 단계를 `COMPARING_EVIDENCE`로 전환한다.
+- 공고 추출에는 성공했지만 비교 결과를 만들지 못하면 전체 상태는 `FAILED`로 유지하고,
+  `failureCode=COMPARISON_STAGE_NOT_IMPLEMENTED`로 추출 성공과 비교 미완료를 구분한다.
+  클라이언트는 이를 일반 추출 실패로 표시하지 않는다.
 - 결과를 만들지 못한 검증 실패·장애 요청은 무료 이용량에서 차감하지 않는다.
 - MVP에서는 자동 재시도를 구현하지 않는다.
 
