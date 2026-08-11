@@ -24,7 +24,7 @@ class PublicEmploymentJobSearchClientTest {
 
     private static final String BASE_URL =
             "https://apis.data.go.kr/1760000/PblJobService";
-    private static final String SERVICE_KEY = "decoded-test-service-key";
+    private static final String SERVICE_KEY = "decoded+test/key=";
 
     private PublicEmploymentJobSearchClient client;
     private MockRestServiceServer server;
@@ -42,7 +42,8 @@ class PublicEmploymentJobSearchClientTest {
     @Test
     void search_withPublicInstitutionFilters_returnsOnlyPublicInstitutionPosting() {
         server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL + "/getList")))
-                .andExpect(queryParam("serviceKey", SERVICE_KEY))
+                .andExpect(request -> assertThat(request.getURI().getRawQuery())
+                        .contains("serviceKey=decoded%2Btest%2Fkey%3D"))
                 .andExpect(queryParam("pageNo", "1"))
                 .andExpect(queryParam("numOfRows", "5"))
                 .andExpect(queryParam("Pblanc_ty", "e08"))
@@ -67,7 +68,8 @@ class PublicEmploymentJobSearchClientTest {
     @Test
     void fetchSourceText_withContactInformation_redactsBeforeReturning() {
         server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL + "/getItem")))
-                .andExpect(queryParam("serviceKey", SERVICE_KEY))
+                .andExpect(request -> assertThat(request.getURI().getRawQuery())
+                        .contains("serviceKey=decoded%2Btest%2Fkey%3D"))
                 .andExpect(queryParam("idx", "210354"))
                 .andRespond(withSuccess(detailResponseXml(), MediaType.APPLICATION_XML));
 
@@ -130,12 +132,12 @@ class PublicEmploymentJobSearchClientTest {
                     <items>
                       <item>
                         <idx>210354</idx><title>백엔드 개발자 채용</title>
-                        <type01>g03</type01><type02>e08</type02>
+                        <type01>e08</type01><type02>g03</type02>
                         <insttname>한국공공기관</insttname><areacode>11</areacode>
                       </item>
                       <item>
                         <idx>210355</idx><title>국가공무원 채용</title>
-                        <type01>g01</type01><type02>e01</type02>
+                        <type01>e01</type01><type02>g01</type02>
                         <insttname>중앙부처</insttname><areacode>11</areacode>
                       </item>
                     </items>
@@ -151,7 +153,7 @@ class PublicEmploymentJobSearchClientTest {
                   <body>
                     <item>
                       <idx>210354</idx><title>백엔드 개발자 채용</title>
-                      <type01>g03</type01><type02>e08</type02>
+                      <type01>g01</type01><type02>e09</type02>
                       <contents><![CDATA[
                         <p>Spring Boot 서비스 개발</p>
                         <p>담당자: 홍길동 / hong@example.com / 010-1234-5678</p>
