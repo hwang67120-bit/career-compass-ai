@@ -46,3 +46,11 @@ async def get_ollama_job_posting_responsibility_provider():
         yield OllamaProvider(
             client=client, model_name=settings.ollama_job_posting_responsibility_model
         )
+
+
+async def get_ollama_evidence_judge_provider():
+    """`job-evidence-similarities`가 쓰는, 근거 의미 비교 판정용 모델
+    (`OLLAMA_EVIDENCE_JUDGE_MODEL`, 기본 qwen2.5) provider다."""
+    settings = OllamaSettings()
+    async with _build_client(settings) as client:
+        yield OllamaProvider(client=client, model_name=settings.ollama_evidence_judge_model)
