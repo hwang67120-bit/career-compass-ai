@@ -153,8 +153,11 @@ Java는 식별자, 결과 개수, 근거 참조, enum, judgment, provider와 mod
 ## 구현 전 확인 필요
 
 1. 합성공고 fixture LLM_JUDGE 품질 평가 — Ollama 기본 경로는 2026-08-12 완료
-   (`qwen2.5:latest`가 도메인 구분 게이트 통과, 위 품질 게이트 절 참고). 남은 것: Gemini 폴백이
-   같은 계약을 지키는지, 실제 시장 표본과 사용자 근거 다수 경합 난이도.
+   (`qwen2.5:latest`가 도메인 구분 게이트 통과, 위 품질 게이트 절 참고). Gemini 폴백은 같은 날
+   부분 평가만 됨 — 무료 등급 하루 20회 한도로 21회만 성공(전부 정답)하고 핵심 도메인 다수가
+   미평가라 비결론([job-fit-semantic-similarity.md](../docs/architecture/job-fit-semantic-similarity.md)
+   3단계 참고). 남은 것: 쿼터 이내(REPEATS=1) 전체 도메인 재평가, 실제 시장 표본과 사용자 근거
+   다수 경합 난이도.
 2. 최종 provider, model과 LLM 판정 enum (Ollama 기본 유력 후보: `qwen2.5:latest`)
 3. 사용자 프로젝트 근거의 생성·확인·버전 관리
 4. 최고 근거 개수, 배열·문장 제한과 모델 변경 정책

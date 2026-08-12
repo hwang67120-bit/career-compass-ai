@@ -210,6 +210,52 @@ class TrialResult:
     detail: str = ""
 
 
+def judge_user_content(job: JobCase) -> str:
+    """판정 요청의 사용자 메시지 본문(스키마 전달 부분 제외)을 만든다.
+
+    Ollama·Gemini가 같은 의미 프롬프트로 판정하도록 이 함수를 공유한다 —
+    스키마는 provider마다 전달 방식이 달라(Ollama는 프롬프트에, Gemini는
+    response_json_schema config에) 여기 포함하지 않는다.
+
+    id를 "id=..." 형식으로 주면 일부 모델(qwen2.5·exaone3.5)이 접두사째 복사해
+    "id=user-data-eng"를 반환하는 게 실제로 확인됐다(2026-08-12 1차 실행) —
+    정답을 골랐는데도 id 조회가 어긋났다. 접두사 없는 형식으로 준다.
+    """
+    user_lines = "\n".join(
+        f"- {uid}: {text}" for uid, (_domain, text) in USER_EVIDENCE.items()
+    )
+    return (
+        f"채용공고 담당 업무:\n{job.text}"
+        f"\n\n지원자 프로젝트 업무 목록:\n{user_lines}"
+    )
+
+
+def verdict_to_trial(
+    model: str, job: JobCase, repeat_index: int, verdict: JudgeVerdict, elapsed: float
+) -> TrialResult:
+    """검증된 판정을 채점된 TrialResult로 바꾼다(도메인 조회·근거 유효성).
+
+    Ollama·Gemini가 같은 채점 규칙을 쓰도록 공유한다.
+    """
+    best_id = verdict.best_match_user_evidence_id
+    # 1차 실행에서 본 "id=" 접두사 복사에 대한 방어적 정규화(프롬프트 수정과 병행).
+    if best_id is not None:
+        best_id = best_id.removeprefix("id=").strip()
+    best_domain = USER_EVIDENCE[best_id][0] if best_id in USER_EVIDENCE else None
+    # RELATED면 best-match id가 입력에 존재해야 유효. NOT_RELATED면 null이 정상.
+    if verdict.judgment == "RELATED":
+        evidence_valid = best_id in USER_EVIDENCE
+    else:
+        evidence_valid = best_id is None or best_id in USER_EVIDENCE
+    return TrialResult(
+        model, job.job_id, repeat_index, "ok", elapsed,
+        judgment=verdict.judgment,
+        best_match_id=best_id,
+        best_match_domain=best_domain,
+        evidence_valid=evidence_valid,
+    )
+
+
 async def _judge(
     client: httpx.AsyncClient, model: str, job: JobCase
 ) -> tuple[JudgeVerdict | None, str]:
@@ -218,20 +264,13 @@ async def _judge(
     반환: (검증된 판정 또는 None, 실패 사유 문자열). None이면 사유가 채워진다.
     """
     schema = JudgeVerdict.model_json_schema()
-    # id를 "id=..." 형식으로 주면 일부 모델(qwen2.5·exaone3.5)이 접두사째 복사해
-    # "id=user-data-eng"를 반환하는 게 실제로 확인됐다(2026-08-12 1차 실행) —
-    # 정답을 골랐는데도 id 조회가 어긋났다. 접두사 없는 형식으로 준다.
-    user_lines = "\n".join(
-        f"- {uid}: {text}" for uid, (_domain, text) in USER_EVIDENCE.items()
-    )
     messages = [
         {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (
                 f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
-                f"\n\n채용공고 담당 업무:\n{job.text}"
-                f"\n\n지원자 프로젝트 업무 목록:\n{user_lines}"
+                f"\n\n{judge_user_content(job)}"
             ),
         },
     ]
@@ -269,24 +308,7 @@ async def _run_trial(
         outcome = "unavailable" if failure.startswith("unavailable") else "schema_invalid"
         return TrialResult(model, job.job_id, repeat_index, outcome, elapsed, detail=failure)
 
-    best_id = verdict.best_match_user_evidence_id
-    # 1차 실행에서 본 "id=" 접두사 복사에 대한 방어적 정규화(프롬프트 수정과 병행).
-    if best_id is not None:
-        best_id = best_id.removeprefix("id=").strip()
-    best_domain = USER_EVIDENCE[best_id][0] if best_id in USER_EVIDENCE else None
-    # RELATED면 best-match id가 입력에 존재해야 유효. NOT_RELATED면 null이 정상.
-    if verdict.judgment == "RELATED":
-        evidence_valid = best_id in USER_EVIDENCE
-    else:
-        evidence_valid = best_id is None or best_id in USER_EVIDENCE
-
-    return TrialResult(
-        model, job.job_id, repeat_index, "ok", elapsed,
-        judgment=verdict.judgment,
-        best_match_id=best_id,
-        best_match_domain=best_domain,
-        evidence_valid=evidence_valid,
-    )
+    return verdict_to_trial(model, job, repeat_index, verdict, elapsed)
 
 
 @dataclass
