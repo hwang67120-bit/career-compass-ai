@@ -519,6 +519,17 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 `nomic-embed-text`의 짧은 업무 근거 역전 결과는 임베딩 제외 근거로 보존한다. Gemini 임베딩은
 품질 실패로 기록하지 않는다. `LLM_JUDGE`는 다음 평가 후보이며, 병합된 9개 직군 합성공고로
 품질을 확인하기 전에는 구현 확정이나 완료 상태로 표시하지 않는다.
+
+### 2026-08-12 — LLM_JUDGE 품질 통과·endpoint 구현
+
+- `LLM_JUDGE`(Ollama `qwen2.5`)가 품질 게이트 통과(best-match 36/36, 평가
+  `evaluation/job_evidence_judge_spike.py`). Gemini 폴백은 무료 등급 하루 20회 한도로 부분
+  평가만 됨(비결론). 계약(`contracts/job-evidence-similarity.md`)의 확인 필요 항목을 확정했다.
+- `POST /internal/v1/job-evidence-similarities` 구현(스키마·provider 판정 메서드·service·router).
+- 검증: 단위·라우터 테스트 8건 + 전체 166 passed + 실제 qwen2.5 end-to-end(backend 공고 →
+  backend 근거 `RELATED`). Java 연결 전까지 `INTEGRATION_TESTED`로 보지 않는다.
+- 남은 것: 사용자 프로젝트 담당 업무 근거 생성(저장소 README 분석, `LLM-as-judge` 입력), Java client 연결.
+
 ## Java 현재 검증 상태
 
 | 기능 | 현재 상태 | 확인 근거 | 다음 단계 |
