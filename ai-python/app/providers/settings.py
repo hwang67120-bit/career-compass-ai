@@ -27,18 +27,3 @@ class GeminiSettings(BaseSettings):
     gemini_api_key: str
     gemini_model: str
     gemini_embedding_model: str
-
-
-class GitHubRepositorySettings(BaseSettings):
-    """저장소 코드 분석을 위한 GitHub API 연결 설정이다.
-
-    인증 토큰 없이 공개 저장소만 조회한다(Java의 GitHubRestClient와 동일한
-    전제). 비인증 요청은 시간당 60회로 제한된다.
-    """
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    github_api_base_url: AnyHttpUrl = AnyHttpUrl("https://api.github.com")
-    github_raw_base_url: AnyHttpUrl = AnyHttpUrl("https://raw.githubusercontent.com")
-    github_api_connect_timeout_seconds: PositiveFloat = 3
-    github_api_read_timeout_seconds: PositiveFloat = 8
