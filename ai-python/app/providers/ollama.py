@@ -5,8 +5,10 @@ import json
 import httpx
 from pydantic import ValidationError
 
+from app.schemas.job_evidence_similarity import JudgeVerdict
 from app.schemas.job_posting import JobPostingCoreExtraction, JobPostingResponsibilityExtraction
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
+from app.schemas.project_responsibility import ProjectResponsibilityExtraction
 
 _JOB_SEARCH_KEYWORD_SYSTEM_PROMPT = (
     "제공된 희망 직무와 기술 목록에 대한 동의어, 영문 표기, 채용 사이트에서 실제로 "
@@ -40,6 +42,27 @@ _JOB_POSTING_RESPONSIBILITY_EXTRACTION_SYSTEM_PROMPT = (
     "responsibilities의 모든 항목은 evidenceIds에 evidence 배열에 실제로 존재하는 "
     "evidenceId를 하나 이상 채워 넣는다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
 )
+
+_EVIDENCE_JUDGE_SYSTEM_PROMPT = (
+    "너는 채용공고의 '담당 업무' 하나와 지원자의 '프로젝트 업무' 목록을 받는다. "
+    "지원자 프로젝트 중 담당 업무와 의미상 같은 종류의 일을 하는 것을 판단한다. "
+    "가장 관련 있는 프로젝트 하나를 bestMatchUserEvidenceId에 그 id로 담는다. "
+    "그 프로젝트가 실제로 같은 종류의 업무면 judgment는 RELATED, 목록에 같은 종류의 "
+    "업무가 하나도 없으면 judgment는 NOT_RELATED로 하고 bestMatchUserEvidenceId는 null로 둔다. "
+    "id는 반드시 제공된 목록에 있는 값만 쓴다. 새 id·점수·설명을 만들지 않는다. "
+    "기술 스택 이름이 같은지가 아니라 하는 일(업무)이 같은지로 판단한다."
+)
+
+
+_PROJECT_RESPONSIBILITY_SYSTEM_PROMPT = (
+    "너는 지원자의 GitHub 저장소 README를 받아, 이 프로젝트가 실제로 '하는 일'"
+    "(담당 업무·기능)을 추출한다. 사용자가 선택한 기술 스택을 참고해 그와 관련된 "
+    "업무에 집중한다. 각 항목의 evidence_quote는 README 원문에서 글자 그대로 복사한 "
+    "부분이어야 한다(요약·번역·재구성 금지). 원문에 근거가 없으면 그 항목을 만들지 "
+    "않는다. 뽑을 수 없으면 빈 배열을 반환한다. responsibility는 그 근거를 바탕으로 한 "
+    "짧은 담당 업무 문장이다."
+)
+
 
 class OllamaUnavailableError(RuntimeError):
     """Ollama에 연결할 수 없거나 모델이 준비되지 않은 경우다."""
@@ -188,6 +211,119 @@ class OllamaProvider:
             response.raise_for_status()
             content = response.json()["message"]["content"]
             return JobPostingResponsibilityExtraction.model_validate_json(content)
+        except httpx.TimeoutException as error:
+            raise OllamaUnavailableError(
+                "Ollama 응답 제한시간을 초과했습니다."
+            ) from error
+        except httpx.HTTPError as error:
+            raise OllamaUnavailableError(
+                "Ollama 요청에 실패했습니다."
+            ) from error
+        except (KeyError, TypeError, ValueError, ValidationError) as error:
+            raise OllamaResponseError(
+                "Ollama 응답이 프로젝트 스키마와 일치하지 않습니다."
+            ) from error
+
+    async def extract_project_responsibilities(
+        self, readme_text: str, selected_tech: list[str]
+    ) -> ProjectResponsibilityExtraction:
+        """저장소 README에서 프로젝트 담당 업무 근거 후보를 추출한다.
+
+        judge의 사용자 근거(`PROJECT_RESPONSIBILITY`) 입력을 만든다. 근거
+        검증(원문 대조)은 서비스 계층(`project_responsibility_extraction`)이 한다.
+
+        입력:
+            readme_text: Java 또는 조회 계층이 전달한 README 원문(URL 아님).
+            selected_tech: 사용자가 프론트에서 선택한 기술 스택(추출 힌트).
+
+        반환:
+            담당 업무 문장과 원문 근거 인용이 담긴 후보 목록.
+
+        예외:
+            OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
+            OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
+        """
+        schema = ProjectResponsibilityExtraction.model_json_schema()
+        tech = ", ".join(selected_tech) if selected_tech else "(없음)"
+        messages = [
+            {"role": "system", "content": _PROJECT_RESPONSIBILITY_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
+                    f"\n\n사용자가 선택한 기술 스택: {tech}"
+                    f"\n\nREADME:\n{readme_text}"
+                ),
+            },
+        ]
+
+        try:
+            response = await self.client.post(
+                "/api/chat",
+                json={
+                    "model": self.model_name,
+                    "stream": False,
+                    "format": schema,
+                    "options": {"temperature": 0},
+                    "messages": messages,
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["message"]["content"]
+            return ProjectResponsibilityExtraction.model_validate_json(content)
+        except httpx.TimeoutException as error:
+            raise OllamaUnavailableError("Ollama 응답 제한시간을 초과했습니다.") from error
+        except httpx.HTTPError as error:
+            raise OllamaUnavailableError("Ollama 요청에 실패했습니다.") from error
+        except (KeyError, TypeError, ValueError, ValidationError) as error:
+            raise OllamaResponseError(
+                "Ollama 응답이 프로젝트 스키마와 일치하지 않습니다."
+            ) from error
+
+    async def judge_evidence_relation(
+        self, job_text: str, user_items: list[tuple[str, str]]
+    ) -> JudgeVerdict:
+        """공고 담당 업무 하나를 사용자 프로젝트 업무 목록과 비교해 판정한다.
+
+        입력:
+            job_text: 공고 담당 업무 근거 문장.
+            user_items: (사용자 근거 id, 문장) 목록.
+
+        반환:
+            best-match 근거 id(또는 None)와 RELATED/NOT_RELATED 판정.
+
+        예외:
+            OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
+            OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
+        """
+        schema = JudgeVerdict.model_json_schema()
+        user_lines = "\n".join(f"- {uid}: {text}" for uid, text in user_items)
+        messages = [
+            {"role": "system", "content": _EVIDENCE_JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
+                    f"\n\n채용공고 담당 업무:\n{job_text}"
+                    f"\n\n지원자 프로젝트 업무 목록:\n{user_lines}"
+                ),
+            },
+        ]
+
+        try:
+            response = await self.client.post(
+                "/api/chat",
+                json={
+                    "model": self.model_name,
+                    "stream": False,
+                    "format": schema,
+                    "options": {"temperature": 0},
+                    "messages": messages,
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["message"]["content"]
+            return JudgeVerdict.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
                 "Ollama 응답 제한시간을 초과했습니다."
