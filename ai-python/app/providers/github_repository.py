@@ -41,8 +41,11 @@ class GitHubRepositoryClient:
     다만 저장소 하나를 분석하는 동안(트리 조회 + 매니페스트 파일 여러 개
     조회)은 같은 이벤트 루프 안에서 끝나므로, `open_session()`으로 만든
     클라이언트를 `http_client` 인자로 넘기면 연결을 재사용해 TCP·TLS
-    핸드셰이크를 반복하지 않는다. `repository_readme.fetch_repository_readmes()`가
-    이 방식을 쓴다.
+    핸드셰이크를 반복하지 않는다.
+
+    2026-08-12 책임 경계 확정 이후 이 클라이언트를 사용하는 운영 코드는 없다
+    — GitHub 조회는 Java가 담당하고 Python은 전달받은 자료만 분석한다. 현재는
+    제공자 테스트만 남아 있으며, 전체 제거는 별도 작업이다.
     """
 
     def __init__(self, settings: GitHubRepositorySettings | None = None) -> None:
