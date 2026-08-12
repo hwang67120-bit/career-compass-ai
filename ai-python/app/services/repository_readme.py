@@ -44,9 +44,8 @@ async def fetch_repository_readmes(
 ) -> dict[str, str]:
     """README 파일들의 원문을 조회한다.
 
-    `tree_paths`는 이미 조회된 파일 트리를 그대로 받는다 — 저장소 근거
-    추출(`repository_evidence.analyze_repository`)이 이미 트리를 조회했다면
-    다시 조회하지 않도록, 트리 조회는 호출자 책임으로 둔다.
+    `tree_paths`는 이미 조회된 파일 트리를 그대로 받는다 — 트리 조회는
+    호출자 책임으로 두어, 같은 트리를 여러 번 조회하지 않도록 한다.
 
     입력:
         client: GitHub API 호출 클라이언트.
