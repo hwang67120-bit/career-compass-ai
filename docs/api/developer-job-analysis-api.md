@@ -159,6 +159,8 @@ Java 검증:
 4. 희망 직무와 최소 입력 조건을 확인한다.
 5. 저장소 선택 개수와 동시 작업 제한을 확인한다.
 
+요청의 프로필 버전은 프로젝트 분석 미리보기의 최초 기준이다. 작업이 `AWAITING_USER_CONFIRMATION`인 동안 마지막 사용자 결정으로 확정 근거가 생기면 Java가 새 프로필 버전을 만들고 해당 분석의 입력 버전을 한 번만 교체한다. 다시 `QUEUED`가 된 뒤에는 입력 버전을 변경하지 않는다.
+
 성공: `202 Accepted`
 
 ```http
@@ -171,6 +173,7 @@ Location: /api/v1/job-analyses/{jobAnalysisId}
 
 - `QUEUED`
 - `RUNNING`
+- `AWAITING_USER_CONFIRMATION`
 - `CANCELLATION_REQUESTED`
 - `PARTIALLY_COMPLETED`
 - `COMPLETED`
@@ -191,6 +194,8 @@ Location: /api/v1/job-analyses/{jobAnalysisId}
 진행률은 모델의 임의 백분율이 아니라 Java가 저장한
 `completedUnits`와 `totalUnits`를 사용한다.
 
+`AWAITING_USER_CONFIRMATION`은 Python의 프로젝트 추출·분석 미리보기를 Java가 검증·저장하고 사용자 결정을 기다리는 상태다. 종료 상태가 아니며 최종 의미 비교와 `COMPLETED` 전이는 실행하지 않는다. 모든 후보가 확인 또는 거부되면, 확정 후보가 있는 경우 Java가 새 프로필 버전을 생성해 분석 입력으로 한 번 고정한다. 모든 후보가 거부된 경우에는 기존 프로필 버전을 유지한다. 이후 작업을 `QUEUED`로 되돌려 비교를 재개하며 입력 버전을 다시 변경하지 않는다.
+
 ## 분석 이벤트
 
 ```http
@@ -205,6 +210,7 @@ Last-Event-ID: {optional-event-id}
 - `analysis.step-started`
 - `analysis.step-completed`
 - `analysis.partial-result`
+- `analysis.user-confirmation-required`
 - `analysis.failed`
 - `analysis.finished`
 
@@ -265,7 +271,7 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 
 - 하나 이상의 비교 결과 뒤 일부 단계가 실패하면 `PARTIALLY_COMPLETED`로 저장한다.
 - 공식 제공자의 0건 응답은 실패가 아니라 빈 결과의 `COMPLETED`다.
-- 하나 이상의 공고 추출에 성공하면 현재 단계를 `COMPARING_EVIDENCE`로 전환한다.
+- 하나 이상의 공고 추출에 성공하고 프로젝트 후보의 사용자 확인까지 끝나면 현재 단계를 `COMPARING_EVIDENCE`로 전환한다. 확인 전에는 `AWAITING_USER_CONFIRMATION`으로 유지한다.
 - 공고 추출에는 성공했지만 비교 결과를 만들지 못하면 전체 상태는 `FAILED`로 유지하고,
   `failureCode=COMPARISON_STAGE_NOT_IMPLEMENTED`로 추출 성공과 비교 미완료를 구분한다.
   클라이언트는 이를 일반 추출 실패로 표시하지 않는다.

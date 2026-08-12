@@ -128,7 +128,7 @@ class JobAnalysisWorkerIntegrationTest {
         worker.pollAndProcessOne();
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
-                "SELECT analysis_status, failure_code FROM job_analysis WHERE id = ?",
+                "SELECT analysis_status, current_step, failure_code FROM job_analysis WHERE id = ?",
                 jobAnalysisId
         );
         assertThat(row.get("analysis_status")).isEqualTo("FAILED");

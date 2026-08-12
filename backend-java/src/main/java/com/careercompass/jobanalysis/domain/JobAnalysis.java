@@ -181,6 +181,31 @@ public class JobAnalysis {
         this.updatedAt = now;
     }
 
+    public void awaitUserConfirmation(Instant now) {
+        if (analysisStatus != JobAnalysisStatus.RUNNING) {
+            throw new IllegalStateException("JOB_ANALYSIS_NOT_RUNNING");
+        }
+        this.analysisStatus = JobAnalysisStatus.AWAITING_USER_CONFIRMATION;
+        this.currentStep = JobAnalysisStep.ANALYZING_REPOSITORIES;
+        this.updatedAt = now;
+    }
+
+    public void resumeAfterUserConfirmation(
+            UUID fixedUserProfileId,
+            int fixedUserProfileVersion,
+            Instant now
+    ) {
+        if (analysisStatus != JobAnalysisStatus.AWAITING_USER_CONFIRMATION) {
+            throw new IllegalStateException("JOB_ANALYSIS_NOT_AWAITING_USER_CONFIRMATION");
+        }
+        this.userProfileId = fixedUserProfileId;
+        this.userProfileVersion = fixedUserProfileVersion;
+        this.analysisStatus = JobAnalysisStatus.QUEUED;
+        this.currentStep = JobAnalysisStep.COMPARING_EVIDENCE;
+        this.queuedAt = now;
+        this.updatedAt = now;
+    }
+
     public void advanceStep(JobAnalysisStep step, Instant now) {
         this.currentStep = step;
         this.updatedAt = now;
