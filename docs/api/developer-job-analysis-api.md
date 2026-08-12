@@ -277,7 +277,7 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 | HTTP | code |
 |---|---|
 | 400 | `INVALID_JOB_ANALYSIS_REQUEST` |
-| 401 | `AUTHENTICATION_REQUIRED` |
+| 401 | `UNAUTHORIZED` |
 | 404 | `USER_PROFILE_NOT_FOUND` |
 | 404 | `PROJECT_SOURCE_NOT_FOUND` |
 | 404 | `JOB_ANALYSIS_NOT_FOUND` |
