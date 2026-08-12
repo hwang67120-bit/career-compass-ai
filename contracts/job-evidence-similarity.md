@@ -50,7 +50,7 @@ X-Request-Id: {uuid}
 - 근거 식별자는 요청 안에서 중복할 수 없다.
 - 공고 category는 `RESPONSIBILITY`, 사용자 category는 `PROJECT_RESPONSIBILITY`만 허용한다.
 - 개인정보가 제거되고 사용자가 확인한 최소 근거만 전송한다.
-- 개수와 길이 제한은 실제 표본 측정 후 양쪽 설정으로 확정한다.
+- 개수·길이 제한(2026-08-12 임시): job 근거 최대 20개, 사용자 근거 최대 30개, 각 text 500자. 실제 표본이 나오면 재조정한다.
 
 ## 성공 응답
 
@@ -150,17 +150,11 @@ Java는 식별자, 결과 개수, 근거 참조, enum, judgment, provider와 mod
 4. 내부 토큰 누락·불일치와 선택 모델 장애
 5. Java와 Python을 함께 실행한 실제 HTTP 요청
 
-## 구현 전 확인 필요
+## 확정 결정 (2026-08-12)
 
-1. 합성공고 fixture LLM_JUDGE 품질 평가 — Ollama 기본 경로는 2026-08-12 완료
-   (`qwen2.5:latest`가 도메인 구분 게이트 통과, 위 품질 게이트 절 참고). Gemini 폴백은 같은 날
-   부분 평가만 됨 — 무료 등급 하루 20회 한도로 21회만 성공(전부 정답)하고 핵심 도메인 다수가
-   미평가라 비결론([job-fit-semantic-similarity.md](../docs/architecture/job-fit-semantic-similarity.md)
-   3단계 참고). 남은 것: 쿼터 이내(REPEATS=1) 전체 도메인 재평가, 실제 시장 표본과 사용자 근거
-   다수 경합 난이도.
-2. 최종 provider, model과 LLM 판정 enum (Ollama 기본 유력 후보: `qwen2.5:latest`)
-3. 사용자 프로젝트 근거의 생성·확인·버전 관리
-4. 최고 근거 개수, 배열·문장 제한과 모델 변경 정책
-5. `NOT_CALCULABLE`을 정상 완료로 볼지 여부
+1. provider·model·판정값: `OLLAMA` 기본 + `qwen2.5:latest`(품질 게이트 통과). judgment는 `RELATED`/`NOT_RELATED`. Gemini는 fallback 코드로만 두고 실사용은 보류(무료 등급 하루 20회로 전체 재평가 미완).
+2. 사용자 프로젝트 근거: Python은 request로 받기만 하고 생성하지 않는다. 구현·테스트는 합성 근거로 하고, 실제 연결 검증은 Java가 근거를 공급할 때 한다.
+3. `NOT_CALCULABLE`(비교 근거 부족)은 실패가 아니라 정상 완료로 본다.
+4. 개수·길이는 위 요청 절의 임시값을 쓰고, 실제 사용한 model은 `modelExecution`에 기록한다.
 
-확정 전에는 DTO, enum, 저장 테이블과 Python endpoint를 구현하지 않는다.
+이 결정으로 Python 스키마·provider 판정 메서드·서비스·endpoint 구현을 시작한다. 저장은 Java 몫(위 저장 절).
