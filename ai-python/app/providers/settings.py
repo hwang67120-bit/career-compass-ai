@@ -15,6 +15,8 @@ class OllamaSettings(BaseSettings):
     ollama_embedding_model: str
     # 근거 의미 비교(LLM-as-judge)용 모델. 2026-08-12 품질 게이트 통과 모델.
     ollama_evidence_judge_model: str = "qwen2.5:latest"
+    # 저장소 담당 업무 근거 추출용 모델(project-responsibility-extraction 계약).
+    ollama_project_responsibility_model: str = "qwen2.5:latest"
     ollama_connect_timeout_seconds: PositiveFloat = 3
     ollama_read_timeout_seconds: PositiveFloat = 120
 
