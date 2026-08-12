@@ -1,9 +1,11 @@
-"""채용공고 구조화 추출과 근거 의미 비교(LLM-as-judge) 내부 API다.
+"""채용공고·프로젝트 분석 내부 API다.
 
 - `POST /job-postings/extract`: 공고 원문 구조화 추출
   (contracts/job-posting-extraction.md). Java가 최소 sourceText를 전달한다.
 - `POST /job-evidence-similarities`: 공고 담당 업무와 사용자 프로젝트 업무의
   의미 비교(contracts/job-evidence-similarity.md).
+- `POST /project-responsibility-extractions`: 저장소 스냅숏에서 기술 근거와
+  프로젝트 담당 업무 후보 추출(contracts/project-responsibility-extraction.md).
 """
 
 import functools
@@ -27,15 +29,18 @@ from app.providers.ollama_client import (
     get_ollama_evidence_judge_provider,
     get_ollama_job_posting_provider,
     get_ollama_job_posting_responsibility_provider,
+    get_ollama_project_responsibility_provider,
 )
 from app.providers.settings import GeminiSettings
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
 from app.schemas.job_evidence_similarity import SimilarityRequest
+from app.schemas.project_responsibility import ProjectResponsibilityRequest
 from app.services.job_evidence_similarity import compare_evidence
 from app.services.job_posting_extraction import (
     JobPostingEvidenceValidationError,
     extract_job_posting_profile,
 )
+from app.services.project_responsibility_extraction import extract_project_evidence
 
 router = APIRouter(
     prefix="/internal/v1",
@@ -265,3 +270,99 @@ async def compare_job_evidence_similarities(
             },
         ),
     )
+
+
+# 계약 요청 제한(project-responsibility-extraction.md). 대부분은 Java가 먼저 강제하지만
+# 분석을 깨뜨리는 핵심 규칙은 Python도 검증한다. 크기는 문자 수 기준.
+_MAX_SELECTED_TAGS = 10
+_MAX_EVIDENCE_TEXT_LENGTH = 2000
+_ALLOWED_FILE_TYPES = {"MANIFEST", "CONFIGURATION", "SOURCE", "TEST"}
+
+
+def _validate_project_responsibility_request(
+    request: ProjectResponsibilityRequest,
+) -> list[FieldError]:
+    errors: list[FieldError] = []
+
+    tags = request.selected_technology_tags
+    if not tags:
+        errors.append(FieldError(field_name="selectedTechnologyTags", message="최소 1개의 선택 기술이 필요합니다."))
+    if len(tags) > _MAX_SELECTED_TAGS:
+        errors.append(
+            FieldError(field_name="selectedTechnologyTags", message=f"선택 기술은 최대 {_MAX_SELECTED_TAGS}개입니다.")
+        )
+    tag_ids = [tag.technology_tag_id for tag in tags]
+    if len(tag_ids) != len(set(tag_ids)):
+        errors.append(FieldError(field_name="selectedTechnologyTags", message="기술 태그 id가 중복됩니다."))
+
+    snapshot = request.repository_snapshot
+    seen_ids: set[str] = set()
+    for readme in snapshot.readmes:
+        if readme.evidence_id in seen_ids:
+            errors.append(FieldError(field_name="readmes", message=f"근거 id가 중복됩니다: {readme.evidence_id}"))
+        seen_ids.add(readme.evidence_id)
+        if len(readme.text) > _MAX_EVIDENCE_TEXT_LENGTH:
+            errors.append(
+                FieldError(field_name=f"readmes[{readme.evidence_id}].text", message=f"최대 {_MAX_EVIDENCE_TEXT_LENGTH}자입니다.")
+            )
+    for file in snapshot.files:
+        if file.evidence_id in seen_ids:
+            errors.append(FieldError(field_name="files", message=f"근거 id가 중복됩니다: {file.evidence_id}"))
+        seen_ids.add(file.evidence_id)
+        if file.file_type not in _ALLOWED_FILE_TYPES:
+            errors.append(
+                FieldError(
+                    field_name=f"files[{file.evidence_id}].fileType",
+                    message="MANIFEST/CONFIGURATION/SOURCE/TEST만 허용됩니다.",
+                )
+            )
+        if len(file.text) > _MAX_EVIDENCE_TEXT_LENGTH:
+            errors.append(
+                FieldError(field_name=f"files[{file.evidence_id}].text", message=f"최대 {_MAX_EVIDENCE_TEXT_LENGTH}자입니다.")
+            )
+    return errors
+
+
+@router.post("/project-responsibility-extractions")
+async def extract_project_responsibilities_endpoint(
+    request: ProjectResponsibilityRequest,
+    x_request_id: str | None = Header(default=None),
+    provider: OllamaProvider = Depends(get_ollama_project_responsibility_provider),
+) -> JSONResponse:
+    request_id = resolve_request_id(x_request_id)
+
+    field_errors = _validate_project_responsibility_request(request)
+    if field_errors:
+        return JSONResponse(
+            status_code=422,
+            content=error_envelope(
+                request_id,
+                "INVALID_PROJECT_RESPONSIBILITY_EXTRACTION_REQUEST",
+                "요청 필드가 계약을 따르지 않습니다.",
+                field_errors=field_errors,
+            ),
+        )
+
+    try:
+        data = await extract_project_evidence(request, provider)
+    except OllamaUnavailableError:
+        return JSONResponse(
+            status_code=503,
+            content=error_envelope(
+                request_id,
+                "PROJECT_RESPONSIBILITY_EXTRACTION_MODEL_UNAVAILABLE",
+                "추출 모델을 사용할 수 없습니다.",
+                retryable=True,
+            ),
+        )
+    except OllamaResponseError:
+        return JSONResponse(
+            status_code=502,
+            content=error_envelope(
+                request_id,
+                "PROJECT_RESPONSIBILITY_EXTRACTION_RESPONSE_INVALID",
+                "모델 응답이 추출 스키마를 통과하지 못했습니다.",
+            ),
+        )
+
+    return JSONResponse(status_code=200, content=success_envelope(request_id, data))

@@ -55,12 +55,12 @@ _EVIDENCE_JUDGE_SYSTEM_PROMPT = (
 
 
 _PROJECT_RESPONSIBILITY_SYSTEM_PROMPT = (
-    "너는 지원자의 GitHub 저장소 README를 받아, 이 프로젝트가 실제로 '하는 일'"
-    "(담당 업무·기능)을 추출한다. 사용자가 선택한 기술 스택을 참고해 그와 관련된 "
-    "업무에 집중한다. 각 항목의 evidence_quote는 README 원문에서 글자 그대로 복사한 "
-    "부분이어야 한다(요약·번역·재구성 금지). 원문에 근거가 없으면 그 항목을 만들지 "
-    "않는다. 뽑을 수 없으면 빈 배열을 반환한다. responsibility는 그 근거를 바탕으로 한 "
-    "짧은 담당 업무 문장이다."
+    "너는 지원자 저장소의 근거 자료 목록(각각 id가 붙어 있음)을 받아, 이 프로젝트가 "
+    "실제로 '하는 일'(담당 업무·기능)을 추출한다. 사용자가 선택한 기술과 관련된 업무에 "
+    "집중한다. 각 항목의 source_evidence_ids에는 그 업무의 근거가 되는 자료의 id를 "
+    "제공된 목록에서 하나 이상 골라 담는다 — 목록에 없는 id를 만들지 않는다. 근거 자료에 "
+    "없는 내용을 지어내지 않는다. text는 근거로 확인 가능한 짧은 담당 업무 문장이며 새로운 "
+    "성과·역할을 만들지 않는다. 뽑을 수 없으면 빈 배열을 반환한다."
 )
 
 
@@ -225,34 +225,36 @@ class OllamaProvider:
             ) from error
 
     async def extract_project_responsibilities(
-        self, readme_text: str, selected_tech: list[str]
+        self, evidence_items: list[tuple[str, str]], selected_tech_names: list[str]
     ) -> ProjectResponsibilityExtraction:
-        """저장소 README에서 프로젝트 담당 업무 근거 후보를 추출한다.
+        """저장소 근거 자료(readme·파일)에서 담당 업무 후보를 추출한다.
 
-        judge의 사용자 근거(`PROJECT_RESPONSIBILITY`) 입력을 만든다. 근거
-        검증(원문 대조)은 서비스 계층(`project_responsibility_extraction`)이 한다.
+        각 후보는 제공된 근거 id(`source_evidence_ids`)를 인용한다. 근거
+        유효성·기술 연결·grounding 검증은 서비스 계층
+        (`project_responsibility_extraction`)이 한다.
 
         입력:
-            readme_text: Java 또는 조회 계층이 전달한 README 원문(URL 아님).
-            selected_tech: 사용자가 프론트에서 선택한 기술 스택(추출 힌트).
+            evidence_items: (근거 evidenceId, text) 목록(readme + 파일).
+            selected_tech_names: 사용자가 선택한 기술명(추출 힌트).
 
         반환:
-            담당 업무 문장과 원문 근거 인용이 담긴 후보 목록.
+            담당 업무 문장과 인용 근거 id가 담긴 후보 목록.
 
         예외:
             OllamaUnavailableError: Ollama 연결 실패, 제한시간 초과 또는 요청 실패.
             OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
         """
         schema = ProjectResponsibilityExtraction.model_json_schema()
-        tech = ", ".join(selected_tech) if selected_tech else "(없음)"
+        tech = ", ".join(selected_tech_names) if selected_tech_names else "(없음)"
+        evidence_block = "\n\n".join(f"[id={eid}]\n{text}" for eid, text in evidence_items)
         messages = [
             {"role": "system", "content": _PROJECT_RESPONSIBILITY_SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": (
                     f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
-                    f"\n\n사용자가 선택한 기술 스택: {tech}"
-                    f"\n\nREADME:\n{readme_text}"
+                    f"\n\n사용자가 선택한 기술: {tech}"
+                    f"\n\n근거 자료:\n{evidence_block}"
                 ),
             },
         ]

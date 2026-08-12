@@ -3,76 +3,126 @@ import pytest
 from app.schemas.project_responsibility import (
     ProjectResponsibilityCandidate,
     ProjectResponsibilityExtraction,
+    ProjectResponsibilityRequest,
 )
 from app.services.project_responsibility_extraction import (
-    extract_project_responsibilities,
+    extract_project_evidence,
     grounding_score,
-)
-
-_README = (
-    "이 프로젝트는 Redis 캐시와 비동기 처리로 주문 API 응답 지연을 줄인 커머스 백엔드다. "
-    "Spring Boot와 PostgreSQL을 사용한다."
 )
 
 
 class FakeExtractionProvider:
     def __init__(self, candidates: list[ProjectResponsibilityCandidate]) -> None:
         self._extraction = ProjectResponsibilityExtraction(responsibilities=candidates)
-        self.calls: list[tuple[str, list[str]]] = []
+        self.model_name = "fake-extractor"
+        self.calls: list[tuple] = []
 
-    async def extract_project_responsibilities(self, readme_text, selected_tech):
-        self.calls.append((readme_text, selected_tech))
+    async def extract_project_responsibilities(self, evidence_items, selected_tech_names):
+        self.calls.append((evidence_items, selected_tech_names))
         return self._extraction
 
 
-def test_grounding_score_substring_and_none() -> None:
-    # 원문에 그대로 있는 인용은 조사 차이와 무관하게 1.0
-    assert grounding_score(_README, "Redis 캐시와 비동기 처리") == 1.0
-    # 원문에 없는 기술은 낮게
-    assert grounding_score(_README, "Kubernetes 오케스트레이션 구성") < 0.5
-
-
-@pytest.mark.asyncio
-async def test_grounded_quote_is_marked_grounded() -> None:
-    provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(responsibility="주문 API 성능 개선", evidence_quote="Redis 캐시와 비동기 처리로 주문 API 응답 지연을 줄인")]
+def _request() -> ProjectResponsibilityRequest:
+    return ProjectResponsibilityRequest(
+        extractionTaskId="e1",
+        projectSourceId="p1",
+        selectedTechnologyTags=[
+            {"technologyTagId": "tag-spring", "canonicalName": "Spring Boot"},
+            {"technologyTagId": "tag-redis", "canonicalName": "Redis"},
+            {"technologyTagId": "tag-kafka", "canonicalName": "Kafka"},
+        ],
+        repositorySnapshot={
+            "sourceUrl": "https://github.com/example/sample",
+            "fetchedAt": "2026-08-12T08:00:00Z",
+            "repositoryVersion": "abc123",
+            "readmes": [
+                {
+                    "evidenceId": "readme-1",
+                    "path": "README.md",
+                    "text": "Spring Boot로 주문 API를 구현했습니다. Redis 캐시를 적용했습니다.",
+                }
+            ],
+            "files": [
+                {
+                    "evidenceId": "file-1",
+                    "path": "src/OrderService.java",
+                    "fileType": "SOURCE",
+                    "relatedTechnologyTagIds": ["tag-spring"],
+                    "text": "public Order createOrder() { ... }",
+                }
+            ],
+        },
     )
-    results = await extract_project_responsibilities(_README, ["Spring Boot"], provider)
 
-    assert len(results) == 1
-    assert results[0]["status"] == "GROUNDED"
-    assert results[0]["coverage"] >= 0.8
-    assert results[0]["responsibility"] == "주문 API 성능 개선"
+
+def test_grounding_score_overlap() -> None:
+    assert grounding_score("Spring Boot 주문 API 구현", "Spring Boot 주문") == 1.0
+    assert grounding_score("public Order createOrder", "머신러닝 파이프라인 학습") < 0.3
 
 
 @pytest.mark.asyncio
-async def test_fabricated_quote_is_needs_review() -> None:
+async def test_technology_evidence_found_and_needs_review() -> None:
+    provider = FakeExtractionProvider([])  # 담당 업무는 이 테스트 대상 아님
+    data = await extract_project_evidence(_request(), provider)
+    tech = {t["technologyTagId"]: t for t in data["technologyEvidenceCandidates"]}
+
+    # Spring Boot: 파일 relatedTag(A) + readme 텍스트(B) 둘 다 근거
+    assert tech["tag-spring"]["findingStatus"] == "FOUND"
+    assert set(tech["tag-spring"]["evidenceIds"]) == {"file-1", "readme-1"}
+    # Redis: readme 텍스트에만 등장(B)
+    assert tech["tag-redis"]["findingStatus"] == "FOUND"
+    assert tech["tag-redis"]["evidenceIds"] == ["readme-1"]
+    # Kafka: 어디에도 없음 → NEEDS_REVIEW
+    assert tech["tag-kafka"]["findingStatus"] == "NEEDS_REVIEW"
+    assert tech["tag-kafka"]["evidenceIds"] == []
+    assert all(t["confirmationStatus"] == "UNCONFIRMED" for t in tech.values())
+
+
+@pytest.mark.asyncio
+async def test_responsibility_valid_citation_derives_related_tags() -> None:
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(responsibility="Kafka 이벤트 스트리밍 구축", evidence_quote="Kafka로 대규모 이벤트 스트리밍 파이프라인을 구축")]
+        [ProjectResponsibilityCandidate(text="Spring Boot 기반 주문 API 구현", source_evidence_ids=["readme-1", "file-1"])]
     )
-    results = await extract_project_responsibilities(_README, ["Spring Boot"], provider)
+    data = await extract_project_evidence(_request(), provider)
+    resp = data["responsibilityEvidenceCandidates"]
 
-    # 원문에 없는 내용(Kafka)을 덧붙이면 grounding이 낮아 NEEDS_REVIEW
-    assert results[0]["status"] == "NEEDS_REVIEW"
-    assert results[0]["coverage"] < 0.8
+    assert len(resp) == 1
+    assert resp[0]["evidenceId"] == "project-responsibility-1"
+    assert resp[0]["category"] == "PROJECT_RESPONSIBILITY"
+    assert resp[0]["sourceEvidenceIds"] == ["readme-1", "file-1"]
+    # relatedTechnologyTagIds는 인용한 파일의 태그에서 유도(readme엔 태그 없음)
+    assert resp[0]["relatedTechnologyTagIds"] == ["tag-spring"]
+    assert resp[0]["confirmationStatus"] == "UNCONFIRMED"
 
 
 @pytest.mark.asyncio
-async def test_empty_evidence_quote_is_dropped() -> None:
+async def test_responsibility_invalid_citation_dropped() -> None:
     provider = FakeExtractionProvider(
-        [
-            ProjectResponsibilityCandidate(responsibility="근거 없는 항목", evidence_quote="   "),
-            ProjectResponsibilityCandidate(responsibility="주문 API 개선", evidence_quote="주문 API 응답 지연을 줄인"),
-        ]
+        [ProjectResponsibilityCandidate(text="유령 근거 인용", source_evidence_ids=["ghost"])]
     )
-    results = await extract_project_responsibilities(_README, [], provider)
-
-    assert len(results) == 1  # 빈 근거 항목은 버려짐
-    assert results[0]["responsibility"] == "주문 API 개선"
+    data = await extract_project_evidence(_request(), provider)
+    assert data["responsibilityEvidenceCandidates"] == []
 
 
 @pytest.mark.asyncio
-async def test_empty_extraction_returns_empty() -> None:
+async def test_responsibility_ungrounded_text_dropped() -> None:
+    # 근거 id는 유효하지만 text가 근거와 완전히 동떨어짐 → 지어냄으로 보고 버림
+    provider = FakeExtractionProvider(
+        [ProjectResponsibilityCandidate(text="머신러닝 파이프라인 텐서플로 학습 구축", source_evidence_ids=["file-1"])]
+    )
+    data = await extract_project_evidence(_request(), provider)
+    assert data["responsibilityEvidenceCandidates"] == []
+
+
+@pytest.mark.asyncio
+async def test_model_execution_and_ids_echoed() -> None:
     provider = FakeExtractionProvider([])
-    results = await extract_project_responsibilities(_README, ["Spring Boot"], provider)
-    assert results == []
+    data = await extract_project_evidence(_request(), provider)
+    assert data["extractionTaskId"] == "e1"
+    assert data["projectSourceId"] == "p1"
+    assert data["repositoryVersion"] == "abc123"
+    assert data["modelExecution"] == {
+        "stage": "PROJECT_RESPONSIBILITY_EXTRACTION",
+        "provider": "OLLAMA",
+        "model": "fake-extractor",
+    }

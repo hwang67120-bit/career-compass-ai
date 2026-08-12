@@ -54,3 +54,11 @@ async def get_ollama_evidence_judge_provider():
     settings = OllamaSettings()
     async with _build_client(settings) as client:
         yield OllamaProvider(client=client, model_name=settings.ollama_evidence_judge_model)
+
+
+async def get_ollama_project_responsibility_provider():
+    """`project-responsibility-extractions`가 쓰는, 저장소 담당 업무 추출용 모델
+    (`OLLAMA_PROJECT_RESPONSIBILITY_MODEL`, 기본 qwen2.5) provider다."""
+    settings = OllamaSettings()
+    async with _build_client(settings) as client:
+        yield OllamaProvider(client=client, model_name=settings.ollama_project_responsibility_model)
