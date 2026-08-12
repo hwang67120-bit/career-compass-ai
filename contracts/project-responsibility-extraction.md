@@ -183,6 +183,7 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 ```
 
 성공하면 `200`과 후보 조회 항목과 같은 형태의 갱신된 후보를 `data`로 반환한다.
+
 - `decision`은 `CONFIRM` 또는 `REJECT`다.
 - `CONFIRM`은 `confirmedText`가 필수이며 Unicode 코드 포인트 기준 1자 이상 500자 이하다. 수정 후 확인도 같은 요청을 사용한다.
 - `REJECT`는 `confirmedText=null`이어야 하며 추출 원문을 삭제하고 거부 상태와 시각만 보관한다.
@@ -220,3 +221,163 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 
 1. Java 저장소 최소 파일 수집·제외 사유 기록과 Python 요청 분할
 2. Python 계약 스키마·추출 구현, Java 후보 저장·사용자 결정 API와 공동 계약 테스트
+
+## Java 구현 의사코드
+
+이 절은 구현 순서 검토용이며 실제 Java 코드가 아니다. 후보 추출은 사용자 확인보다 먼저 실행하고,
+채용 분석은 확인된 프로젝트 근거를 포함한 고정 프로필 버전으로 시작한다.
+
+```text
+사용자 프로젝트 등록 또는 새로 조회 요청
+→ Java가 저장소와 commitSha 검증
+→ 저장소 최소 자료 수집
+→ Python이 담당 업무 후보 추출
+→ Java가 UNCONFIRMED 후보 저장
+→ 사용자가 확인·수정 후 확인·거부
+→ CONFIRMED 근거를 포함한 새 프로필 버전 저장
+→ 사용자가 채용 분석 시작
+→ JobAnalysisWorker가 고정 프로필의 CONFIRMED 근거만 의미 비교에 사용
+```
+
+### 저장소 자료 수집
+
+```text
+prepareRepositorySnapshot(projectSourceId, profileVersion):
+
+    현재 사용자 소유 ProjectSource를 조회한다
+    ProjectSource의 고정 commitSha와 사용자 선택 기술을 읽는다
+    선택 기술을 중복 제거하고 최대 30개인지 검증한다
+
+    트랜잭션을 끝낸다
+
+    GitHub에서 고정 commitSha의 파일 트리를 읽는다
+    비밀 파일, 빌드 결과물, 바이너리와 제외 디렉터리를 제거한다
+    기술별 매니페스트 식별자와 import·annotation·API 참조로 후보 경로를 찾는다
+    실제 소스 → 테스트 → 매니페스트 → 설정 → README 순서로 정렬한다
+    중복 경로를 제거하고 종류별·기술별·전체 파일 개수 제한을 적용한다
+
+    각 후보 파일의 원격 크기가 102,400바이트를 넘으면 제외 사유를 기록한다
+    허용 파일만 고정 commitSha에서 읽는다
+    선택 기술 관련 최소 구간을 파일당 2,000자 이하로 만든다
+    전체 텍스트 20,000자 제한을 넘기 전에 낮은 우선순위 파일을 제외한다
+
+    RepositorySnapshot과 제외 사유를 반환한다
+```
+
+- 기본 브랜치의 최신 파일을 다시 읽지 않고 등록된 `commitSha`만 사용한다.
+- GitHub 응답이 불완전하거나 해당 SHA의 파일을 읽지 못하면 다른 버전으로 대체하지 않는다.
+- 기술별 식별자 규칙은 결정론적 목록으로 관리하며 기술 이름의 부분 문자열만으로 실제 사용을 확정하지 않는다.
+- 전체 파일 원문, GitHub 자격증명과 제외된 파일 내용은 저장하거나 Python에 전달하지 않는다.
+
+### Python 분할 호출과 후보 저장
+
+```text
+extractResponsibilityCandidates(projectSourceId, profileVersion):
+
+    snapshot = prepareRepositorySnapshot(projectSourceId, profileVersion)
+    technologyBatches = 선택 기술을 최대 10개씩 분할한다
+    successfulCandidates = []
+    failedBatchCount = 0
+
+    각 technologyBatch에 대해:
+        request = 고정 snapshot과 technologyBatch로 만든다
+        response = PythonProjectResponsibilityExtractionClient.extract(request)
+        요청 식별자, projectSourceId, repositoryVersion을 검증한다
+        응답 태그와 sourceEvidenceIds가 요청에 존재하는지 검증한다
+        enum, modelExecution과 UNCONFIRMED 상태를 검증한다
+
+        계약 위반이면 응답을 저장하지 않고 해당 묶음을 실패로 기록한다
+        정상이면 technologyTagId와 근거 식별자 기준으로 후보를 병합한다
+
+    성공 묶음이 하나도 없으면 추출 실패로 기록한다
+    일부 묶음만 실패하면 부분 완료와 실패 묶음을 기록한다
+    모든 묶음이 성공하면 추출 완료로 기록한다
+
+    짧은 트랜잭션에서:
+        같은 projectSourceId와 repositoryVersion의 중복 후보 생성을 막는다
+        UNCONFIRMED 후보, 최소 근거, 모델 실행과 만료 시각을 저장한다
+```
+
+Python 호출과 GitHub 호출 중에는 데이터베이스 트랜잭션을 유지하지 않는다. 자동 재시도는 멱등 키와
+재시도 상태가 별도 확정된 경우에만 추가한다.
+
+### 후보 조회와 사용자 결정
+
+```text
+listResponsibilityCandidates(projectSourceId):
+
+    현재 사용자 소유 프로젝트인지 확인한다
+    만료되지 않은 후보만 조회한다
+    전체 파일 원문을 제외한 최소 근거와 상태를 반환한다
+
+
+decideResponsibilityCandidate(candidateId, request):
+
+    현재 사용자 소유 후보를 version과 함께 조회한다
+
+    후보가 만료됐으면 410
+    expectedVersion이 다르면 409
+    같은 최종 결정과 같은 confirmedText면 현재 결과를 200으로 반환한다
+    이미 다른 최종 상태이면 409
+
+    CONFIRM이면:
+        confirmedText를 1자 이상 500자 이하로 검증한다
+        후보를 CONFIRMED로 전이한다
+        확인 근거를 포함하는 새 UserProfileVersion을 만든다
+
+    REJECT이면:
+        confirmedText가 null인지 검증한다
+        추출 원문과 최소 코드 excerpt를 삭제한다
+        후보를 REJECTED로 전이하고 결정 시각만 남긴다
+
+    후보 결정과 프로필 버전 생성을 한 트랜잭션으로 커밋한다
+    갱신된 후보를 반환한다
+```
+
+동시 요청은 후보의 낙관적 잠금 버전으로 먼저 성공한 요청만 반영한다. 다른 사용자 소유 후보는
+존재 여부를 노출하지 않고 `404`로 반환한다.
+
+### 채용 분석 연결
+
+```text
+createJobAnalysis(request):
+
+    요청한 UserProfileVersion을 고정한다
+    해당 버전에 연결된 CONFIRMED 프로젝트 담당 업무 근거를 고정한다
+    확인되지 않았거나 거부·만료된 후보는 포함하지 않는다
+    분석 작업을 QUEUED로 저장한다
+
+
+JobAnalysisWorker.processClaimedAnalysis(jobAnalysis):
+
+    채용공고 검색과 구조화 추출을 완료한다
+    Java의 명확한 조건 판정을 수행한다
+    COMPARING_EVIDENCE로 전이한다
+
+    고정된 공고 RESPONSIBILITY와 사용자 PROJECT_RESPONSIBILITY를 만든다
+    사용자 근거가 비어 있으면 NOT_CALCULABLE을 정상 결과로 기록한다
+    근거가 있으면 PythonEvidenceSimilarityClient를 호출한다
+    응답 계약을 검증한 뒤 의미 비교 결과와 모델 실행 정보를 Java에 저장한다
+
+    일부 비교만 성공하면 PARTIALLY_COMPLETED
+    모두 정상 처리되면 FINALIZING_RESULT → COMPLETED
+```
+
+프로젝트 후보를 새로 확정해도 이미 실행 중이거나 완료된 분석의 고정 프로필과 결과를 변경하지 않는다.
+
+### 구현 시작 전에 코드 수준에서 정할 항목
+
+- 프로젝트 등록 직후 추출을 시작할지 별도의 사용자가 누르는 새로 조회 API에서 시작할지
+- 기술 태그별 매니페스트 좌표, import 접두사와 설정 키를 관리할 결정론적 규칙 저장 위치
+- GitHub 파일 트리 응답이 잘린 경우의 제외 사유와 사용자 표시 상태
+- 묶음 일부 실패의 저장 상태와 수동 재실행 API
+- 프로젝트 담당 업무 근거를 `UserProfileVersion`에 연결할 테이블 관계와 Flyway 변경
+
+이 항목은 확정 계약을 바꾸지 않지만 DTO, enum, 테이블과 분기문을 작성하기 전에 설계해야 한다.
+
+### 공식 참고 자료
+
+- [GitHub REST API - Git Trees](https://docs.github.com/en/rest/git/trees)
+- [GitHub REST API - Repository contents](https://docs.github.com/en/rest/repos/contents)
+- [Spring Framework - Declarative transaction management](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative.html)
+- [Spring Framework - REST Clients](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html)
