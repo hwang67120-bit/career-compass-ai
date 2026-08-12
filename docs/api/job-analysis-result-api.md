@@ -255,7 +255,7 @@ MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPON
 
 | HTTP | code | 조건 |
 |---:|---|---|
-| 401 | `AUTHENTICATION_REQUIRED` | 인증 세션 없음 |
+| 401 | `UNAUTHORIZED` | 인증 세션 없음 |
 | 404 | `JOB_ANALYSIS_NOT_FOUND` | 분석이 없거나 다른 사용자 소유 |
 | 404 | `JOB_ANALYSIS_RESULT_NOT_FOUND` | 실패·취소되어 제공할 비교 결과 없음 |
 | 409 | `JOB_ANALYSIS_RESULT_NOT_READY` | 분석이 아직 실행 중 |
