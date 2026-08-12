@@ -119,6 +119,14 @@ X-Request-Id: {uuid}
 따라서 이 모델과 현재 계산법은 품질 게이트 실패다. Gemini 할당량 소진은 일시적 제약일 뿐
 모델 선택 근거가 아니다.
 
+2026-08-12 `ai-python/evaluation/job_evidence_judge_spike.py`로 `LLM_JUDGE`(Ollama)를 후보 3개
+모델(qwen2.5·exaone3.5·llama3.2)로 평가했다. 17개 공고 담당 업무를 도메인별 사용자 프로젝트
+근거 7개와 비교(각 3회 반복, temperature 0)한 결과 `qwen2.5:latest`가 best-match 36/36,
+`RELATED`/`NOT_RELATED` 분류 42/42, 반환 근거 유효 51/51, 비결정성 0으로 위 5개 게이트를 모두
+통과했다. exaone3.5(30/36, 오판 존재)와 llama3.2(18/36, 도메인 붕괴)는 부적합이다. 다만 사용자
+프로젝트 근거가 도메인별 1개 합성 표본이라 도메인 구분력만 증명했고, 실제 시장 정확도와 유사
+프로젝트 경합 난이도는 아직 검증 전이다([job-fit-semantic-similarity.md](../docs/architecture/job-fit-semantic-similarity.md) 2026-08-12 결과 참고).
+
 ## 저장·오류·보안
 
 Python은 영구 저장하지 않는다. Java는 식별자, 항목 결과, method, provider, model,
@@ -144,8 +152,10 @@ Java는 식별자, 결과 개수, 근거 참조, enum, judgment, provider와 mod
 
 ## 구현 전 확인 필요
 
-1. 합성공고 fixture로 Ollama 기본·Gemini 폴백 LLM_JUDGE 품질 평가
-2. 최종 provider, model과 LLM 판정 enum
+1. 합성공고 fixture LLM_JUDGE 품질 평가 — Ollama 기본 경로는 2026-08-12 완료
+   (`qwen2.5:latest`가 도메인 구분 게이트 통과, 위 품질 게이트 절 참고). 남은 것: Gemini 폴백이
+   같은 계약을 지키는지, 실제 시장 표본과 사용자 근거 다수 경합 난이도.
+2. 최종 provider, model과 LLM 판정 enum (Ollama 기본 유력 후보: `qwen2.5:latest`)
 3. 사용자 프로젝트 근거의 생성·확인·버전 관리
 4. 최고 근거 개수, 배열·문장 제한과 모델 변경 정책
 5. `NOT_CALCULABLE`을 정상 완료로 볼지 여부

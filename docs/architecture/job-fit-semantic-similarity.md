@@ -35,6 +35,29 @@ LLM은 자유 문장이 아니라 `RELATED` 또는 `NOT_RELATED`와 입력에 �
 4. 품질 게이트 통과 후 provider·model·판정 enum을 확정한다.
 5. Python endpoint와 Java client를 구현하고 연결·브라우저 테스트를 수행한다.
 
+### 2026-08-12 평가 결과 (2단계 — Ollama 기본 경로)
+
+`ai-python/evaluation/job_evidence_judge_spike.py`로 후보 3개 모델을 판정 과제로 비교했다.
+`tests/fixtures/job_postings/`의 17개 공고 담당 업무를 그대로 옮겨 job 근거로 쓰고,
+도메인별 사용자 프로젝트 근거 7개(합성) 전체와 비교해 best-match와 `RELATED`/`NOT_RELATED`를
+받았다. 각 job × 3회 반복(temperature 0).
+
+| 모델 | best-match | RELATED 분류 | 근거 유효 | 비결정성 | 평균 |
+|---|---:|---:|---:|---:|---:|
+| **qwen2.5:latest** | **36/36** | **42/42** | **51/51** | 0 | 1.2s |
+| exaone3.5:latest | 30/36 | 36/42 | 51/51 | 0 | 1.2s |
+| llama3.2:latest | 18/36 | 36/42 | 51/51 | 0 | 0.9s |
+
+`qwen2.5:latest`는 채점 대상 14개 job에서 6개 도메인을 정확히 구분하고, 대응 프로젝트가 없는
+게임 서버·QA를 `NOT_RELATED`로 걸러 품질 게이트 전 항목을 통과했다. 임베딩(nomic)이 게이트를
+실패한 것과 정반대다. exaone3.5는 결제·정산 백엔드를 infra로, 게임 서버·QA를 `RELATED`로
+오판했고, llama3.2는 대부분을 backend·data-science로 붕괴시켜 둘 다 부적합이다.
+
+한계: 사용자 프로젝트 근거는 도메인별 1개 합성 표본이라 도메인 구분력만 증명하며, 실제 시장
+정확도나 유사 프로젝트가 경합하는 난이도는 검증하지 않았다(공고 fixture와 같은 단서).
+정답이 모호한 job(ai_ml↔data-science, fullstack↔backend/frontend, llm_rag↔backend)은 집계에서
+제외했다. 3단계(Gemini 폴백)와 사용자 근거 다수 경합 난이도는 아직 검증 전이다.
+
 ## 관련 문서
 
 - [채용공고 근거 의미 비교 내부 계약](../../contracts/job-evidence-similarity.md)
