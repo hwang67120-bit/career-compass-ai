@@ -7,6 +7,7 @@
 - [현재 작업 상태](current-work.md)
 - [개발자 채용공고 분석 API](api/developer-job-analysis-api.md)
 - [분석 작업과 SSE 처리 결정](architecture/backend-job-processing-and-sse.md)
+- [실행 환경 연결 운영 규칙](operations/runtime-connectivity-runbook.md)
 - [채용공고 검색 도구 계약](../contracts/job-search-tool.md)
 - [채용공고 추출 계약](../contracts/job-posting-extraction.md)
 
