@@ -37,7 +37,7 @@ def build_user_profile_text(readme_texts: dict[str, str], skill_names: list[str]
     """README 내용과 검증된 기술 목록을 하나의 임베딩 입력 텍스트로 합친다(순수 함수).
 
     입력:
-        readme_texts: 저장소 경로별 README 원문(`repository_readme.fetch_repository_readmes`).
+        readme_texts: 저장소 경로별 README 원문(Java가 전달한 자료).
         skill_names: 검증된 기술명 목록(저장소 근거·수기 입력 병합 결과).
 
     반환:
@@ -71,7 +71,7 @@ async def embed_user_profile(
 
     입력:
         provider: 임베딩을 만들 provider(`OllamaEmbeddingProvider` 등).
-        readme_texts: `repository_readme.fetch_repository_readmes`의 결과.
+        readme_texts: 저장소 경로별 README 원문(Java가 전달한 자료).
         skill_names: 검증된 기술명 목록.
 
     반환:

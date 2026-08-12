@@ -1,8 +1,10 @@
-"""GitHub 저장소 코드에서 결정론적으로(LLM 없이) 기술 근거를 추출한다.
+"""전달받은 저장소 파일 자료에서 결정론적으로(LLM 없이) 기술 근거를 추출한다.
 
-매니페스트 파일(예: `package.json`, `pom.xml`)의 실제 내용과 파일 확장자
-개수만 사용한다. LLM 요약을 쓰지 않으므로 모든 근거는 실제로 그 파일에
-있는 문자열이다 — 근거 없는 기술을 만들어내지 않는다(`AGENTS.md`).
+GitHub를 직접 조회하지 않는다 — Java가 검증·전달한 파일 경로와 내용만
+분석한다(책임 경계: `docs/analysis-responsibility-boundaries.md`). 매니페스트
+파일(예: `package.json`, `pom.xml`)의 실제 내용과 파일 확장자 개수만 사용한다.
+LLM 요약을 쓰지 않으므로 모든 근거는 실제로 그 파일에 있는 문자열이다
+— 근거 없는 기술을 만들어내지 않는다(`AGENTS.md`).
 
 매니페스트 파일은 각 형식에 맞는 파서(`app/services/manifest_parsers.py`)로
 실제 의존성 식별자만 뽑는다 — 파일 전체를 문자열 검색하지 않는다(오탐
@@ -12,10 +14,8 @@
 상태다. 알려진 기술만 인식하며, 목록에 없는 기술은 근거가 있어도 놓친다.
 """
 
-from app.providers.github_repository import GitHubRepositoryClient
 from app.schemas.technical_evidence import EvidenceSource, TechnicalEvidenceExtraction
 from app.services.manifest_parsers import MANIFEST_DEPENDENCY_EXTRACTORS
-from app.services.performance_tracking import StageOperation, measure_stage
 from app.services.repository_paths import is_excluded
 from app.services.technical_evidence_builder import TechnicalEvidenceBuilder
 
@@ -72,15 +72,16 @@ _EXTENSION_LANGUAGES: dict[str, str] = {
 _MIN_LANGUAGE_FILE_COUNT = 2
 # 한 언어당 근거로 남기는 예시 파일 경로 개수.
 _MAX_LANGUAGE_EVIDENCE_FILES = 3
-# 매니페스트 조회 요청 수 상한 — 대형 모노레포에서 GitHub API를 과도하게 부르지 않는다.
-_MAX_MANIFEST_FILES_TO_FETCH = 20
+# 처리할 매니페스트 파일 수 상한 — 대형 모노레포에서 근거를 과도하게 만들지 않는다.
+_MAX_MANIFEST_FILES = 20
 
 
 def select_manifest_paths(tree_paths: list[str]) -> list[str]:
-    """전체 파일 경로 중 실제로 내용을 조회할 매니페스트 파일만 고른다.
+    """전체 파일 경로 중 실제로 내용을 분석할 매니페스트 파일만 고른다.
 
     벤더 디렉터리를 제외하고, 경로 깊이가 얕은(루트에 가까운) 파일을
-    우선하며 상한(`_MAX_MANIFEST_FILES_TO_FETCH`) 안에서만 고른다.
+    우선하며 상한(`_MAX_MANIFEST_FILES`) 안에서만 고른다. 조회는 Java가
+    담당하며, 이 함수는 전달받은 경로 목록에서 대상만 선별한다.
     """
     candidates = [
         path
@@ -89,7 +90,7 @@ def select_manifest_paths(tree_paths: list[str]) -> list[str]:
         and path.rsplit("/", 1)[-1].lower() in MANIFEST_DEPENDENCY_EXTRACTORS
     ]
     candidates.sort(key=lambda path: path.count("/"))
-    return candidates[:_MAX_MANIFEST_FILES_TO_FETCH]
+    return candidates[:_MAX_MANIFEST_FILES]
 
 
 def _extract_manifest_evidence(
@@ -146,35 +147,3 @@ def extract_repository_evidence(
         _extract_manifest_evidence(builder, file_path, content)
     _extract_language_evidence(builder, tree_paths)
     return builder.build()
-
-
-async def analyze_repository(
-    client: GitHubRepositoryClient, owner: str, repository: str, commit_sha: str
-) -> TechnicalEvidenceExtraction:
-    """저장소를 조회하고 근거를 추출하는 전체 과정을 수행한다.
-
-    입력:
-        client: GitHub API 호출 클라이언트.
-        owner, repository, commit_sha: Java가 등록 시 확인한 저장소 좌표.
-
-    반환:
-        `extract_repository_evidence`와 동일한 결과.
-
-    예외:
-        `GitHubRepositoryClient`가 던지는 예외를 그대로 전달한다.
-    """
-    async with client.open_session() as http_client:
-        with measure_stage("github", StageOperation.GITHUB_FETCH_TREE):
-            tree_paths = await client.fetch_tree(
-                owner, repository, commit_sha, http_client=http_client
-            )
-        manifest_paths = select_manifest_paths(tree_paths)
-
-        manifest_contents: dict[str, str] = {}
-        with measure_stage("github", StageOperation.GITHUB_FETCH_MANIFEST_FILES):
-            for file_path in manifest_paths:
-                manifest_contents[file_path] = await client.fetch_file_text(
-                    owner, repository, commit_sha, file_path, http_client=http_client
-                )
-
-    return extract_repository_evidence(tree_paths, manifest_contents)
