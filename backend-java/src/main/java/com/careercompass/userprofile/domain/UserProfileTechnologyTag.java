@@ -95,6 +95,10 @@ public class UserProfileTechnologyTag {
         return technologyTag == null ? null : technologyTag.getId();
     }
 
+    public TechnologyTag getTechnologyTag() {
+        return technologyTag;
+    }
+
     public String getRawName() {
         return rawName;
     }

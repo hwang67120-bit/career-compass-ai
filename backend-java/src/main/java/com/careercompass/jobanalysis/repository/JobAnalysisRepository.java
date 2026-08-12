@@ -6,6 +6,8 @@ import java.util.UUID;
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 public interface JobAnalysisRepository extends JpaRepository<JobAnalysis, UUID> {
 
@@ -23,4 +25,8 @@ public interface JobAnalysisRepository extends JpaRepository<JobAnalysis, UUID> 
             nativeQuery = true
     )
     Optional<JobAnalysis> findNextQueuedForUpdateSkipLocked();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select analysis from JobAnalysis analysis where analysis.id = :id")
+    Optional<JobAnalysis> findByIdForUpdate(UUID id);
 }

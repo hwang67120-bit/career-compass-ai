@@ -1,0 +1,2 @@
+package com.careercompass.projectresponsibility.exception;
+public class ProjectResponsibilityConflictException extends RuntimeException {}

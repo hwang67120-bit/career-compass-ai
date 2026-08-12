@@ -4,11 +4,12 @@
 
 ## 목적과 책임
 
-Java가 사용자 선택 기술 태그와 읽기 전용 저장소 스냅숏을 Python에 전달하고, Python은 기술 근거와
+Java가 사용자 선택 기술 태그를 분석 허용 목록으로 검증하고 읽기 전용 저장소 스냅숏과 함께
+Python에 전달한다. Python은 허용 목록의 기술에 대해서만 기술 근거와
 `PROJECT_RESPONSIBILITY`(프로젝트 담당 업무) 후보를 추출한다.
 
-- Java: 저장소·사용자 권한 검증, 선택 태그와 최소 자료 전달, 후보 저장과 사용자 확인 관리
-- Python: 전달받은 자료 안에서 선택 기술의 사용 근거와 담당 업무 후보 추출
+- Java: 저장소·사용자 권한·선택 기술 검증, Python 분석 범위 제한, 최소 자료 전달, 응답 계약 검증, 후보 저장·사용자 API 제공
+- Python: 전달받은 자료 안에서 선택 기술의 사용 근거와 담당 업무 후보만 추출
 - 금지: 저장소 수정·코드 실행·자격증명 전달·사용자의 직접 담당 여부 확정·선택하지 않은 기술을 사용자 기술로 확정
 
 ## 엔드포인트와 요청
@@ -40,7 +41,6 @@ X-Request-Id: {uuid}
         "evidenceId": "repo-file-1",
         "path": "src/main/java/example/OrderService.java",
         "fileType": "SOURCE",
-        "relatedTechnologyTagIds": ["70000000-0000-0000-0000-000000000001"],
         "text": "public Order createOrder(...) { ... }"
       }
     ]
@@ -49,9 +49,10 @@ X-Request-Id: {uuid}
 ```
 
 - `selectedTechnologyTags`와 저장소 출처 URL·조회 시각·버전은 필수다.
+- `selectedTechnologyTags`는 Python이 분석할 수 있는 유일한 기술 허용 목록이다.
 - Java는 허용 범위를 검증하고 개인정보를 제거한 README·설명·최소 파일만 전달한다.
 - API 키, GitHub 토큰과 다른 자격증명은 요청에 포함하지 않는다.
-- 허용 자료는 README·설명, 매니페스트, 설정과 선택 기술 관련 핵심 소스·테스트 파일이다.
+- 허용 자료는 README·설명, 매니페스트, 설정과 제한된 소스·테스트 파일이다. Java의 파일 수집은 전송 범위를 줄이기 위한 것이며 기술 사용 여부를 확정하는 분석이 아니다.
 - 비밀 설정, 빌드 결과물, 바이너리와 대용량 파일은 제외하며 코드 실행과 의존성 설치를 허용하지 않는다.
 - GitHub 조회와 입력 검증은 Java가 담당하고 Python은 전달받은 자료만 분석한다.
 ### 요청 제한과 파일 선택
@@ -60,10 +61,10 @@ X-Request-Id: {uuid}
 - Python 요청 한 번의 `selectedTechnologyTags`는 서로 다른 태그 1개 이상 10개 이하다.
 - Java는 10개 초과 기술을 10개씩 나누어 호출하고 `technologyTagId` 기준으로 결과를 합친다. 일부 묶음 실패는 전체 실패가 아니라 부분 완료로 기록한다.
 - README는 최대 3개, 매니페스트는 최대 20개, 설정 파일은 최대 10개다.
-- 선택 기술을 실제 참조하는 소스·테스트 파일은 기술당 최대 3개다.
+- Python이 후보 근거로 참조하는 소스·테스트 파일은 선택 기술당 최대 3개다.
 - `files[].fileType`은 `MANIFEST`, `CONFIGURATION`, `SOURCE`, `TEST`만 허용한다.
 - `readmes`와 `files`는 중복 경로 제거 후 합계 30개 이하다. 같은 파일이 여러 기술과 관련되면 한 번만 전달한다.
-- 파일 선택 순서는 실제 소스 사용, 테스트, 매니페스트, 설정, README 순서다.
+- 파일 선택 순서는 소스, 테스트, 매니페스트, 설정, README 순서다. 이 순서는 전송 우선순위이며 기술 근거 판정이 아니다.
 - Java가 조회하는 개별 파일은 102,400바이트 이하며, 초과 파일은 Python에 전달하지 않는다.
 - Python에 전달하는 각 `text`는 Unicode 코드 포인트 기준 2,000자 이하다.
 - `description`, `readmes[].text`, `files[].text`의 합계는 Unicode 코드 포인트 기준 20,000자 이하다.
@@ -112,9 +113,11 @@ X-Request-Id: {uuid}
 ```
 
 - 후보는 요청의 선택 기술 태그와 입력 근거 식별자만 참조한다.
+- Java는 응답의 `technologyTagId`와 `relatedTechnologyTagIds`가 요청의 허용 목록에 속하는지 검증한다. 목록 밖 기술이 하나라도 있으면 계약 위반으로 응답 전체를 저장하지 않는다.
 - `text`는 입력 근거로 확인 가능한 최소 업무 표현이며 새로운 성과·역할을 생성하지 않는다.
-- 모든 후보는 `UNCONFIRMED`이며, 사용자 확인 뒤 Java가 별도 프로필 근거로 확정한다.
-- Python은 영구 저장하지 않는다. Java는 저장소 버전, 후보, 최소 근거와 사용자 확인 이력을 관리한다.
+- 모든 후보는 `UNCONFIRMED`이며, Java 사용자 API를 통해 브라우저에 AI 분석 미리보기로 표시한다.
+- 미리보기는 저장소에서 해석한 기술·담당 업무 후보와 최소 근거를 보여주지만 최종 채용공고 비교 결과가 아니다.
+- Python은 영구 저장하거나 브라우저에 직접 응답하지 않는다. Java는 저장소 버전, 후보, 최소 근거와 사용자 확인 이력을 관리한다.
 - 선택 기술 근거를 찾으면 `findingStatus=FOUND`, 찾지 못하면 `findingStatus=NEEDS_REVIEW`로 반환한다.
 - `NEEDS_REVIEW`는 오류, 기술 미보유 또는 `MISMATCHED`를 의미하지 않는다.
 - 선택하지 않은 기술은 사용자 기술로 자동 추가하지 않는다.
@@ -124,7 +127,7 @@ X-Request-Id: {uuid}
 - 전체 파일 내용은 영구 저장하지 않고 출처·저장소 버전·최소 근거만 저장한다.
 - 거부 후보의 원문은 삭제하고 거부 상태와 시각만 기록한다.
 
-## 사용자 후보 조회와 결정 API
+## 사용자 분석 미리보기 조회와 결정 API
 
 모든 API는 공통 `requestId/data/error/timestamp` 응답 형식을 사용한다. 요청에 `userId`를 받지 않고
 현재 인증 사용자가 소유한 프로젝트 후보만 처리한다. 다른 사용자 소유 자원도 `404`로 응답한다.
@@ -141,6 +144,8 @@ GET /api/v1/project-sources/{projectSourceId}/responsibility-candidates
   "data": {
     "projectSourceId": "9894e7f7-a523-4d02-a9ef-44fe0eb9a77b",
     "repositoryVersion": "0123456789abcdef0123456789abcdef01234567",
+    "reviewStatus": "AWAITING_USER_CONFIRMATION",
+    "linkedJobAnalysisId": "10000000-0000-0000-0000-000000000001",
     "candidates": [
       {
         "candidateId": "46538954-ef88-4dc5-bc68-c71f18886cd8",
@@ -167,6 +172,7 @@ GET /api/v1/project-sources/{projectSourceId}/responsibility-candidates
 ```
 
 전체 파일 원문은 반환하지 않고 판정을 확인할 수 있는 최소 근거만 반환한다. 만료 후보는 목록에서 제외한다.
+프론트엔드는 이 응답을 `AI 프로젝트 분석 미리보기`로 표시하고, 사용자가 모든 후보를 확인 또는 거부하기 전에는 최종 분석 완료로 표시하지 않는다.
 
 ### 확인·수정 후 확인·거부
 
@@ -182,13 +188,17 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 }
 ```
 
-성공하면 `200`과 후보 조회 항목과 같은 형태의 갱신된 후보를 `data`로 반환한다.
+성공하면 `200`과 갱신된 후보, `reviewCompleted`와 `resumedJobAnalysisId`를 `data`로 반환한다. 마지막 후보 결정이 아니면 `reviewCompleted=false`, `resumedJobAnalysisId=null`이다. 마지막 결정으로 검토가 끝나고 연결된 채용 분석이 있으면 `reviewCompleted=true`와 재개한 분석 식별자를 반환한다.
 
+- 조회의 `reviewStatus`는 `AWAITING_USER_CONFIRMATION` 또는 `REVIEW_COMPLETED`다.
+- `linkedJobAnalysisId`는 이 미리보기를 기다리는 채용 분석이 없으면 `null`이다.
 - `decision`은 `CONFIRM` 또는 `REJECT`다.
 - `CONFIRM`은 `confirmedText`가 필수이며 Unicode 코드 포인트 기준 1자 이상 500자 이하다. 수정 후 확인도 같은 요청을 사용한다.
 - `REJECT`는 `confirmedText=null`이어야 하며 추출 원문을 삭제하고 거부 상태와 시각만 보관한다.
 - `UNCONFIRMED`만 `CONFIRMED` 또는 `REJECTED`로 전이할 수 있고 두 상태는 최종 상태다.
-- 확인된 근거와 새 사용자 프로필 버전은 한 트랜잭션으로 저장한다. `CONFIRMED` 근거만 의미 비교에 사용한다.
+- 개별 결정 요청은 후보 상태와 확인 문장만 저장한다. 후보 하나를 결정할 때마다 프로필 버전이나 Python 최종 비교를 만들지 않는다.
+- 같은 추출 작업의 모든 후보가 `CONFIRMED` 또는 `REJECTED`가 된 마지막 결정에서 Java가 모든 `CONFIRMED` 근거를 포함한 새 사용자 프로필 버전을 한 번만 생성하고 추출 작업을 `REVIEW_COMPLETED`로 전이한다.
+- 연결된 채용 분석이 있으면 위 트랜잭션 커밋 뒤 작업을 다시 대기열에 넣는다. Python에는 승인 boolean을 보내지 않고 사용자가 확정한 최소 근거 문장을 의미 비교 입력으로 전달한다.
 - 같은 결정과 문장의 재전송은 기존 결과를 `200`으로 반환한다. 다른 결정·문장 또는 `expectedVersion` 불일치는 `409`다.
 - 미확정 후보는 생성 후 30일이 지나면 만료되며 결정 요청은 `410`이다.
 
@@ -219,24 +229,26 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 
 ## 구현 순서
 
-1. Java 저장소 최소 파일 수집·제외 사유 기록과 Python 요청 분할
+1. Java 저장소 최소 파일 안전 수집·제외 사유 기록·선택 기술 범위 검증과 Python 요청 분할
 2. Python 계약 스키마·추출 구현, Java 후보 저장·사용자 결정 API와 공동 계약 테스트
 
 ## Java 구현 의사코드
 
 이 절은 구현 순서 검토용이며 실제 Java 코드가 아니다. 후보 추출은 사용자 확인보다 먼저 실행하고,
-채용 분석은 확인된 프로젝트 근거를 포함한 고정 프로필 버전으로 시작한다.
+채용 분석 요청은 기존 프로필 버전으로 생성할 수 있지만 프로젝트 분석 미리보기 확인 전에는 최종 비교를 시작하지 않는다. 마지막 사용자 결정에서 확정 근거가 있으면 새 프로필 버전으로 한 번 교체해 고정한 뒤 비교를 재개한다.
 
 ```text
-사용자 프로젝트 등록 또는 새로 조회 요청
-→ Java가 저장소와 commitSha 검증
-→ 저장소 최소 자료 수집
-→ Python이 담당 업무 후보 추출
-→ Java가 UNCONFIRMED 후보 저장
-→ 사용자가 확인·수정 후 확인·거부
-→ CONFIRMED 근거를 포함한 새 프로필 버전 저장
-→ 사용자가 채용 분석 시작
-→ JobAnalysisWorker가 고정 프로필의 CONFIRMED 근거만 의미 비교에 사용
+사용자가 프로젝트 저장소와 분석할 기술 태그 선택
+→ Java가 사용자 권한·저장소·commitSha·선택 기술 검증
+→ Java가 저장소 최소 자료와 선택 기술 허용 목록을 Python에 전달
+→ Python이 선택 기술 범위의 기술·담당 업무 근거 후보만 추출·분석
+→ Java가 응답 범위와 계약을 검증한 뒤 UNCONFIRMED 후보 저장
+→ 브라우저가 Java API로 AI 프로젝트 분석 미리보기와 최소 근거 표시
+→ 사용자가 모든 후보를 확인·수정 후 확인·거부
+→ Java가 CONFIRMED 근거를 포함한 새 프로필 버전을 한 번만 저장
+→ 연결된 채용 분석을 재개하고 확정 근거를 Python 의미 비교 API에 전달
+→ Python이 공고 업무와 확정 프로젝트 업무를 비교해 Java에 반환
+→ Java가 비교 응답을 검증·저장하고 브라우저가 최종 분석 결과 표시
 ```
 
 ### 저장소 자료 수집
@@ -252,13 +264,13 @@ prepareRepositorySnapshot(projectSourceId, profileVersion):
 
     GitHub에서 고정 commitSha의 파일 트리를 읽는다
     비밀 파일, 빌드 결과물, 바이너리와 제외 디렉터리를 제거한다
-    기술별 매니페스트 식별자와 import·annotation·API 참조로 후보 경로를 찾는다
-    실제 소스 → 테스트 → 매니페스트 → 설정 → README 순서로 정렬한다
-    중복 경로를 제거하고 종류별·기술별·전체 파일 개수 제한을 적용한다
+    확장자·경로·파일 종류와 제외 규칙만으로 전송 후보 파일을 고른다
+    소스 → 테스트 → 매니페스트 → 설정 → README 순서로 정렬한다
+    중복 경로를 제거하고 종류별·전체 파일 개수 제한을 적용한다
 
     각 후보 파일의 원격 크기가 102,400바이트를 넘으면 제외 사유를 기록한다
     허용 파일만 고정 commitSha에서 읽는다
-    선택 기술 관련 최소 구간을 파일당 2,000자 이하로 만든다
+    전송할 텍스트를 파일당 2,000자 이하로 제한한다
     전체 텍스트 20,000자 제한을 넘기 전에 낮은 우선순위 파일을 제외한다
 
     RepositorySnapshot과 제외 사유를 반환한다
@@ -266,7 +278,7 @@ prepareRepositorySnapshot(projectSourceId, profileVersion):
 
 - 기본 브랜치의 최신 파일을 다시 읽지 않고 등록된 `commitSha`만 사용한다.
 - GitHub 응답이 불완전하거나 해당 SHA의 파일을 읽지 못하면 다른 버전으로 대체하지 않는다.
-- 기술별 식별자 규칙은 결정론적 목록으로 관리하며 기술 이름의 부분 문자열만으로 실제 사용을 확정하지 않는다.
+- Java는 `import`, 어노테이션, API 호출과 코드 로직으로 기술 사용 여부나 담당 업무를 추출·판정하지 않는다.
 - 전체 파일 원문, GitHub 자격증명과 제외된 파일 내용은 저장하거나 Python에 전달하지 않는다.
 
 ### Python 분할 호출과 후보 저장
@@ -280,10 +292,10 @@ extractResponsibilityCandidates(projectSourceId, profileVersion):
     failedBatchCount = 0
 
     각 technologyBatch에 대해:
-        request = 고정 snapshot과 technologyBatch로 만든다
+        request = 고정 snapshot과 분석 허용 목록인 technologyBatch로 만든다
         response = PythonProjectResponsibilityExtractionClient.extract(request)
         요청 식별자, projectSourceId, repositoryVersion을 검증한다
-        응답 태그와 sourceEvidenceIds가 요청에 존재하는지 검증한다
+        응답 태그가 technologyBatch 안에 있고 sourceEvidenceIds가 요청에 존재하는지 검증한다
         enum, modelExecution과 UNCONFIRMED 상태를 검증한다
 
         계약 위반이면 응답을 저장하지 않고 해당 묶음을 실패로 기록한다
@@ -330,8 +342,21 @@ decideResponsibilityCandidate(candidateId, request):
         추출 원문과 최소 코드 excerpt를 삭제한다
         후보를 REJECTED로 전이하고 결정 시각만 남긴다
 
-    후보 결정과 프로필 버전 생성을 한 트랜잭션으로 커밋한다
-    갱신된 후보를 반환한다
+    후보 결정을 저장한다
+
+    같은 extractionTask의 모든 후보가 최종 상태이면:
+        모든 CONFIRMED 후보를 모은다
+        CONFIRMED 후보가 있으면:
+            확인 근거를 포함하는 새 UserProfileVersion을 한 번만 만든다
+            연결된 JobAnalysis의 프로필 버전을 새 버전으로 한 번 교체해 고정한다
+        모두 REJECTED이면:
+            연결된 JobAnalysis의 기존 프로필 버전을 유지한다
+        extractionTask를 REVIEW_COMPLETED로 전이한다
+
+    후보 결정, 마지막 결정의 프로필 버전 생성과 JobAnalysis 입력 버전 고정을 한 트랜잭션으로 커밋한다
+
+    연결된 JobAnalysis가 있으면 커밋 뒤 QUEUED로 전이한다
+    갱신된 후보와 reviewCompleted 여부를 반환한다
 ```
 
 동시 요청은 후보의 낙관적 잠금 버전으로 먼저 성공한 요청만 반영한다. 다른 사용자 소유 후보는
@@ -340,12 +365,18 @@ decideResponsibilityCandidate(candidateId, request):
 ### 채용 분석 연결
 
 ```text
-createJobAnalysis(request):
+createOrResumeJobAnalysis(request):
 
-    요청한 UserProfileVersion을 고정한다
-    해당 버전에 연결된 CONFIRMED 프로젝트 담당 업무 근거를 고정한다
-    확인되지 않았거나 거부·만료된 후보는 포함하지 않는다
-    분석 작업을 QUEUED로 저장한다
+    프로젝트 분석 미리보기가 아직 사용자 확인 전이면:
+        분석 작업을 AWAITING_USER_CONFIRMATION으로 유지한다
+        최종 의미 비교를 실행하지 않는다
+
+    모든 후보 검토가 끝나면:
+        CONFIRMED 후보가 있으면 마지막 결정에서 생성된 UserProfileVersion을 고정한다
+        모든 후보가 REJECTED이면 기존 UserProfileVersion을 유지한다
+        고정 버전에 연결된 CONFIRMED 프로젝트 담당 업무 근거만 읽는다
+        확인되지 않았거나 거부·만료된 후보는 포함하지 않는다
+        분석 작업을 QUEUED로 저장한다
 
 
 JobAnalysisWorker.processClaimedAnalysis(jobAnalysis):
@@ -355,6 +386,7 @@ JobAnalysisWorker.processClaimedAnalysis(jobAnalysis):
     COMPARING_EVIDENCE로 전이한다
 
     고정된 공고 RESPONSIBILITY와 사용자 PROJECT_RESPONSIBILITY를 만든다
+    Python에 사용자 승인 상태를 보내지 않고 사용자가 확인한 PROJECT_RESPONSIBILITY 문장만 보낸다
     사용자 근거가 비어 있으면 NOT_CALCULABLE을 정상 결과로 기록한다
     근거가 있으면 PythonEvidenceSimilarityClient를 호출한다
     응답 계약을 검증한 뒤 의미 비교 결과와 모델 실행 정보를 Java에 저장한다
@@ -363,17 +395,17 @@ JobAnalysisWorker.processClaimedAnalysis(jobAnalysis):
     모두 정상 처리되면 FINALIZING_RESULT → COMPLETED
 ```
 
-프로젝트 후보를 새로 확정해도 이미 실행 중이거나 완료된 분석의 고정 프로필과 결과를 변경하지 않는다.
+`AWAITING_USER_CONFIRMATION`에서는 마지막 사용자 결정 트랜잭션에서 프로필 버전을 한 번만 교체할 수 있다. 작업이 다시 `QUEUED`가 된 뒤와 실행 중·완료된 분석에서는 고정 프로필과 결과를 변경하지 않는다.
 
 ### 구현 시작 전에 코드 수준에서 정할 항목
 
 - 프로젝트 등록 직후 추출을 시작할지 별도의 사용자가 누르는 새로 조회 API에서 시작할지
-- 기술 태그별 매니페스트 좌표, import 접두사와 설정 키를 관리할 결정론적 규칙 저장 위치
+- 허용 확장자·제외 경로·파일 유형 등 안전 수집 규칙의 저장 위치
 - GitHub 파일 트리 응답이 잘린 경우의 제외 사유와 사용자 표시 상태
 - 묶음 일부 실패의 저장 상태와 수동 재실행 API
 - 프로젝트 담당 업무 근거를 `UserProfileVersion`에 연결할 테이블 관계와 Flyway 변경
 
-이 항목은 확정 계약을 바꾸지 않지만 DTO, enum, 테이블과 분기문을 작성하기 전에 설계해야 한다.
+`AWAITING_USER_CONFIRMATION`과 `REVIEW_COMPLETED` 상태, 추출 작업과 연결된 채용 분석 관계는 이번 두 단계 흐름에 포함한다. 나머지 항목은 DTO, enum, 테이블과 분기문을 작성하기 전에 설계해야 한다.
 
 ### 공식 참고 자료
 
