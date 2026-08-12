@@ -85,6 +85,7 @@
 | Job Posting | 채용공고 | 기관이 공개한 하나의 모집 공고 |
 | Job Title | 직무명 | 공고에 적힌 원문 직무 이름 |
 | Responsibility | 담당 업무 | 입사 후 실제 수행한다고 공고에 명시된 업무 |
+| Project Responsibility | 프로젝트 담당 업무 | 공개 저장소 근거에서 추출하고 사용자 확인 전까지 미확정인 프로젝트 업무 후보 |
 | Required Skill | 필수 기술 | 지원 조건으로 명시된 기술 |
 | Preferred Skill | 우대 기술 | 필수는 아니지만 우대한다고 명시된 기술 |
 | Job Requirement | 채용 요구조건 | 기술·경력·학력·자격증·지역·고용 형태 등의 조건 |
