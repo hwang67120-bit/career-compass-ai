@@ -1,7 +1,5 @@
 # LLM 제공자(Ollama·Gemini) 연동
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. 계층 이름 정의는 [layer-terminology.md](layer-terminology.md)를 따른다.
-
 ## 공통 인터페이스
 
 `ai-python/app/providers/`의 `OllamaProvider`와 `GeminiProvider`는 같은 시그니처를 공유한다.

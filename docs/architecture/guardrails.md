@@ -1,7 +1,5 @@
 # 가드레일 원칙
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. 계층 정의는 [layer-terminology.md](layer-terminology.md)의 `guardrails/`(독립된 상하 계층이 아니라 입출력 경계에 적용되는 정책 영역) 정의를 따른다.
-
 노션 "Python AI 분석 구현 문서"의 "근거 없는 출력 차단" 원칙을 아래 네 가지로 구체화한다.
 
 ## 1. 투명성 원칙
