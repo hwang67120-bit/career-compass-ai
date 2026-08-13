@@ -34,7 +34,15 @@ def _valid_body(**overrides) -> dict:
             "readmes": [
                 {"evidenceId": "readme-1", "path": "README.md", "text": "Spring Boot로 주문 API를 구현했습니다."}
             ],
-            "files": [],
+            "files": [
+                {
+                    "evidenceId": "file-pkg",
+                    "path": "package.json",
+                    "fileType": "MANIFEST",
+                    "relatedTechnologyTagIds": [],
+                    "text": '{"dependencies": {"react": "^18.0.0"}}',
+                }
+            ],
         },
     }
     body.update(overrides)
@@ -101,8 +109,8 @@ def test_succeeds_with_fake_provider() -> None:
     data = response.json()["data"]
     assert data["extractionTaskId"] == "11111111-1111-1111-1111-111111111111"
     assert data["repositoryVersion"] == "abc123"
-    assert data["technologyEvidenceCandidates"][0]["technologyTagId"] == "tag-spring"
-    assert data["technologyEvidenceCandidates"][0]["findingStatus"] == "FOUND"
+    detected = {(d["detectedName"], d["source"]) for d in data["detectedTechnologies"]}
+    assert ("react", "MANIFEST") in detected
     assert data["responsibilityEvidenceCandidates"][0]["category"] == "PROJECT_RESPONSIBILITY"
     assert data["modelExecution"]["stage"] == "PROJECT_RESPONSIBILITY_EXTRACTION"
     assert data["modelExecution"]["provider"] == "OLLAMA"
