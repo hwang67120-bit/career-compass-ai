@@ -29,6 +29,21 @@ runner에 Ollama가 없으면 "단위" 잡도 실패한다(전체 스위트 ~163
 
 이 Ollama 분리는 Claude·Codex 공동 인지 사항이다. 방식(a/b) 확정 후 **마커 변경은 Claude(ai-python 담당)가 반영**한다.
 
+## 보안 — 공개 repo + self-hosted runner (설계 전제)
+이 repo는 **PUBLIC**이다. 공개 repo에서 self-hosted runner를 fork PR로 실행하면 **서버에서 임의 코드 실행**이 가능하다(GitHub 공식 경고). 포트폴리오 목적상 공개는 유지하므로, runner 전략으로 막는다.
+
+- **PR·단위 테스트 = GitHub 호스팅 runner** (공개 repo 무료). 서버를 안 쓰므로 fork PR이 서버에 닿지 못한다.
+- **서버 self-hosted runner = 통합 테스트만**, 트리거는 **`push`(develop/main)·`workflow_dispatch`(수동)만**. `pull_request`(특히 fork)로는 실행하지 않는다.
+- GitHub 설정: repo → Settings → Actions → **Fork PR은 외부 기여자 승인 필요** ON.
+
+서버 하드닝(사용자 sysadmin 범위, 저장소 밖):
+- 공유기 **포트포워딩 없음** 확인(LAN `192.168.0.88`+Tailscale라 미포워딩 시 인터넷 미노출)
+- **UFW** 인바운드 기본 차단, SSH만(가능하면 LAN/Tailscale 한정)
+- **Postgres·Ollama는 localhost/Tailscale 바인딩**(0.0.0.0 금지, 기본 인증 없음)
+- SSH 키 방식·비밀번호 로그인 off
+- 시크릿은 `.env`(gitignore)·GitHub Actions Secrets에만, 로그·커밋 금지
+- runner는 **비-root 전용 유저**, `unattended-upgrades`로 OS 보안 패치
+
 ## Python 잡 runner prereq
 - 단위 잡(선택지 a): **Python 3.10+, uv, git** (Ollama 불필요)
 - 통합 잡(또는 선택지 b): 위 + **Ollama + `qwen2.5:latest`** (그리고 `OLLAMA_MODEL=exaone3.5:latest` 경로 테스트가 있으면 exaone3.5도)
