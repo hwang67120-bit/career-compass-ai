@@ -1,6 +1,6 @@
 # 채용 적합도 의미 비교 방식
 
-상태: 제안 — 합성 fixture 평가 후 LLM 판정 계약을 확정한다.
+상태: 평가 완료 — qwen2.5가 품질 게이트를 통과했고, 판정 엔드포인트를 구현해 실연결까지 검증했다.
 
 ## 결정된 방향
 
@@ -53,30 +53,26 @@ LLM은 자유 문장이 아니라 `RELATED` 또는 `NOT_RELATED`와 입력에 �
 실패한 것과 정반대다. exaone3.5는 결제·정산 백엔드를 infra로, 게임 서버·QA를 `RELATED`로
 오판했고, llama3.2는 대부분을 backend·data-science로 붕괴시켜 둘 다 부적합이다.
 
-한계: 사용자 프로젝트 근거는 도메인별 1개 합성 표본이라 도메인 구분력만 증명하며, 실제 시장
-정확도나 유사 프로젝트가 경합하는 난이도는 검증하지 않았다(공고 fixture와 같은 단서).
-정답이 모호한 job(ai_ml↔data-science, fullstack↔backend/frontend, llm_rag↔backend)은 집계에서
-제외했다. 사용자 근거 다수 경합 난이도는 아직 검증 전이다.
+한계가 있다. 사용자 근거가 도메인마다 합성 1개뿐이라, "도메인이 다르면 구분한다"까지만 증명됐다.
+실제 시장 데이터나, 비슷한 프로젝트끼리 겹쳐 헷갈리는 경우는 아직 안 해봤다.
+정답이 애매한 공고(예: ai_ml↔data-science)는 집계에서 뺐다.
 
 ### 2026-08-12 Gemini 폴백 부분 평가 (3단계)
 
 같은 데이터셋·프롬프트·채점(`ai-python/evaluation/job_evidence_judge_gemini_check.py`,
-스파이크에서 import)으로 `gemini-flash-latest`를 교차 검증했다. 성공한 21회는 전부 정답이었으나
-(best-match 20/20, 분류 21/21, 근거유효 21/21, 평균 3.6s), **무료 등급 "하루 20회" 한도**
-(`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, gemini-3.6-flash)에 막혀 나머지 30회가
-429였다. 커버된 도메인이 backend·frontend에 편중되고 security·mobile·infra·game-server(핵심
-NOT_RELATED) 등은 한 번도 평가되지 못해 **판정 능력을 "통과"로 결론낼 수 없다**(비결론).
+스파이크에서 import)으로 `gemini-flash-latest`를 교차 검증했다. 성공한 21회는 전부 정답이었다
+(best-match 20/20, 분류 21/21). 하지만 무료 등급은 하루 20회 한도라 나머지 30회가 429로 막혔다.
+그래서 backend·frontend만 주로 평가됐고 security·mobile·infra 등 핵심 NOT_RELATED 도메인은
+한 번도 못 봐서, 판정 능력을 "통과"라고 결론 내릴 수 없다.
 
 이 하루 20회 한도 자체가 반복 가능한 전체 평가(51회 = 3일치)를 무료 등급에서 불가능하게 만들며,
 Gemini를 폴백·제한적 교차검증으로만 쓰고 실시간 주경로에서 배제하는 결정을 뒷받침한다.
 
-**2026-08-13 재평가(REPEATS=1, 17회)**: 쿼터 리셋 후 재시도했으나 오늘 여유분이 ~10회뿐이라
-10회 성공 뒤 다시 429였다(일일 한도가 0으로 완전히 리셋되지 않음). 성공한 10회는 전부 정답
-(best-match 8/8, 분류 10/10)이며 어제 못 본 devops(infra)·game-server·qa(핵심 NOT_RELATED 둘)를
-포함했다. **어제+오늘 누적 31/31 전부 정답**, 커버 도메인 7개(backend·frontend·data-eng·
-data-science·devops·game-server·qa) — Gemini 폴백 판정은 테스트된 범위에서 신뢰할 만하다.
-다만 mobile·security·cloud는 여전히 미평가이고, 무료 등급으로는 `REPEATS=1`(17회)조차 못 채워
-깨끗한 단일 전체 평가가 불가함이 재확인됐다(완전 결론은 유료 등급 필요).
+**2026-08-13 재평가**: 쿼터가 리셋돼 다시 돌렸지만 오늘 여유분도 ~10회뿐이라 또 429에 막혔다.
+성공한 10회는 전부 정답이었고, 어제 못 본 devops·game-server·qa(핵심 NOT_RELATED)를 채웠다.
+어제와 합치면 누적 31/31 전부 정답, 도메인 7개를 커버했다 — 테스트된 범위에선 Gemini 폴백을
+믿을 만하다. 다만 mobile·security·cloud는 아직 못 봤고, 무료 등급으론 한 번에 전체 평가가
+안 된다는 게 재확인됐다(완전한 결론은 유료 등급 필요).
 
 ## 관련 문서
 

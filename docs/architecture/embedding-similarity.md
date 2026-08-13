@@ -1,6 +1,6 @@
 # 임베딩과 의미 유사도
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. 계층 정의는 [layer-terminology.md](layer-terminology.md)를 따르며, 임베딩·유사도 계산은 Python `services/`(온라인 분석 유스케이스 계층)에 위치한다. 리랭킹(후보 재정렬) 알고리즘 자체는 이 문서가 아니라 다음 순서 문서에서 다룬다. 채용공고·회사 데이터가 시스템에 들어오는 경로는 이 문서의 범위가 아니며 별도로 확인 필요 상태다.
+> **결론부터**: 임베딩은 MVP에서 제외했다(아래 2026-08-11 결정). 이 문서는 그 판단 근거가 된 실험 기록이다.
 
 ## 목적과 범위
 
@@ -52,7 +52,7 @@
 
 배치로 여러 텍스트를 같이 넣어도 개별 벡터가 달라지지 않는 것은 별도로 확인했다 (계산 버그가 아님).
 
-**결론**: 로컬 Ollama 계열 임베딩(`nomic-embed-text`, 그리고 임베딩 전용이 아닌 `qwen2.5`)은 이 프로젝트의 한국어 이력서·채용공고 도메인에서 비슷한 직무끼리 구분하는 능력이 낮았다. Gemini의 `gemini-embedding-001`(3072차원)만 기대한 순서대로 구분했다. 그래서 `app/providers/embedding.py`에 `OllamaEmbeddingProvider`와 `GeminiEmbeddingProvider`를 모두 구현해뒀고, 현재는 **Gemini 쪽이 실사용에 더 근접한 후보**다.
+**결론**: 로컬 Ollama 계열 임베딩(`nomic-embed-text`, 그리고 임베딩 전용이 아닌 `qwen2.5`)은 이 프로젝트의 한국어 이력서·채용공고 도메인에서 비슷한 직무끼리 구분하는 능력이 낮았다. Gemini의 `gemini-embedding-001`(3072차원)만 기대한 순서대로 구분했다. 그래서 `app/providers/embedding.py`에 두 provider를 모두 구현해뒀다. 다만 MVP는 임베딩을 빼고 LLM-as-judge로 갔고(아래 결정), 임베딩을 다시 쓴다면 제대로 구분한 건 Gemini뿐이었다.
 
 이 실험은 표본이 6~8개 문장 수준으로 작아 정식 평가([training-data-standards.md](training-data-standards.md) 기준의 골드 데이터)는 아니다 — 정식 결론이 아니라 다음 모델 선정 논의의 출발점으로만 쓴다.
 
@@ -66,8 +66,8 @@ Gemini API나 분석 기능을 제거하는 결정은 아니다. Ollama와 Gemin
 기반 LLM 분석에 집중한다. Ollama를 기본 Provider로 사용하고 Gemini는 실패 시 폴백과
 제한적인 교차검증에 사용하며 상시 병행 호출은 하지 않는다.
 
-의미 비교의 다음 후보는 `LLM_JUDGE`지만 아직 품질 평가 전이다. 합성공고 fixture로
-구분력·근거 타당성·반복 안정성을 확인하기 전에는 구현 완료로 표현하지 않는다.
+의미 비교는 `LLM_JUDGE`로 갔다. 2026-08-12 합성 fixture 평가에서 qwen2.5가 품질 게이트를
+통과했다([job-fit-semantic-similarity.md](job-fit-semantic-similarity.md)).
 ## 확인 필요
 
 - 실제 사용할 임베딩 모델 — 위 실험 결과상 Gemini가 유력하지만, 더 큰 표본과 정식 평가 자료로 재검증 필요
