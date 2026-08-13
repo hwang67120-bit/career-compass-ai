@@ -5,12 +5,15 @@
 ## 목적과 책임
 
 Java가 사용자 선택 기술 태그를 분석 허용 목록으로 검증하고 읽기 전용 저장소 스냅숏과 함께
-Python에 전달한다. Python은 허용 목록의 기술에 대해서만 기술 근거와
-`PROJECT_RESPONSIBILITY`(프로젝트 담당 업무) 후보를 추출한다.
+Python에 전달한다. Python은 저장소에서 기술 원시 이름을 결정론적으로 감지하고,
+선택 기술 범위 안에서 `PROJECT_RESPONSIBILITY`(프로젝트 담당 업무) 후보를 추출한다.
 
-- Java: 저장소·사용자 권한·선택 기술 검증, Python 분석 범위 제한, 최소 자료 전달, 응답 계약 검증, 후보 저장·사용자 API 제공
-- Python: 전달받은 자료 안에서 선택 기술의 사용 근거와 담당 업무 후보만 추출
-- 금지: 저장소 수정·코드 실행·자격증명 전달·사용자의 직접 담당 여부 확정·선택하지 않은 기술을 사용자 기술로 확정
+- Java: 저장소·사용자 권한·선택 기술 검증, 최소 자료 전달, 표준 기술 태그 매핑,
+  선택 기술 판정, 추가 기술 제안, 후보 저장과 사용자 API 제공
+- Python: 전달받은 자료에서 매니페스트 파싱과 언어 감지로 기술 원시 이름·근거를 결정론적으로
+  감지하고 선택 기술 범위의 담당 업무 후보를 추출한다. 기술 감지에는 LLM을 사용하지 않는다.
+- 금지: 저장소 수정·코드 실행·자격증명 전달·Python의 `technologyTagId` 생성·사용자의
+  직접 담당 여부 확정·선택하지 않은 기술 자동 추가
 
 ## 엔드포인트와 요청
 
@@ -49,7 +52,8 @@ X-Request-Id: {uuid}
 ```
 
 - `selectedTechnologyTags`와 저장소 출처 URL·조회 시각·버전은 필수다.
-- `selectedTechnologyTags`는 Python이 분석할 수 있는 유일한 기술 허용 목록이다.
+- `selectedTechnologyTags`는 담당 업무 후보 추출 범위를 제한한다. 결정론적 기술 감지는
+  선택 목록 밖의 매니페스트 의존성과 저장소 언어도 반환할 수 있다.
 - Java는 허용 범위를 검증하고 개인정보를 제거한 README·설명·최소 파일만 전달한다.
 - API 키, GitHub 토큰과 다른 자격증명은 요청에 포함하지 않는다.
 - 허용 자료는 README·설명, 매니페스트, 설정과 제한된 소스·테스트 파일이다. Java의 파일 수집은 전송 범위를 줄이기 위한 것이며 기술 사용 여부를 확정하는 분석이 아니다.
@@ -59,7 +63,11 @@ X-Request-Id: {uuid}
 
 - 사용자 프로필은 기술 태그를 최대 30개 보유하며 Java는 중복을 제거한다.
 - Python 요청 한 번의 `selectedTechnologyTags`는 서로 다른 태그 1개 이상 10개 이하다.
-- Java는 10개 초과 기술을 10개씩 나누어 호출하고 `technologyTagId` 기준으로 결과를 합친다. 일부 묶음 실패는 전체 실패가 아니라 부분 완료로 기록한다.
+- Java는 10개 초과 선택 기술을 10개씩 나누어 호출한다. 담당 업무 후보는 근거 식별자로
+  병합하고, 반복 반환된 감지 기술은 `detectedName + source` 기준으로 중복을 제거한 뒤
+  `evidenceIds`를 합친다. 일부 묶음 실패는 전체 실패가 아니라 부분 완료로 기록한다.
+- Python은 감지 기술을 근거 개수 내림차순, 정규화한 `detectedName` 오름차순으로 정렬해
+  상위 30개만 반환한다. 이 상한은 `technology-tag-resolution`의 요청당 최대 30개와 같다.
 - README는 최대 3개, 매니페스트는 최대 20개, 설정 파일은 최대 10개다.
 - Python이 후보 근거로 참조하는 소스·테스트 파일은 선택 기술당 최대 3개다.
 - `files[].fileType`은 `MANIFEST`, `CONFIGURATION`, `SOURCE`, `TEST`만 허용한다.
@@ -82,13 +90,16 @@ X-Request-Id: {uuid}
     "extractionTaskId": "8e5f6c65-ad0e-49a4-bb48-f2a6164ca21c",
     "projectSourceId": "9894e7f7-a523-4d02-a9ef-44fe0eb9a77b",
     "repositoryVersion": "0123456789abcdef0123456789abcdef01234567",
-    "technologyEvidenceCandidates": [
+    "detectedTechnologies": [
       {
-        "technologyTagId": "70000000-0000-0000-0000-000000000001",
-        "canonicalName": "Spring Boot",
-        "findingStatus": "FOUND",
-        "evidenceIds": ["repo-readme"],
-        "confirmationStatus": "UNCONFIRMED"
+        "detectedName": "org.springframework.boot:spring-boot-starter-web",
+        "source": "MANIFEST",
+        "evidenceIds": ["repo-file-1"]
+      },
+      {
+        "detectedName": "Java",
+        "source": "LANGUAGE",
+        "evidenceIds": ["repo-file-2"]
       }
     ],
     "responsibilityEvidenceCandidates": [
@@ -96,7 +107,6 @@ X-Request-Id: {uuid}
         "evidenceId": "project-responsibility-1",
         "category": "PROJECT_RESPONSIBILITY",
         "text": "Spring Boot 기반 주문 API 구현",
-        "relatedTechnologyTagIds": ["70000000-0000-0000-0000-000000000001"],
         "sourceEvidenceIds": ["repo-readme", "repo-file-1"],
         "confirmationStatus": "UNCONFIRMED"
       }
@@ -112,15 +122,30 @@ X-Request-Id: {uuid}
 }
 ```
 
-- 후보는 요청의 선택 기술 태그와 입력 근거 식별자만 참조한다.
-- Java는 응답의 `technologyTagId`와 `relatedTechnologyTagIds`가 요청의 허용 목록에 속하는지 검증한다. 목록 밖 기술이 하나라도 있으면 계약 위반으로 응답 전체를 저장하지 않는다.
+- `detectedTechnologies[].detectedName`은 매니페스트가 제공한 의존성 식별자
+  (group:artifact 또는 패키지명)나 감지한 언어명 원문이다. Python은 자체 기술 키워드
+  목록으로 거르거나 표준 이름으로 바꾸지 않는다.
+- `detectedTechnologies[].source`는 `MANIFEST` 또는 `LANGUAGE`만 허용하며,
+  `evidenceIds`는 요청 스냅숏에 존재하는 근거만 참조한다.
+- Python 응답에는 `technologyTagId`, `canonicalName`, `findingStatus`를 포함하지 않는다.
+  담당 업무 후보도 표준 태그 ID를 반환하지 않고 입력의 `sourceEvidenceIds`만 참조한다.
 - `text`는 입력 근거로 확인 가능한 최소 업무 표현이며 새로운 성과·역할을 생성하지 않는다.
 - 모든 후보는 `UNCONFIRMED`이며, Java 사용자 API를 통해 브라우저에 AI 분석 미리보기로 표시한다.
 - 미리보기는 저장소에서 해석한 기술·담당 업무 후보와 최소 근거를 보여주지만 최종 채용공고 비교 결과가 아니다.
 - Python은 영구 저장하거나 브라우저에 직접 응답하지 않는다. Java는 저장소 버전, 후보, 최소 근거와 사용자 확인 이력을 관리한다.
-- 선택 기술 근거를 찾으면 `findingStatus=FOUND`, 찾지 못하면 `findingStatus=NEEDS_REVIEW`로 반환한다.
-- `NEEDS_REVIEW`는 오류, 기술 미보유 또는 `MISMATCHED`를 의미하지 않는다.
-- 선택하지 않은 기술은 사용자 기술로 자동 추가하지 않는다.
+- Java는 `detectedName` 목록을 [기술 태그 정규화 내부 계약](technology-tag-resolution.md)의
+  `MATCHED + CANONICAL/ALIAS` 또는 `UNRESOLVED + NONE`으로 해석한다.
+- Java는 `UNRESOLVED` 항목을 표준 태그 판정과 제안에서 제외한다. 유사도 기반
+  `SUGGEST_CORRECTION`이나 새 별칭 자동 등록은 사용하지 않는다.
+- Java는 매핑된 표준 태그가 사용자의 선택 태그에 있으면 `FOUND`, 없으면 추가 기술 제안으로
+  구분한다. 선택 태그가 매핑 결과에 없으면 `NEEDS_REVIEW`로 판정한다.
+- 담당 업무와 기술의 연결은 `sourceEvidenceIds`와 감지 기술의 `evidenceIds` 교집합을
+  Java가 계산한다.
+- `NEEDS_REVIEW`는 오류, 기술 미보유 또는 `MISMATCHED`가 아니라 **확인 필요**다.
+  프론트는 [분석 결과 API 10절](../docs/api/job-analysis-result-api.md#10-프론트-표시-규칙)에
+  따라 실패로 표시하거나 일치율 분모에 넣지 않는다.
+- 매핑됐지만 선택하지 않은 기술은 사용자에게 추가, 무시 또는 저장소 교체 선택지를 제공한다.
+  자동 추가하지 않으며 사용자의 선택 전에는 프로필이나 분석 사실로 저장하지 않는다.
 - 사용자는 후보를 확인, 수정 후 확인 또는 거부할 수 있으며 상태는 `UNCONFIRMED`, `CONFIRMED`, `REJECTED`를 사용한다.
 - `CONFIRMED` 후보만 의미 비교 입력으로 사용한다.
 - 미확정 후보는 30일 보관한 뒤 만료하며, 확정 근거는 사용자 프로필 버전과 연결한다.
@@ -224,7 +249,7 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 | 502 | `PROJECT_RESPONSIBILITY_EXTRACTION_RESPONSE_INVALID` | false |
 | 503 | `PROJECT_RESPONSIBILITY_EXTRACTION_MODEL_UNAVAILABLE` | true |
 
-공동 계약 테스트는 정상 후보, 입력에 없는 태그·근거 참조 거부, 개인정보 제거 후 빈 자료,
+공동 계약 테스트는 결정론적 기술 감지, 입력에 없는 근거 참조 거부, Python 응답의 표준 태그 ID 거부, 개인정보 제거 후 빈 자료,
 내부 토큰 실패, 모델 장애와 같은 저장소 버전 보존을 포함한다.
 
 ## 구현 순서
@@ -241,7 +266,8 @@ PUT /api/v1/project-responsibility-candidates/{candidateId}/decision
 사용자가 프로젝트 저장소와 분석할 기술 태그 선택
 → Java가 사용자 권한·저장소·commitSha·선택 기술 검증
 → Java가 저장소 최소 자료와 선택 기술 허용 목록을 Python에 전달
-→ Python이 선택 기술 범위의 기술·담당 업무 근거 후보만 추출·분석
+→ Python이 모든 raw 기술을 결정론적으로 감지하고 선택 기술 범위의 담당 업무 근거 후보를 추출·분석
+→ Java가 raw 기술을 표준 태그로 매핑하고 선택 판정·추가 제안을 생성
 → Java가 응답 범위와 계약을 검증한 뒤 UNCONFIRMED 후보 저장
 → 브라우저가 Java API로 AI 프로젝트 분석 미리보기와 최소 근거 표시
 → 사용자가 모든 후보를 확인·수정 후 확인·거부
@@ -295,11 +321,18 @@ extractResponsibilityCandidates(projectSourceId, profileVersion):
         request = 고정 snapshot과 분석 허용 목록인 technologyBatch로 만든다
         response = PythonProjectResponsibilityExtractionClient.extract(request)
         요청 식별자, projectSourceId, repositoryVersion을 검증한다
-        응답 태그가 technologyBatch 안에 있고 sourceEvidenceIds가 요청에 존재하는지 검증한다
-        enum, modelExecution과 UNCONFIRMED 상태를 검증한다
+        detectedName, source, evidenceIds와 sourceEvidenceIds가 계약과 요청 근거에 맞는지 검증한다
+        Python 응답에 technologyTagId가 없고 modelExecution과 UNCONFIRMED 상태가 맞는지 검증한다
 
         계약 위반이면 응답을 저장하지 않고 해당 묶음을 실패로 기록한다
-        정상이면 technologyTagId와 근거 식별자 기준으로 후보를 병합한다
+        정상이면 detectedName + source 기준으로 감지 기술을 병합하고 evidenceIds를 합친다
+        담당 업무 후보는 sourceEvidenceIds 기준으로 병합한다
+
+    mergedDetections의 detectedName을 TechnologyTagResolutionService로 해석한다
+    MATCHED + CANONICAL/ALIAS만 표준 태그에 연결하고 UNRESOLVED + NONE은 제외한다
+    선택 태그별 FOUND/NEEDS_REVIEW를 판정한다
+    매핑됐지만 미선택인 태그는 사용자 제안 후보로 만든다
+    담당 업무 sourceEvidenceIds와 기술 evidenceIds의 교집합으로 관련 태그를 연결한다
 
     성공 묶음이 하나도 없으면 추출 실패로 기록한다
     일부 묶음만 실패하면 부분 완료와 실패 묶음을 기록한다
