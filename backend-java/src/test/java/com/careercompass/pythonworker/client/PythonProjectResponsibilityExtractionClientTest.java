@@ -67,6 +67,40 @@ class PythonProjectResponsibilityExtractionClientTest {
     }
 
     @Test
+    void extract_emptyResultArrays_returnsValidatedData() {
+        server.expect(requestTo(
+                        BASE_URL + "/internal/v1/project-responsibility-extractions"))
+                .andRespond(withSuccess(emptyResultsEnvelope(), MediaType.APPLICATION_JSON));
+
+        PythonProjectResponsibilityExtractionEnvelope.Data data = client.extract(validRequest());
+
+        assertThat(data.detectedTechnologies()).isEmpty();
+        assertThat(data.responsibilityEvidenceCandidates()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void extract_malformedJson_throwsNonRetryableResponseInvalid() {
+        server.expect(requestTo(
+                        BASE_URL + "/internal/v1/project-responsibility-extractions"))
+                .andRespond(withSuccess("{", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.extract(validRequest()))
+                .isInstanceOf(PythonProjectResponsibilityExtractionException.class)
+                .satisfies(exception -> {
+                    PythonProjectResponsibilityExtractionException extractionException =
+                            (PythonProjectResponsibilityExtractionException) exception;
+                    assertThat(extractionException.getFailure())
+                            .isEqualTo(
+                                    PythonProjectResponsibilityExtractionFailure.RESPONSE_INVALID);
+                    assertThat(extractionException.getResponseViolation())
+                            .isEqualTo(PythonProjectResponsibilityExtractionResponseViolation
+                                    .RESPONSE_DESERIALIZATION_INVALID);
+                    assertThat(extractionException.isRetryable()).isFalse();
+                });
+    }
+
+    @Test
     void extract_unknownEvidenceReference_throwsResponseInvalid() {
         server.expect(requestTo(
                         BASE_URL + "/internal/v1/project-responsibility-extractions"))
@@ -210,5 +244,27 @@ class PythonProjectResponsibilityExtractionClientTest {
                 """.formatted(
                 TASK_ID, PROJECT_SOURCE_ID, REPOSITORY_VERSION,
                 evidenceIds, detectedTechnologyOverride);
+    }
+
+    private String emptyResultsEnvelope() {
+        return """
+                {
+                  "requestId":"request-1",
+                  "data":{
+                    "extractionTaskId":"%s",
+                    "projectSourceId":"%s",
+                    "repositoryVersion":"%s",
+                    "detectedTechnologies":[],
+                    "responsibilityEvidenceCandidates":[],
+                    "modelExecution":{
+                      "stage":"PROJECT_RESPONSIBILITY_EXTRACTION",
+                      "provider":"OLLAMA",
+                      "model":"qwen2.5:latest"
+                    }
+                  },
+                  "error":null,
+                  "timestamp":"2026-08-13T10:00:00Z"
+                }
+                """.formatted(TASK_ID, PROJECT_SOURCE_ID, REPOSITORY_VERSION);
     }
 }

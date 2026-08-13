@@ -14,6 +14,7 @@ import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtra
 import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionResponseViolation;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -57,9 +58,15 @@ public class PythonProjectResponsibilityExtractionClient {
                     .body(request)
                     .exchange((httpRequest, response) -> response.bodyTo(
                             PythonProjectResponsibilityExtractionEnvelope.class));
-        } catch (RestClientException exception) {
+        } catch (ResourceAccessException exception) {
             throw new PythonProjectResponsibilityExtractionException(
                     PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE, exception);
+        } catch (RestClientException exception) {
+            throw new PythonProjectResponsibilityExtractionException(
+                    PythonProjectResponsibilityExtractionFailure.RESPONSE_INVALID,
+                    PythonProjectResponsibilityExtractionResponseViolation
+                            .RESPONSE_DESERIALIZATION_INVALID,
+                    exception);
         }
         if (envelope == null || envelope.data() == null) {
             throw failureFromEnvelope(envelope);

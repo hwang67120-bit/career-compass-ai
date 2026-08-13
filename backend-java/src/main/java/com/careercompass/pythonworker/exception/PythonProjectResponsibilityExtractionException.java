@@ -25,7 +25,7 @@ public class PythonProjectResponsibilityExtractionException extends RuntimeExcep
         this(failure, responseViolation, null);
     }
 
-    private PythonProjectResponsibilityExtractionException(
+    public PythonProjectResponsibilityExtractionException(
             PythonProjectResponsibilityExtractionFailure failure,
             PythonProjectResponsibilityExtractionResponseViolation responseViolation,
             Throwable cause
