@@ -1,0 +1,11 @@
+package com.careercompass.pythonworker.exception;
+
+public enum PythonProjectResponsibilityExtractionResponseViolation {
+    IDENTIFIER_MISMATCH,
+    REPOSITORY_VERSION_MISMATCH,
+    DETECTED_TECHNOLOGY_INVALID,
+    FORBIDDEN_TECHNOLOGY_FIELD,
+    EVIDENCE_REFERENCE_INVALID,
+    RESPONSIBILITY_CANDIDATE_INVALID,
+    MODEL_EXECUTION_INVALID
+}
