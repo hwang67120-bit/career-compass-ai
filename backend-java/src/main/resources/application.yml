@@ -45,6 +45,16 @@ python:
     # 순차 호출하고 Gemini 폴백까지 있을 수 있어 넉넉하게 잡는다.
     extract-connect-timeout: ${PYTHON_WORKER_EXTRACT_CONNECT_TIMEOUT:3s}
     extract-read-timeout: ${PYTHON_WORKER_EXTRACT_READ_TIMEOUT:60s}
+    project-responsibility:
+      max-selected-technology-tags: ${PROJECT_RESPONSIBILITY_MAX_SELECTED_TECHNOLOGY_TAGS:10}
+      max-detected-technologies: ${PROJECT_RESPONSIBILITY_MAX_DETECTED_TECHNOLOGIES:30}
+      max-readmes: ${PROJECT_RESPONSIBILITY_MAX_READMES:3}
+      max-manifests: ${PROJECT_RESPONSIBILITY_MAX_MANIFESTS:20}
+      max-configurations: ${PROJECT_RESPONSIBILITY_MAX_CONFIGURATIONS:10}
+      max-evidence-items: ${PROJECT_RESPONSIBILITY_MAX_EVIDENCE_ITEMS:30}
+      max-evidence-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_EVIDENCE_TEXT_CODE_POINTS:2000}
+      max-total-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_TOTAL_TEXT_CODE_POINTS:20000}
+      max-responsibility-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_RESPONSIBILITY_TEXT_CODE_POINTS:500}
 
 public-employment:
   api:
