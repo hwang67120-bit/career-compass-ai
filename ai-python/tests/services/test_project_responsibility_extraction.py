@@ -27,9 +27,7 @@ def _request() -> ProjectResponsibilityRequest:
         extractionTaskId="e1",
         projectSourceId="p1",
         selectedTechnologyTags=[
-            {"technologyTagId": "tag-spring", "canonicalName": "Spring Boot"},
-            {"technologyTagId": "tag-redis", "canonicalName": "Redis"},
-            {"technologyTagId": "tag-kafka", "canonicalName": "Kafka"},
+            {"technologyTagId": "tag-react", "canonicalName": "React"},
         ],
         repositorySnapshot={
             "sourceUrl": "https://github.com/example/sample",
@@ -39,49 +37,53 @@ def _request() -> ProjectResponsibilityRequest:
                 {
                     "evidenceId": "readme-1",
                     "path": "README.md",
-                    "text": "Spring Boot로 주문 API를 구현했습니다. Redis 캐시를 적용했습니다.",
+                    "text": "React와 TypeScript로 관리자 대시보드 UI를 구현했습니다.",
                 }
             ],
             "files": [
                 {
-                    "evidenceId": "file-1",
-                    "path": "src/OrderService.java",
+                    "evidenceId": "file-pkg",
+                    "path": "package.json",
+                    "fileType": "MANIFEST",
+                    "relatedTechnologyTagIds": [],
+                    "text": '{"dependencies": {"react": "^18.0.0", "express": "^4.0.0"}}',
+                },
+                {
+                    "evidenceId": "file-src",
+                    "path": "src/App.tsx",
                     "fileType": "SOURCE",
-                    "relatedTechnologyTagIds": ["tag-spring"],
-                    "text": "public Order createOrder() { ... }",
-                }
+                    "relatedTechnologyTagIds": ["tag-react"],
+                    "text": "export default function App() { return null; }",
+                },
             ],
         },
     )
 
 
 def test_grounding_score_overlap() -> None:
-    assert grounding_score("Spring Boot 주문 API 구현", "Spring Boot 주문") == 1.0
-    assert grounding_score("public Order createOrder", "머신러닝 파이프라인 학습") < 0.3
+    assert grounding_score("React 대시보드 구현", "React 대시보드") == 1.0
+    assert grounding_score("export default function App", "머신러닝 파이프라인 학습") < 0.3
 
 
 @pytest.mark.asyncio
-async def test_technology_evidence_found_and_needs_review() -> None:
-    provider = FakeExtractionProvider([])  # 담당 업무는 이 테스트 대상 아님
+async def test_detected_technologies_raw_manifest_and_language() -> None:
+    provider = FakeExtractionProvider([])
     data = await extract_project_evidence(_request(), provider)
-    tech = {t["technologyTagId"]: t for t in data["technologyEvidenceCandidates"]}
+    detected = {(d["detectedName"], d["source"]): d["evidenceIds"] for d in data["detectedTechnologies"]}
 
-    # Spring Boot: 파일 relatedTag(A) + readme 텍스트(B) 둘 다 근거
-    assert tech["tag-spring"]["findingStatus"] == "FOUND"
-    assert set(tech["tag-spring"]["evidenceIds"]) == {"file-1", "readme-1"}
-    # Redis: readme 텍스트에만 등장(B)
-    assert tech["tag-redis"]["findingStatus"] == "FOUND"
-    assert tech["tag-redis"]["evidenceIds"] == ["readme-1"]
-    # Kafka: 어디에도 없음 → NEEDS_REVIEW
-    assert tech["tag-kafka"]["findingStatus"] == "NEEDS_REVIEW"
-    assert tech["tag-kafka"]["evidenceIds"] == []
-    assert all(t["confirmationStatus"] == "UNCONFIRMED" for t in tech.values())
+    # 매니페스트 raw 의존성 — Python 키워드 목록으로 거르지 않고 그대로
+    assert detected[("react", "MANIFEST")] == ["file-pkg"]
+    assert detected[("express", "MANIFEST")] == ["file-pkg"]
+    # 확장자 언어
+    assert detected[("TypeScript", "LANGUAGE")] == ["file-src"]
+    # 표준 태그 id·findingStatus는 응답에 없다
+    assert all("technologyTagId" not in d and "findingStatus" not in d for d in data["detectedTechnologies"])
 
 
 @pytest.mark.asyncio
-async def test_responsibility_valid_citation_derives_related_tags() -> None:
+async def test_responsibility_valid_citation_no_tag_ids() -> None:
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(text="Spring Boot 기반 주문 API 구현", source_evidence_ids=["readme-1", "file-1"])]
+        [ProjectResponsibilityCandidate(text="관리자 대시보드 UI 구현", source_evidence_ids=["readme-1"])]
     )
     data = await extract_project_evidence(_request(), provider)
     resp = data["responsibilityEvidenceCandidates"]
@@ -89,10 +91,10 @@ async def test_responsibility_valid_citation_derives_related_tags() -> None:
     assert len(resp) == 1
     assert resp[0]["evidenceId"] == "project-responsibility-1"
     assert resp[0]["category"] == "PROJECT_RESPONSIBILITY"
-    assert resp[0]["sourceEvidenceIds"] == ["readme-1", "file-1"]
-    # relatedTechnologyTagIds는 인용한 파일의 태그에서 유도(readme엔 태그 없음)
-    assert resp[0]["relatedTechnologyTagIds"] == ["tag-spring"]
+    assert resp[0]["sourceEvidenceIds"] == ["readme-1"]
     assert resp[0]["confirmationStatus"] == "UNCONFIRMED"
+    # 담당 업무 후보는 표준 태그 id를 반환하지 않는다
+    assert "relatedTechnologyTagIds" not in resp[0]
 
 
 @pytest.mark.asyncio
@@ -106,9 +108,8 @@ async def test_responsibility_invalid_citation_dropped() -> None:
 
 @pytest.mark.asyncio
 async def test_responsibility_ungrounded_text_dropped() -> None:
-    # 근거 id는 유효하지만 text가 근거와 완전히 동떨어짐 → 지어냄으로 보고 버림
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(text="머신러닝 파이프라인 텐서플로 학습 구축", source_evidence_ids=["file-1"])]
+        [ProjectResponsibilityCandidate(text="머신러닝 파이프라인 텐서플로 학습", source_evidence_ids=["readme-1"])]
     )
     data = await extract_project_evidence(_request(), provider)
     assert data["responsibilityEvidenceCandidates"] == []
