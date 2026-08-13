@@ -1,6 +1,6 @@
 # 후보 재정렬 (리랭킹)
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. [embedding-similarity.md](embedding-similarity.md)에서 계산한 항목별 유사도와 [error-calibration.md](error-calibration.md)의 보정값을 입력으로 사용한다. 채용공고·회사 데이터가 시스템에 들어오는 경로는 이 문서의 범위가 아니며 별도로 확인 필요 상태다.
+[embedding-similarity.md](embedding-similarity.md)의 항목별 유사도와 [error-calibration.md](error-calibration.md)의 보정값을 입력으로 받는다.
 
 ## 목적과 범위
 

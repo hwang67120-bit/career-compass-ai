@@ -1,6 +1,6 @@
 # 오차 범위 계산과 보정
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. [training-data-standards.md](training-data-standards.md)에 정의된 기준을 만족하는 데이터가 충분히 쌓인 뒤에만 적용 대상이 되며, 그 전까지는 설계로만 존재한다.
+[training-data-standards.md](training-data-standards.md) 기준을 만족하는 데이터가 쌓인 뒤에만 적용하는 설계 문서다. 그 전까지는 설계로만 존재한다.
 
 ## 목적과 범위
 
