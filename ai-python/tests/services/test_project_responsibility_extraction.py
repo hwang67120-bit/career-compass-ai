@@ -169,6 +169,30 @@ async def test_responsibility_ungrounded_text_dropped() -> None:
 
 
 @pytest.mark.asyncio
+async def test_responsibility_oversized_text_dropped() -> None:
+    # 근거·grounding은 통과하지만 500자를 넘는 후보는 잘라내지 않고 버린다(계약).
+    long_text = "React 대시보드 구현 " * 40
+    assert len(long_text) > 500
+    request = ProjectResponsibilityRequest(
+        extractionTaskId="e1",
+        projectSourceId="p1",
+        selectedTechnologyTags=[{"technologyTagId": "tag-react", "canonicalName": "React"}],
+        repositorySnapshot={
+            "sourceUrl": "https://github.com/example/sample",
+            "fetchedAt": "2026-08-12T08:00:00Z",
+            "repositoryVersion": "abc123",
+            "readmes": [{"evidenceId": "readme-1", "path": "README.md", "text": long_text}],
+            "files": [],
+        },
+    )
+    provider = FakeExtractionProvider(
+        [ProjectResponsibilityCandidate(text=long_text, source_evidence_ids=["readme-1"])]
+    )
+    data = await extract_project_evidence(request, provider)
+    assert data["responsibilityEvidenceCandidates"] == []
+
+
+@pytest.mark.asyncio
 async def test_model_execution_and_ids_echoed() -> None:
     provider = FakeExtractionProvider([])
     data = await extract_project_evidence(_request(), provider)
