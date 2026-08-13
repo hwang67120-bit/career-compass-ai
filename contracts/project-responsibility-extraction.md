@@ -130,6 +130,8 @@ X-Request-Id: {uuid}
 - Python 응답에는 `technologyTagId`, `canonicalName`, `findingStatus`를 포함하지 않는다.
   담당 업무 후보도 표준 태그 ID를 반환하지 않고 입력의 `sourceEvidenceIds`만 참조한다.
 - `text`는 입력 근거로 확인 가능한 최소 업무 표현이며 새로운 성과·역할을 생성하지 않는다.
+- `responsibilityEvidenceCandidates[].text`는 Unicode 코드 포인트 기준 500자 이하다.
+  500자를 넘는 후보는 내용을 잘라 반환하지 않고 응답 후보에서 제외한다.
 - 모든 후보는 `UNCONFIRMED`이며, Java 사용자 API를 통해 브라우저에 AI 분석 미리보기로 표시한다.
 - 미리보기는 저장소에서 해석한 기술·담당 업무 후보와 최소 근거를 보여주지만 최종 채용공고 비교 결과가 아니다.
 - Python은 영구 저장하거나 브라우저에 직접 응답하지 않는다. Java는 저장소 버전, 후보, 최소 근거와 사용자 확인 이력을 관리한다.
