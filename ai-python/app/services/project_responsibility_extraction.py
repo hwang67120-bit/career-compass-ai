@@ -22,6 +22,11 @@ from app.services.repository_evidence import _EXTENSION_LANGUAGES
 # (지어낸) 후보를 거른다. 요약이라 정확 일치는 아니므로 낮은 바닥값만 둔다.
 _GROUNDING_FLOOR = 0.3
 
+# 계약(project-responsibility-extraction.md L69-70): 감지 기술은 근거 개수 내림차순,
+# 정규화(소문자) detectedName 오름차순으로 정렬해 상위 30개만 반환한다. Java도 같은
+# 상한(30)으로 응답을 검증한다.
+_MAX_DETECTED_TECHNOLOGIES = 30
+
 
 def _tokens(text: str) -> list[str]:
     return "".join(c if c.isalnum() else " " for c in text.lower()).split()
@@ -42,7 +47,8 @@ def _detected_technologies(request: ProjectResponsibilityRequest) -> list[dict]:
     - MANIFEST: `fileType=MANIFEST` 파일 text를 형식별 파서로 파싱해 의존성
       식별자를 그대로 낸다(Python 키워드 목록으로 거르지 않음).
     - LANGUAGE: 파일 경로 확장자로 언어를 감지한다.
-    같은 이름은 근거(evidenceIds)를 합친다.
+    같은 이름은 근거(evidenceIds)를 합친다. 계약대로 근거 개수 내림차순, 정규화
+    detectedName 오름차순으로 정렬해 상위 30개만 남긴다.
     """
     snapshot = request.repository_snapshot
 
@@ -76,7 +82,8 @@ def _detected_technologies(request: ProjectResponsibilityRequest) -> list[dict]:
         {"detectedName": name, "source": "LANGUAGE", "evidenceIds": ids}
         for name, ids in language_ids.items()
     ]
-    return detected
+    detected.sort(key=lambda item: (-len(item["evidenceIds"]), item["detectedName"].lower()))
+    return detected[:_MAX_DETECTED_TECHNOLOGIES]
 
 
 async def _responsibility_evidence(

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.schemas.project_responsibility import (
@@ -78,6 +80,57 @@ async def test_detected_technologies_raw_manifest_and_language() -> None:
     assert detected[("TypeScript", "LANGUAGE")] == ["file-src"]
     # 표준 태그 id·findingStatus는 응답에 없다
     assert all("technologyTagId" not in d and "findingStatus" not in d for d in data["detectedTechnologies"])
+
+
+def _manifest_request(files: list[dict]) -> ProjectResponsibilityRequest:
+    return ProjectResponsibilityRequest(
+        extractionTaskId="e1",
+        projectSourceId="p1",
+        selectedTechnologyTags=[{"technologyTagId": "tag-x", "canonicalName": "X"}],
+        repositorySnapshot={
+            "sourceUrl": "https://github.com/example/sample",
+            "fetchedAt": "2026-08-12T08:00:00Z",
+            "repositoryVersion": "abc123",
+            "readmes": [],
+            "files": files,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_detected_technologies_sorted_by_evidence_then_name_capped_30() -> None:
+    # 계약(L69-70): 근거 개수 내림차순 → 정규화 이름 오름차순 → 상위 30개.
+    # 두 매니페스트에 공통인 popular는 근거 2개라 이름과 무관하게 맨 앞이어야 한다.
+    deps_a = {"popular": "1", **{f"a{index:02d}": "1" for index in range(20)}}
+    deps_b = {"popular": "1", **{f"b{index:02d}": "1" for index in range(15)}}
+    files = [
+        {
+            "evidenceId": "file-a",
+            "path": "a/package.json",
+            "fileType": "MANIFEST",
+            "relatedTechnologyTagIds": [],
+            "text": json.dumps({"dependencies": deps_a}),
+        },
+        {
+            "evidenceId": "file-b",
+            "path": "b/package.json",
+            "fileType": "MANIFEST",
+            "relatedTechnologyTagIds": [],
+            "text": json.dumps({"dependencies": deps_b}),
+        },
+    ]
+    provider = FakeExtractionProvider([])
+    data = await extract_project_evidence(_manifest_request(files), provider)
+    detected = data["detectedTechnologies"]
+
+    # 감지 36개지만 상위 30개로 잘린다.
+    assert len(detected) == 30
+    # 근거 2개인 popular가 이름과 무관하게 맨 앞.
+    assert detected[0]["detectedName"] == "popular"
+    assert detected[0]["evidenceIds"] == ["file-a", "file-b"]
+    # 나머지(근거 1개)는 정규화 이름 오름차순.
+    rest = [item["detectedName"] for item in detected[1:]]
+    assert rest == sorted(rest, key=str.lower)
 
 
 @pytest.mark.asyncio
