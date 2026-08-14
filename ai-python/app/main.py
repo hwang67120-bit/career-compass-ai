@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.health.router import router as health_router
+from app.health.router import liveness_router, router as health_router
 from app.job_postings.router import router as job_postings_router
 from app.providers.ollama_process import ensure_ollama_running
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
@@ -41,13 +41,15 @@ async def lifespan(app: FastAPI):
             logger.info("Ollama 연결을 확인했습니다.")
         else:
             logger.warning(
-                "Ollama를 자동으로 켜지 못했습니다. 설치 여부와 PATH를 확인하세요."
+                "Ollama에 연결할 수 없습니다. 원격(OLLAMA_BASE_URL) 모드면 모델 머신 상태를, "
+                "로컬 모드면 설치 여부와 PATH를 확인하세요."
             )
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(health_router)
+app.include_router(liveness_router)
 app.include_router(job_postings_router)
 
 
