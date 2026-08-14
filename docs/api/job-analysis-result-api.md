@@ -318,6 +318,40 @@ MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPON
 
 ## 12. 사용자 시나리오
 
+### 분석 시작부터 결과 조회
+
+| 순서 | 사용자·브라우저 요청 | 서버 처리와 응답 |
+|---:|---|---|
+| 1 | `PUT /api/v1/user-profile` | 희망 직무와 선택 기술을 새 프로필 버전으로 저장 |
+| 2 | `POST /api/v1/job-analyses` | 소유권과 입력 버전을 검증하고 `202 Accepted`, `Location` 반환 |
+| 3 | `GET /api/v1/job-analyses/{jobAnalysisId}` 또는 SSE 연결 | `QUEUED`, `RUNNING`과 현재 단계를 표시 |
+| 4 | 프로젝트 분석 미리보기 알림 수신 | Java가 Python 추출 결과를 검증·저장하고 분석을 `AWAITING_USER_CONFIRMATION`으로 전환 |
+| 5 | `GET /api/v1/project-sources/{projectSourceId}/responsibility-candidates` | 미확정 담당 업무 후보와 최소 근거 반환 |
+| 6 | 각 후보에 `PUT /api/v1/project-responsibility-candidates/{candidateId}/decision` | 확인·수정 후 확인·거부를 저장하고 마지막 결정이면 분석 재개 식별자 반환 |
+| 7 | 상태 API 또는 SSE 재연결 | `QUEUED → RUNNING → COMPARING_EVIDENCE` 진행 표시 |
+| 8 | 완료 상태 확인 후 `GET /api/v1/job-analyses/{jobAnalysisId}/result` | `COMPLETED` 또는 `PARTIALLY_COMPLETED` 결과와 `expiresAt` 반환 |
+| 9 | 필요 시 `DELETE /api/v1/job-analyses/{jobAnalysisId}/result` | 결과와 최소 근거를 삭제하고 삭제 시각을 `200 OK`로 반환 |
+
+브라우저는 SSE가 끊기면 상태 조회 API로 복구한다. 상태 응답만 보고 결과를 추측하지 않고,
+`COMPLETED` 또는 `PARTIALLY_COMPLETED`를 확인한 뒤 결과 API를 호출한다.
+
+### 서버 처리 순서와 트랜잭션 경계
+
+1. 분석 시작 트랜잭션에서 사용자 소유권, 프로필 버전과 프로젝트 출처를 검증하고
+   `JobAnalysis`를 `QUEUED`로 저장한다.
+2. GitHub, 공공 채용 API와 Python HTTP 호출은 데이터베이스 트랜잭션 밖에서 실행한다.
+3. Python 프로젝트 후보를 검증한 뒤 후보와 최소 근거를 저장하고
+   `AWAITING_USER_CONFIRMATION`으로 전환한다.
+4. 마지막 사용자 결정 트랜잭션에서 후보 결정, 새 프로필 버전 생성, 분석 입력 버전 고정을
+   원자적으로 처리한다. 커밋이 끝난 뒤에만 작업을 다시 대기열에 넣는다.
+5. Java가 필수·우대 기술 조건을 판정하고 Python이 확인된 프로젝트 근거의 의미를 비교한다.
+6. 공고별 조건 결과, 의미 비교, 최소 근거, provider·model과 계산 시각을 저장한다.
+7. 결과 저장과 `COMPLETED` 또는 `PARTIALLY_COMPLETED` 전이는 같은 트랜잭션에서 처리한다.
+   최종 상태만 저장되고 결과가 없는 상태가 노출되지 않게 한다.
+
+같은 분석을 여러 워커가 처리하지 않도록 기존 작업 선점 규칙을 사용한다. 사용자 후보 결정은
+낙관적 잠금 버전으로 충돌을 감지하며, 같은 결정의 재전송만 멱등하게 `200`을 반환한다.
+
 ### 정상 완료
 
 1. Java가 공고별 필수·우대 기술 조건을 판정한다.
