@@ -1,0 +1,61 @@
+name: CI Integration (Python)
+
+# 서버 self-hosted runner에서 실제 Ollama(별도 모델 머신)로 통합 테스트를 돌린다.
+# 공개 repo 보안: PR·push에서는 절대 실행하지 않고 수동(workflow_dispatch)만 허용.
+# 실행 방식: 서버에 uv·Python을 설치하지 않고 컨테이너로 pytest를 돌린다(Docker만 사용).
+# 실제 모델 머신 주소는 YAML에 쓰지 않고 repo secret OLLAMA_BASE_URL로 주입한다.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    runs-on: [self-hosted, Linux]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run real_ollama tests in a container
+        working-directory: ai-python
+        env:
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}   # 예: http://192.168.0.6:11434
+          INTERNAL_SERVICE_TOKEN: ci-dummy-token
+          OLLAMA_MODEL: exaone3.5:latest
+          OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL: qwen2.5:latest
+          OLLAMA_EVIDENCE_JUDGE_MODEL: qwen2.5:latest
+          OLLAMA_PROJECT_RESPONSIBILITY_MODEL: qwen2.5:latest
+          OLLAMA_EMBEDDING_MODEL: nomic-embed-text:latest
+          GEMINI_API_KEY: dummy
+          GEMINI_MODEL: dummy
+          GEMINI_EMBEDDING_MODEL: dummy
+          JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH: "2000"
+        run: |
+          if [ -z "$OLLAMA_BASE_URL" ]; then
+            echo "::error::secret OLLAMA_BASE_URL 미설정. repo Settings > Secrets에 모델 머신 주소를 넣어야 함."
+            exit 1
+          fi
+          # 소스는 읽기 전용 마운트, venv는 컨테이너 내부(/opt/venv)로 격리해 체크아웃 오염 방지.
+          # LAN의 모델 머신에 도달 안 되면 아래 docker run에 --network host 추가로 대체 가능.
+          docker run --rm \
+            -v "$PWD":/app:ro -w /app \
+            -e UV_PROJECT_ENVIRONMENT=/opt/venv \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e OLLAMA_BASE_URL \
+            -e INTERNAL_SERVICE_TOKEN \
+            -e OLLAMA_MODEL \
+            -e OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL \
+            -e OLLAMA_EVIDENCE_JUDGE_MODEL \
+            -e OLLAMA_PROJECT_RESPONSIBILITY_MODEL \
+            -e OLLAMA_EMBEDDING_MODEL \
+            -e GEMINI_API_KEY \
+            -e GEMINI_MODEL \
+            -e GEMINI_EMBEDDING_MODEL \
+            -e JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH \
+            ghcr.io/astral-sh/uv:python3.10-bookworm-slim \
+            bash -c "uv sync --locked && uv run pytest -m real_ollama -p no:cacheprovider"
