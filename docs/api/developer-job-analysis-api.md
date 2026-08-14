@@ -55,6 +55,7 @@ Java–Python 검색은 [채용공고 검색 도구 계약](../../contracts/job-
 | 분석 이벤트 | `GET` | `/api/v1/job-analyses/{jobAnalysisId}/events` |
 | 분석 취소 | `POST` | `/api/v1/job-analyses/{jobAnalysisId}/cancellations` |
 | 분석 결과 | `GET` | `/api/v1/job-analyses/{jobAnalysisId}/result` |
+| 분석 결과 삭제 | `DELETE` | `/api/v1/job-analyses/{jobAnalysisId}/result` |
 
 기존 공개 GitHub 저장소 등록 API
 `POST /api/v1/project-sources/github`는 유지한다.
@@ -247,7 +248,8 @@ GET /api/v1/job-analyses/{jobAnalysisId}/result
 `NOT_APPLICABLE`은 제외한다. 유사도는 합격 확률이나 실제 능력 보장이 아니다.
 
 상세 응답 필드, 상태별 HTTP 응답과 프론트 표시 규칙은
-[채용공고 분석 결과 API](job-analysis-result-api.md) 제안을 따른다.
+[채용공고 분석 결과 API](job-analysis-result-api.md)를 따른다. 결과는 완료 또는 부분 완료
+시각부터 30일 동안 보관하며 사용자가 결과 삭제 API로 즉시 삭제할 수 있다.
 
 ## 저장 정책
 
