@@ -352,6 +352,179 @@ MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPON
 같은 분석을 여러 워커가 처리하지 않도록 기존 작업 선점 규칙을 사용한다. 사용자 후보 결정은
 낙관적 잠금 버전으로 충돌을 감지하며, 같은 결정의 재전송만 멱등하게 `200`을 반환한다.
 
+## 13. Java 구현 의사코드
+
+이 절은 구현 순서 검토용이며 실제 Java 클래스·DTO 이름을 확정하지 않는다. 외부 HTTP 호출은
+트랜잭션 밖에서 실행하고, 결과 묶음과 최종 분석 상태는 한 트랜잭션에서 저장한다.
+
+### 조건 판정과 의미 비교
+
+```text
+compareJobAnalysis(jobAnalysisId):
+    analysisInput = readFixedAnalysisInput(jobAnalysisId)
+
+    if analysisInput.reviewStatus is not REVIEW_COMPLETED:
+        transitionAnalysisTo(AWAITING_USER_CONFIRMATION)
+        return
+
+    extractedPostings = readValidatedJobPostings(jobAnalysisId)
+
+    if extractedPostings is empty:
+        saveFinalResultAndStatus(
+            postings = [],
+            status = COMPLETED,
+            incompleteSections = []
+        )
+        return
+
+    conditionResults = []
+    for each posting in extractedPostings:
+        conditionResults.add(compareTechnologyConditions(
+            requiredSkills = posting.requiredSkills,
+            preferredSkills = posting.preferredSkills,
+            fixedUserProfile = analysisInput.userProfileVersion
+        ))
+
+    confirmedUserEvidence = readConfirmedProjectResponsibilities(
+        analysisInput.userProfileVersion
+    )
+
+    try:
+        similarityResponse = pythonEvidenceSimilarityClient.compare(
+            jobEvidence = extractedPostings.responsibilityEvidence,
+            userEvidence = confirmedUserEvidence
+        )
+        validateSimilarityResponse(similarityResponse)
+        similarityResults = mapValidatedSimilarityResults(similarityResponse)
+        incompleteSections = []
+        finalStatus = COMPLETED
+    catch retryable or nonRetryable Python dependency failure:
+        similarityResults = markSimilarityAsFailed()
+        incompleteSections = createSimilarityFailureSections()
+        finalStatus = PARTIALLY_COMPLETED
+
+    in one transaction:
+        lockOwnedJobAnalysis(jobAnalysisId)
+        validateCurrentStep(COMPARING_EVIDENCE)
+        saveConditionResults(conditionResults)
+        saveSimilarityResults(similarityResults)
+        saveMinimumEvidence()
+        saveValidatedModelExecutionIfPresent()
+        saveIncompleteSections(incompleteSections)
+        transitionAnalysisTo(finalStatus, FINISHED)
+        appendAnalysisFinishedEvent()
+```
+
+Python 장애가 발생해도 Java 조건 결과가 하나 이상 있으면 `PARTIALLY_COMPLETED`다. 조건 결과도
+만들 수 없으면 결과를 저장하지 않고 `FAILED`로 전환한다. `NOT_CALCULABLE`은 Python 장애가
+아니므로 `COMPLETED` 경로에서 저장한다. 오류의 재시도 가능 여부는 저장·표시하지만 MVP에서
+자동 재시도하지 않는다.
+
+### 기술 조건 판정
+
+```text
+compareTechnologyCondition(jobRequirement, fixedUserProfile):
+    resolvedTag = resolveJobTechnologyTag(jobRequirement.rawName)
+
+    if resolvedTag is absent:
+        return NEEDS_REVIEW(reason = JOB_TECHNOLOGY_UNRESOLVED)
+
+    if fixedUserProfile has owned resolvedTag:
+        return MATCHED(reason = CANONICAL_MATCH or ALIAS_MATCH)
+
+    if fixedUserProfile has explicitlyAbsent resolvedTag:
+        return MISMATCHED(reason = USER_CONFIRMED_ABSENT)
+
+    return NEEDS_REVIEW(reason = USER_INPUT_MISSING)
+
+calculateMatchRate(items):
+    comparable = items where status is MATCHED or MISMATCHED
+
+    if comparable is empty:
+        return null
+
+    return count(MATCHED) / count(comparable)
+```
+
+현재 프로필에는 명시적인 미보유 입력이 없으므로 `USER_CONFIRMED_ABSENT` 분기는 후속 프로필
+계약이 구현되기 전까지 도달하지 않는다. 단순히 사용자 기술 목록에 없다는 이유로
+`MISMATCHED`를 만들지 않는다.
+
+### 결과 조회
+
+```text
+retrieveJobAnalysisResult(currentUserId, jobAnalysisId, now):
+    in read-only transaction:
+        analysis = findOwnedAnalysisOr404(currentUserId, jobAnalysisId)
+
+        if analysis.status is QUEUED, RUNNING,
+           AWAITING_USER_CONFIRMATION or CANCELLATION_REQUESTED:
+            throw JOB_ANALYSIS_RESULT_NOT_READY
+
+        if analysis.status is FAILED or CANCELLED:
+            throw JOB_ANALYSIS_RESULT_NOT_FOUND
+
+        result = findResultOr404(jobAnalysisId)
+
+        if result is deleted or result.expiresAt <= now:
+            throw JOB_ANALYSIS_RESULT_NOT_FOUND
+
+        validateEvidenceReferences(result)
+        return mapResultResponse(result)
+```
+
+다른 사용자 소유 분석도 `404`로 응답하며 존재 여부를 노출하지 않는다.
+
+### 사용자 결과 삭제
+
+```text
+deleteJobAnalysisResult(currentUserId, jobAnalysisId, now):
+    in one transaction:
+        analysis = lockOwnedAnalysisOr404(currentUserId, jobAnalysisId)
+
+        if analysis.status is QUEUED, RUNNING,
+           AWAITING_USER_CONFIRMATION or CANCELLATION_REQUESTED:
+            throw JOB_ANALYSIS_RESULT_DELETE_CONFLICT
+
+        result = findResultOr404(jobAnalysisId)
+
+        deleteConditionResults(result)
+        deleteSimilarityResults(result)
+        deleteMinimumEvidence(result)
+        deleteModelExecution(result)
+        markResultDeleted(deletedAt = now)
+
+        return { jobAnalysisId, deletedAt = now }
+```
+
+프로필, 프로젝트 출처와 채용공고 원문 버전은 결과 삭제 트랜잭션에 포함하지 않는다.
+
+### 자동 만료
+
+```text
+expireJobAnalysisResults(now):
+    expiredResultIds = listResultIdsWhoseExpiresAtIsBefore(now)
+
+    for each resultId in expiredResultIds:
+        in a separate transaction:
+            result = lockResultIfNotDeleted(resultId)
+
+            if result is absent or result.expiresAt > now:
+                continue
+
+            deleteConditionResults(result)
+            deleteSimilarityResults(result)
+            deleteMinimumEvidence(result)
+            deleteModelExecution(result)
+            markResultExpired(expiredAt = now)
+```
+
+만료 작업의 실행 주기와 한 번에 처리할 개수는 운영 설정으로 관리하며 코드에 고정하지 않는다.
+같은 결과에 사용자 삭제와 자동 만료가 동시에 실행되면 잠금을 먼저 얻은 작업만 상세 데이터를
+삭제하고, 나중 작업은 이미 삭제된 상태를 확인한 뒤 종료한다.
+
+## 14. 결과 상태별 시나리오
+
 ### 정상 완료
 
 1. Java가 공고별 필수·우대 기술 조건을 판정한다.
@@ -383,7 +556,7 @@ MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPON
 이후 결과 조회는 동일하게 `404`를 반환하며, 모델 변경을 이유로 결과를 자동 복원하거나
 재계산하지 않는다.
 
-## 13. API 테스트
+## 15. API 테스트
 
 1. 현재 사용자 소유의 `COMPLETED` 결과 조회
 2. `PARTIALLY_COMPLETED`에서 성공 결과와 `incompleteSections` 동시 반환
@@ -403,7 +576,7 @@ MVP 의미 비교 대상은 공고 `RESPONSIBILITY`와 사용자 `PROJECT_RESPON
 16. 완료 후 30일 만료와 상세 결과·최소 근거 삭제
 17. 과거 결과의 모델 변경 후 자동 재계산 없음
 
-## 14. 확정한 MVP 결정
+## 16. 확정한 MVP 결정
 
 - 현재 프로필은 보유 기술만 저장한다. 사용자 목록에 없다는 이유만으로 `MISMATCHED`를
   만들지 않고 `NEEDS_REVIEW`로 처리한다. 명시적인 `미보유` 입력은 후속 프로필 계약에서
