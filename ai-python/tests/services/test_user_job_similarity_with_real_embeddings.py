@@ -8,6 +8,8 @@ from app.services.job_posting_embedding import embed_job_posting
 from app.services.similarity import calculate_cosine_similarity
 from app.services.user_profile_embedding import embed_user_profile
 
+pytestmark = pytest.mark.real_gemini
+
 
 @pytest.fixture
 def provider() -> GeminiEmbeddingProvider:

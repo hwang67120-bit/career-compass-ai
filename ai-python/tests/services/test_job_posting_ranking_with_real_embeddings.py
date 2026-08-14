@@ -6,6 +6,8 @@ from app.providers.settings import GeminiSettings
 from app.schemas.job_posting import JobPostingExtraction, JobPostingSkill
 from app.services.job_posting_ranking import rank_job_postings
 
+pytestmark = pytest.mark.real_gemini
+
 
 @pytest.fixture
 def provider() -> GeminiEmbeddingProvider:

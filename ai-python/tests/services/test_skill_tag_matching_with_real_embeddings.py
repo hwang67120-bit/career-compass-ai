@@ -6,6 +6,8 @@ from app.providers.settings import GeminiSettings
 from app.schemas.skill_tag_match import TagMatchRecommendation
 from app.services.skill_tag_matching import match_skill_tag
 
+pytestmark = pytest.mark.real_gemini
+
 
 @pytest.fixture
 def provider() -> GeminiEmbeddingProvider:

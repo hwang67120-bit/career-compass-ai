@@ -5,6 +5,8 @@ from app.providers.embedding import GeminiEmbeddingProvider
 from app.providers.settings import GeminiSettings
 from app.services.reranking import rerank_candidates
 
+pytestmark = pytest.mark.real_gemini
+
 
 @pytest.fixture
 def provider() -> GeminiEmbeddingProvider:
