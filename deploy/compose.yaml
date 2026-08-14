@@ -61,6 +61,7 @@ services:
       ai-python:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: prod          # application-prod.yml(OAuth·세션) 활성화
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       PYTHON_WORKER_BASE_URL: http://ai-python:8000
       DB_HOST: postgres
@@ -68,9 +69,15 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+      # 필수(기본값 없음) — 없으면 Java 기동 실패
+      GITHUB_API_CONNECT_TIMEOUT: "3s"
+      GITHUB_API_READ_TIMEOUT: "10s"
       PUBLIC_EMPLOYMENT_API_SERVICE_KEY: ${PUBLIC_EMPLOYMENT_API_SERVICE_KEY}
+      # OAuth(prod 프로파일) — 로그인에 필요. GitHub OAuth App client-id/secret.
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET}
+      # HTTP(비-HTTPS) LAN 테스트라 세션 쿠키 Secure 끔(안 그러면 로그인 쿠키 미전송)
+      SESSION_COOKIE_SECURE: "false"
     # 브라우저 접근점 — Java만 공개. JAVA_BIND_ADDRESS로 노출 범위 제한(기본 127.0.0.1).
     # 내부망 브라우저 접근이 필요하면 서버에서 LAN IP로 지정 + 방화벽으로 범위 제한.
     ports:
