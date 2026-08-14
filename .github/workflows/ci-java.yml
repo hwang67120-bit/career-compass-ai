@@ -1,0 +1,50 @@
+name: CI (Java)
+
+on:
+  pull_request:
+    paths:
+      - "backend-java/**"
+      - "contracts/**"
+      - ".github/workflows/ci-java.yml"
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - "backend-java/**"
+      - "contracts/**"
+      - ".github/workflows/ci-java.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend-java
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.14"
+
+      - name: Run tests
+        run: gradle test --no-daemon
