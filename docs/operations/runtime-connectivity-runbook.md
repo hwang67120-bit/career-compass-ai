@@ -103,11 +103,114 @@ Host career-test-server
 
 - `backend-java/compose.yaml`에는 PostgreSQL만 있고 healthcheck는 아직 없다.
 - Java와 Python용 Dockerfile(도커 이미지 생성 파일)과 통합 Compose 서비스는 아직 없다.
-- `.github/workflows` CI workflow(자동 검증 절차)는 아직 없다.
-- 서버의 systemd(리눅스 서비스 관리자) 등록, 자동 시작과 롤백 스크립트는 아직 없다.
+- GitHub 호스팅 실행기의 Java·Python 단위 CI는 있으며, 서버 통합 workflow(자동 검증 절차)는 아직 없다.
+- 서버의 앱 자동 시작과 롤백 구성은 아직 없다.
 
 최초 서버 확인에서는 기존 실행 도구로 Java·Python을 수동 실행하고 PostgreSQL만 Compose로
 시작한다. 위 누락 항목을 구현하고 검증하기 전에는 자동 배포가 준비됐다고 표시하지 않는다.
+
+## 컨테이너 환경 파일 검토안 — 실제 파일 구현 전
+
+상태: **제안**. 이 절은 필요한 파일과 책임을 검토하기 위한 문서이며 Dockerfile, Compose와
+환경 파일을 아직 확정하거나 구현하지 않는다. 사용자 검토 뒤 구성을 하나로 통일하고 Python
+담당이 실제 파일을 작성한다. Codex는 이 단계에서 배포 파일을 수정하지 않는다.
+
+### 파일 후보와 책임
+
+| 영역 | 파일 후보 | 책임 |
+| --- | --- | --- |
+| Java | `backend-java/Dockerfile` | JDK 21로 빌드하고 JRE 21 실행 이미지를 만든다. |
+| Java | `backend-java/.dockerignore` | `.gradle`, `build`, `.idea`, `.env`, 로그와 로컬 생성물을 제외한다. |
+| Python | `ai-python/Dockerfile` | Python 3.10과 잠긴 `uv.lock`으로 FastAPI 실행 이미지를 만든다. |
+| Python | `ai-python/.dockerignore` | `.venv`, `__pycache__`, `.pytest_cache`, `.env`와 평가 로그를 제외한다. |
+| 공통 | `deploy/compose.yaml` | Java, Python과 PostgreSQL의 네트워크·상태 점검·시작 순서·로그 회전을 통일한다. |
+| 공통 | `deploy/.env.example` | 실제 값 없이 서버 환경변수 이름과 자리표시자만 제공한다. |
+
+- 기존 `backend-java/compose.yaml`과 새 통합 Compose를 함께 운영하지 않는다.
+- 서버용 환경변수 이름은 `deploy/.env.example` 한 곳에 모으고 실제 `deploy/.env`는 Git에서 제외한다.
+- 프론트 이미지, Ollama 이미지, 자동 배포 workflow와 모니터링 도구는 이번 범위가 아니다.
+
+### Java 이미지 요구사항
+
+- build(빌드)와 runtime(실행)을 분리하는 multi-stage build(다단계 빌드)를 사용한다.
+- 기준은 Java 21과 Gradle 8.14다. 현재 `gradle-wrapper.properties`만 있고 `gradlew`와
+  `gradle-wrapper.jar`가 없으므로 구현 전에 다음 중 하나를 확정한다.
+  1. CI와 같은 `gradle:8.14-jdk21` 빌더 이미지를 사용한다.
+  2. Gradle Wrapper 전체 파일을 복원한 뒤 `./gradlew`로 빌드한다.
+- 실행 이미지는 JRE 21만 포함하고 빌드 도구, 소스와 Gradle cache(캐시)를 포함하지 않는다.
+- non-root(관리자 권한이 아닌 사용자)로 실행한다.
+- 비밀번호, OAuth secret, API 키와 내부 토큰을 이미지의 `ARG`, `ENV`, layer(이미지 계층)에 넣지 않는다.
+- Java는 컨테이너 안에서 `8080`을 수신하고 `/actuator/health`를 상태 점검 후보로 사용한다.
+- Python과 DB는 컨테이너 loopback이 아니라 Compose 서비스 DNS를 사용한다.
+
+```text
+PYTHON_WORKER_BASE_URL=http://ai-python:8000
+DB_HOST=postgres
+DB_PORT=5432
+```
+
+### Python 이미지 요구사항
+
+- Python 3.10 slim 기반을 사용하고 `uv` 버전 또는 이미지 digest(내용 식별값)를 고정한다.
+- `pyproject.toml`과 `uv.lock`을 먼저 복사해 `uv sync --locked --no-dev`로 실행 의존성만 설치한다.
+- 로컬 `.venv`를 복사하지 않고 이미지 안에서 새로 만든다.
+- non-root 사용자로 실행하고 애플리케이션과 가상환경만 포함한다.
+- Uvicorn은 컨테이너 내부에서 `0.0.0.0:8000`을 수신하되 host(호스트)에는 공개하지 않는다.
+- Ollama 실행 파일과 모델을 이미지에 설치하지 않는다. `OLLAMA_BASE_URL`은 별도 모델 컴퓨터를 가리킨다.
+- Ollama가 꺼져 있어도 Python API는 시작돼야 하며 원격 장애를 로컬 PATH 문제로 기록하지 않아야 한다.
+
+### 통합 Compose 요구사항
+
+- 서비스 이름 후보는 `backend-java`, `ai-python`, `postgres`다. Ollama 서비스는 만들지 않는다.
+- Python과 PostgreSQL 포트는 host에 공개하지 않고 Java만 내부망 브라우저 접근을 허용한다.
+- 실제 IP 대신 `JAVA_BIND_ADDRESS`와 서버 방화벽으로 공개 범위를 제한한다.
+- PostgreSQL 데이터는 named volume(이름이 있는 영속 볼륨)에 저장한다.
+- PostgreSQL과 Python 상태 점검 뒤 Java를 시작하도록 의존 순서를 검증한다.
+- `restart: unless-stopped` 후보를 사용하되 종료 원인과 직전 로그가 가려지지 않게 한다.
+- 각 서비스 로그에 크기와 보관 파일 개수 제한을 둔다.
+- `INTERNAL_SERVICE_TOKEN`은 Java와 Python에 같은 값을 주입하되 파일과 로그에 값을 기록하지 않는다.
+
+### 서버 환경변수 분리
+
+| 구분 | 환경변수 |
+| --- | --- |
+| 공통 비밀값 | `INTERNAL_SERVICE_TOKEN` |
+| Java DB | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` |
+| Java 내부 연결 | `PYTHON_WORKER_BASE_URL` |
+| Java 외부 연동 | `PUBLIC_EMPLOYMENT_API_SERVICE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` |
+| Java 운영 | `GITHUB_API_CONNECT_TIMEOUT`, `GITHUB_API_READ_TIMEOUT`, `SESSION_COOKIE_SECURE` |
+| Python Ollama | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL`, `OLLAMA_EVIDENCE_JUDGE_MODEL`, `OLLAMA_PROJECT_RESPONSIBILITY_MODEL`, `OLLAMA_EMBEDDING_MODEL` |
+| Python Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` |
+| Python 입력 제한 | `JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH` |
+
+- 실제 키, 토큰, 비밀번호와 서버 주소는 예시 파일에 넣지 않는다.
+- 기본값은 Java 설정과 Python `BaseSettings`를 기준으로 검증하며 사용하지 않는 필수값을 임의 삭제하지 않는다.
+- `ai-python/.env.example`에 빠진 모델 변수는 통합 환경 파일 작성 시 실제 설정 클래스와 대조한다.
+
+### 구현 승인 전 결정할 항목
+
+1. Java가 고정 Gradle 빌더를 사용할지 Wrapper를 먼저 복원할지
+2. Java host 바인딩 기본값과 내부망 방화벽 범위
+3. Python 상태 점검이 내부 토큰을 노출하지 않고 실행될 방법
+4. Python 원격 Ollama 모드에서 로컬 자동 실행을 시도하지 않게 할 방법
+5. 기반 이미지를 tag(태그)로 고정할지 digest까지 고정할지
+6. 기존 `backend-java/compose.yaml`을 이동할지 통합 파일로 대체할지
+
+### 실제 파일 구현 후 검증
+
+1. 비밀값 없이 `docker compose config`가 성공한다.
+2. Java와 Python 이미지를 깨끗한 캐시에서 각각 빌드한다.
+3. Ollama를 끈 상태에서 PostgreSQL, Python과 Java가 기동하고 상태가 구분된다.
+4. Flyway 마이그레이션과 Java→Python 내부 토큰 요청이 성공한다.
+5. 별도 모델 컴퓨터를 켠 뒤 서버→Ollama 연결과 실제 분석 요청을 확인한다.
+6. 재시작 뒤 DB 데이터, 자동 시작과 로그 회전을 확인한다.
+7. 브라우저에서 분석 단계와 단계별 실패 표시를 확인한다.
+
+### 구현 분담
+
+- Python 담당: 사용자 승인 뒤 Java·Python Dockerfile, `.dockerignore`, 통합 Compose와 환경변수 예시를 작성한다.
+- Codex: 컨테이너 파일을 동시에 수정하지 않고 남은 백엔드 도메인 API 명세와 시나리오를 작성한다.
+- 공통: Docker 변경 PR에서 양쪽 이미지 빌드와 Compose 실제 기동 결과를 함께 검토한다.
 
 ## CI(지속적 통합)와 서버 반영 원칙
 
@@ -332,6 +435,9 @@ Python -> http://ollama:11434
 ## 공식 근거
 
 - [Spring Boot Actuator와 사용자 정의 HealthIndicator](https://docs.spring.io/spring-boot/3.5/reference/actuator/endpoints.html)
+- [Spring Boot Dockerfile과 계층 이미지](https://docs.spring.io/spring-boot/reference/packaging/container-images/dockerfiles.html)
+- [uv의 Docker 사용법](https://docs.astral.sh/uv/guides/integration/docker/)
+- [Docker 다단계 빌드](https://docs.docker.com/build/building/multi-stage/)
 - [Docker Compose 서비스 시작 순서와 healthcheck](https://docs.docker.com/compose/how-tos/startup-order/)
 - [Ollama Windows 환경변수와 네트워크 공개 설정](https://docs.ollama.com/faq)
 - [GitHub Actions 자체 호스팅 실행기 보안](https://docs.github.com/en/actions/reference/security/secure-use)
