@@ -100,6 +100,7 @@ def test_extract_rejects_text_larger_than_configured_limit() -> None:
     assert {"fieldName": "sourceText", "message": "설정된 최대 길이를 초과했습니다."} in body["error"]["fieldErrors"]
 
 
+@pytest.mark.real_ollama
 def test_extract_succeeds_with_real_ollama(caplog) -> None:
     """실제 로컬 Ollama를 호출한다(mock 아님). Ollama 미기동/모델 미설치 시 실패해야 한다."""
     request_id = "55555555-5555-5555-5555-555555555555"
@@ -137,6 +138,7 @@ def test_extract_succeeds_with_real_ollama(caplog) -> None:
     assert token not in caplog.text
 
 
+@pytest.mark.real_ollama
 def test_extract_succeeds_with_real_ollama_when_gemini_not_configured() -> None:
     """GEMINI_API_KEY 등이 없어도(2026-08-04 PR #45 리뷰) 실제 Ollama만으로
     API가 정상 동작해야 한다 — Gemini 설정 부재를 예외로 다루지 않는다."""

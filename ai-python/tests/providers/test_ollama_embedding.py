@@ -5,6 +5,8 @@ import pytest_asyncio
 from app.providers.embedding import OllamaEmbeddingProvider
 from app.providers.settings import OllamaSettings
 
+pytestmark = pytest.mark.real_ollama
+
 
 @pytest.fixture
 def settings() -> OllamaSettings:

@@ -31,11 +31,13 @@ def test_provider_name_is_ollama() -> None:
     assert OllamaProvider.provider_name == "ollama"
 
 
+@pytest.mark.real_ollama
 @pytest.mark.asyncio
 async def test_verify_model_passes_when_model_installed(provider: OllamaProvider) -> None:
     await provider.verify_model()
 
 
+@pytest.mark.real_ollama
 @pytest.mark.asyncio
 async def test_extract_job_posting_returns_evidence_linked_result(
     provider: OllamaProvider,
@@ -52,6 +54,7 @@ async def test_extract_job_posting_returns_evidence_linked_result(
     assert result.required_skills or result.preferred_skills
 
 
+@pytest.mark.real_ollama
 @pytest.mark.asyncio
 @pytest.mark.xfail(
     reason=(
@@ -81,6 +84,7 @@ async def test_extract_job_posting_responsibilities_returns_evidence_linked_resu
     assert result.responsibilities
 
 
+@pytest.mark.real_ollama
 @pytest.mark.asyncio
 async def test_unload_model_then_extract_still_works(provider: OllamaProvider) -> None:
     """세션 오염 완화책(2026-08-03 결정)이 쓰는 언로드 요청 자체가 예외 없이 끝나고,
@@ -94,6 +98,7 @@ async def test_unload_model_then_extract_still_works(provider: OllamaProvider) -
     assert result.evidence
 
 
+@pytest.mark.real_ollama
 @pytest.mark.asyncio
 async def test_generate_job_search_keyword_suggestions_returns_list(
     provider: OllamaProvider,
