@@ -21,6 +21,7 @@ def test_provider_name_is_gemini() -> None:
     assert GeminiProvider.provider_name == "gemini"
 
 
+@pytest.mark.real_gemini
 @pytest.mark.asyncio
 async def test_extract_job_posting_returns_evidence_linked_result(
     provider: GeminiProvider,
@@ -34,6 +35,7 @@ async def test_extract_job_posting_returns_evidence_linked_result(
     assert result.evidence
 
 
+@pytest.mark.real_gemini
 @pytest.mark.asyncio
 async def test_generate_job_search_keyword_suggestions_returns_list(
     provider: GeminiProvider,

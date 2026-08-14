@@ -4,6 +4,8 @@ from google import genai
 from app.providers.embedding import GeminiEmbeddingProvider
 from app.providers.settings import GeminiSettings
 
+pytestmark = pytest.mark.real_gemini
+
 
 @pytest.fixture
 def settings() -> GeminiSettings:

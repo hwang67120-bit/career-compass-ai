@@ -33,8 +33,9 @@ dev = [
 [tool.pytest.ini_options]
 markers = [
     "real_gemini: 실제 Gemini API를 호출하는 테스트. 기본 `pytest` 실행에서 제외되며 `pytest -m real_gemini`로 명시 실행한다.",
+    "real_ollama: 실제 Ollama(11434)를 호출하는 테스트. 기본 `pytest` 실행에서 제외되며 `pytest -m real_ollama`로 명시 실행한다.",
 ]
-addopts = "-m \"not real_gemini\""
+addopts = "-m \"not real_gemini and not real_ollama\""
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
