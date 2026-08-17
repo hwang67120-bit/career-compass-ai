@@ -11,6 +11,11 @@
 - [채용공고 검색 도구 계약](../contracts/job-search-tool.md)
 - [채용공고 추출 계약](../contracts/job-posting-extraction.md)
 
+## 아키텍처 결정 기록(ADR)
+
+- [ADR 0001 · 멀티 머신 · 도메인별 병렬 에이전트 구성](adr/0001-multi-machine-parallel-agent-setup.md)
+- [ADR 0002 · 바이브 코딩 품질 관리](adr/0002-vibe-coding-quality-management.md)
+
 ## 폐기된 이전 설계
 
 다음 문서는 과거 PDF 중심 설계의 결정 이력을 보존하기 위한 자료이며 현재 구현 기준이 아닙니다.
