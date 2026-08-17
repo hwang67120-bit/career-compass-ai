@@ -161,6 +161,19 @@ career-compass-ai/
 └─ postman/        연결 테스트 자료
 ```
 
+### 구조 원칙
+
+두 서비스는 역할이 달라서 내부 구조도 다르게 잡았습니다.
+
+- **Java는 도메인별 패키지**(`jobsearch`, `jobanalysis`, `projectsource`,
+  `technologytag`, `userprofile` 등). 한 기능을 고치려면 그 패키지 하나만 열면
+  controller·service·repository가 함께 있어 찾기 쉽습니다. 여러 도메인을
+  이어 붙이는 오케스트레이션이 많아 기능 단위로 묶는 편이 유리합니다.
+- **Python은 계층별 디렉터리**(`services` 분석 로직, `providers` LLM 연결,
+  `schemas` 계약 형태, `guardrails` 입출력 경계). 분석은 "무엇을 하나"와
+  "어떤 모델로"를 나누는 흐름이라 계층으로 묶는 편이 자연스럽습니다.
+- 두 구조는 **`contracts/`의 요청·응답 계약**으로 맞물립니다.
+
 ## 실행과 검증
 
 Java와 Python 개발·빌드·서버 실행은 Linux에서 수행합니다. 비밀키와 인증정보는 환경변수로

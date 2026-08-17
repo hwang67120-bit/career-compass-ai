@@ -12,10 +12,32 @@
 이 문서는 Java·Python·공통 계약 작업의 현재 위치와 검증 수준을 공유한다.
 `구현 완료`라는 표현 대신 실제로 통과한 가장 높은 검증 상태를 기록한다.
 
-- 마지막 확인일: 2026-08-04
-- Python 기준: `origin/python` 커밋 `42dd375`
-- Java 기준: `java` 브랜치 작업 트리
+- 마지막 확인일: 2026-08-17
+- 코드 기준: `develop` 브랜치 (세부 진행은 아래 "최근 진행 요약" 절 참조)
 - 상태 정의: 루트 `AGENTS.md`의 완료 판정 기준
+
+## 최근 진행 요약 (2026-08-17)
+
+2026-08-04 이후로는 개별 기능 구현보다 **계약 정합·CI·테스트 배포**에 집중했다.
+세부는 아래 각 절·PR에 있고 여기서는 현재 위치만 짚는다.
+
+- **계약 동기화**: 채용공고 추출 `detectedTechnologies`를 근거 수 정렬 후 상위 30개로,
+  담당 업무 텍스트를 500자로 제한해 Java 계약과 맞췄다(PR #84). 남은 계약-구현
+  불일치는 이슈 #86으로 추적.
+- **단위 CI(양쪽 언어)**: Python(`ci-python.yml`)·Java(`ci-java.yml`, Codex)가 GitHub
+  호스팅 러너에서 PR·push마다 실행. 실제 LLM 호출 테스트는 `real_ollama`/`real_gemini`
+  마커로 기본 제외.
+- **통합 CI(self-hosted)**: 상시 서버에 self-hosted 러너를 두고 `workflow_dispatch`로만
+  컨테이너에서 실제 Ollama(별도 모델 머신) 통합 테스트 실행(`ci-python-integration.yml`).
+  공개 repo 대응으로 fork PR은 승인 필요로 격리. 첫 실행 10 passed로 서버↔Ollama 실연동 증명.
+- **테스트 배포 컨테이너화**: `ai-python`·`backend-java` Dockerfile과
+  `deploy/compose.yaml`(postgres+ai-python+backend-java, Java만 8080 공개)로 배포 구성 확정
+  (PR #96·#99). Ollama는 이미지에 넣지 않고 `OLLAMA_BASE_URL`로 외부 모델 머신 호출.
+- **서버 브라우저 검증**: 서버에 전체 스택을 올려 브라우저 접속 + GitHub OAuth 로그인
+  성공 확인(2026-08-14). 로그인 이후 흐름(공고 검색→추출→분석→결과)은 Java 제품
+  파이프라인 구현과 함께 이어서 검증(Codex).
+- **문서**: README에 구조 원칙(Java=도메인별, Python=계층별, `contracts`로 연결)과
+  임베딩→LLM-judge 전환 결정 서사를 노출.
 
 ## 기록 규칙
 
@@ -547,9 +569,13 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 
 ## 통합 차단 요소
 
-- 실제 GitHub OAuth App의 Client ID·Secret 발급과 로컬 callback 등록
-- Java–Python 공통 예제 JSON 계약 테스트
-- PDF 업로드부터 분석 결과까지 연결된 브라우저 흐름
+- Java 제품 파이프라인(조건 판정·judge 연결·결과 조회 API)이 있어야 로그인 이후
+  전체 분석 흐름을 브라우저로 검증할 수 있다(Codex).
+- Java–Python을 함께 실행한 공통 예제 JSON 계약 테스트(현재 통합 CI는 Python↔실제
+  Ollama만 검증).
+
+해소됨: GitHub OAuth 로그인은 2026-08-14 서버 브라우저에서 성공. PDF 업로드 흐름은
+2026-08-03 MVP에서 제거.
 
 ## 상태 변경 기록
 
@@ -560,3 +586,7 @@ Java 코드를 삭제했다 — MVP는 PDF·이력서·포트폴리오 입력 �
 | 2026-07-29 | Java Python 문서 추출 클라이언트 | `IMPLEMENTED` | `UNIT_TESTED` | Java 21에서 대상 클라이언트 테스트와 전체 89개 테스트를 캐시 없이 실행해 통과 |
 | 2026-07-31 | 채용공고 외부 조회 | URL 화이트리스트·SSRF 방어(제안) | 공식 Provider 계약으로 대체 | Codex가 develop에 제안 계약 merge, 사용자 확인 |
 | 2026-08-10 | 운영 채용공고 Provider | 사람인·고용24 후보 | 인사혁신처 공공취업정보 API만 사용 | 고용24 기업회원 제한 확인 및 공공데이터포털 개발계정 승인 |
+| 2026-08-11 | 채용공고 의미 비교 | 임베딩+코사인 유사도 | 임베딩 제외, 근거 기반 분석 집중 | 짧은 업무 근거 임베딩 역전 확인, 사용자 결정 |
+| 2026-08-12 | 근거 유사도 판정 | 후보(임베딩 실패) | `LLM_JUDGE`(qwen2.5) 채택 | best-match 36/36 품질 게이트 통과 |
+| 2026-08-14 | 서버 배포·로그인 | 미검증 | 브라우저 접속 + OAuth 로그인 성공 | 전체 스택 compose 기동, 로그인 확인 |
+| 2026-08-14 | 테스트 인프라 | 단위 CI만 | self-hosted 통합 CI 실증 | 컨테이너로 실제 Ollama 10 passed |
