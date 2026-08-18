@@ -194,6 +194,54 @@ def test_extract_reports_model_unavailable() -> None:
     assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
 
 
+def test_get_gemini_settings_returns_none_for_blank_env(monkeypatch) -> None:
+    """서버 `.env`처럼 `GEMINI_*`가 빈 문자열로 존재하면 미설정(None)으로 다뤄
+    폴백을 만들지 않는다 — 빈 키로 `genai.Client("")`가 ValueError로 죽는 것을 막는다
+    (공고 15 사건, text/plain 500의 근본 원인)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.0")
+    monkeypatch.setenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    assert get_gemini_settings_if_configured() is None
+
+    monkeypatch.setenv("GEMINI_API_KEY", "real-key")
+    monkeypatch.setenv("GEMINI_MODEL", "   ")
+    assert get_gemini_settings_if_configured() is None
+
+
+def test_unexpected_exception_returns_json_envelope_not_text_plain() -> None:
+    """회귀(공고 15): Ollama 실패 후 빈 키 Gemini 폴백이 `genai.Client("")`에서
+    던진 ValueError가 처리되지 않아 text/plain 500이 나가 Java가 파싱하지 못했다.
+    전역 예외 핸들러가 이를 계약 JSON(503 MODEL_UNAVAILABLE)으로 반환해야 한다.
+
+    Fix A를 우회해 빈 키 설정을 강제 주입한다 — Fix B(전역 핸들러)만 격리 검증."""
+    from app.providers.settings import GeminiSettings
+
+    def blank_key_gemini():
+        return GeminiSettings.model_construct(
+            gemini_api_key="", gemini_model="gemini-x", gemini_embedding_model="e"
+        )
+
+    local_client = TestClient(app, raise_server_exceptions=False)
+    app.dependency_overrides[get_ollama_job_posting_provider] = _unreachable_ollama_provider()
+    app.dependency_overrides[get_gemini_settings_if_configured] = blank_key_gemini
+    try:
+        response = local_client.post(
+            "/internal/v1/job-postings/extract",
+            headers={"X-Internal-Token": _valid_token()},
+            json=_valid_body(),
+        )
+    finally:
+        app.dependency_overrides.pop(get_ollama_job_posting_provider, None)
+        app.dependency_overrides.pop(get_gemini_settings_if_configured, None)
+
+    assert response.headers["content-type"].startswith("application/json"), (
+        f"Java가 파싱할 수 있는 JSON이어야 한다(text/plain 금지). 실제: "
+        f"{response.headers.get('content-type')}"
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["errorType"] == "MODEL_UNAVAILABLE"
+
+
 @pytest.mark.real_gemini
 def test_extract_falls_back_to_gemini_when_ollama_unavailable() -> None:
     """Ollama가 죽어도 실제 Gemini 폴백이 성공하면 200을 반환하고
