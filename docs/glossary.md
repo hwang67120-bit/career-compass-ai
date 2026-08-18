@@ -73,7 +73,8 @@
 | Judgment | 판정값 | `RELATED`, `NOT_RELATED`처럼 LLM이 반환하는 고정 결과 |
 | Fallback | 실패 시 대체 처리 | 기본 Ollama 실패 시 조건부로 Gemini를 호출하는 방식 |
 | Cross-validation | 교차검증 | 다른 모델·자료로 결과가 재현되는지 제한적으로 확인하는 과정 |
-| Guardrail | 안전장치 | 허용 필드, 개인정보, 근거와 응답 형식을 검사하는 규칙 |
+| Guardrail | 안전장치·경계 검증 | Java↔Python·외부 LLM 입출력 경계에서 허용 필드·개인정보·근거·응답 형식을 검사하는 규칙. 같은 개념을 **Python은 `guardrails` 패키지**로, **Java는 `validate`+예외(`ResponseViolation`)**로 구현한다 — 이름이 달라도 같은 것 |
+| Grounding | 근거성 원칙 | 모델이 입력 근거에 없는 내용을 응답에 넣지 않는 원칙. 경계 검증(Guardrail)이 아니라 **출력 품질 축**이다. 상세: `architecture/guardrails.md`(문서 제목은 "가드레일"이나 내용은 근거성 원칙) |
 | Hallucination | 근거 없는 생성 | 입력에 없는 내용을 모델이 사실처럼 만드는 문제 |
 | Model Execution | 모델 실행 정보 | 실제 사용한 단계, Provider와 모델 이름 |
 | Confidence | 모델 확신도 | 보정 전에는 확률처럼 사용자에게 제공하지 않는 값 |
