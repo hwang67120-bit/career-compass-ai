@@ -25,7 +25,8 @@ class GitHubClientConfigTest {
                             "2022-11-28",
                             "career-compass-ai-test",
                             Duration.ofSeconds(1),
-                            Duration.ofSeconds(1)
+                            Duration.ofSeconds(1),
+                            null
                     )
             );
             context.register(GitHubClientConfig.class, GitHubRestClient.class);

@@ -36,6 +36,9 @@ github:
     user-agent: ${GITHUB_API_USER_AGENT:career-compass-ai}
     connect-timeout: ${GITHUB_API_CONNECT_TIMEOUT}
     read-timeout: ${GITHUB_API_READ_TIMEOUT}
+    # 선택. GitHub PAT를 넣으면 저장소 조회가 인증 요청이 되어 레이트 리밋이
+    # 60→5000/시간으로 올라간다. 없으면 비인증(공개 저장소만, 60/시간).
+    token: ${GITHUB_API_TOKEN:}
   snapshot:
     max-remote-file-bytes: ${REPOSITORY_SNAPSHOT_MAX_REMOTE_FILE_BYTES:102400}
     max-source-and-test-files-per-technology: ${REPOSITORY_SNAPSHOT_MAX_SOURCE_TEST_FILES_PER_TECHNOLOGY:3}
