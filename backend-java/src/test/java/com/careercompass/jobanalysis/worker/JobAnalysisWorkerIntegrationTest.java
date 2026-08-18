@@ -21,6 +21,8 @@ import java.util.UUID;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionService;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
@@ -81,6 +83,7 @@ class JobAnalysisWorkerIntegrationTest {
 
     private JobPostingProvider jobPostingProvider;
     private PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
+    private ProjectResponsibilityExtractionService projectResponsibilityExtractionService;
     private JobAnalysisWorker worker;
 
     @SuppressWarnings("unchecked")
@@ -94,6 +97,10 @@ class JobAnalysisWorkerIntegrationTest {
         jobPostingProvider = mock(JobPostingProvider.class);
         when(jobPostingProvider.providerName()).thenReturn("PUBLIC_EMPLOYMENT");
         pythonJobPostingExtractionClient = mock(PythonJobPostingExtractionClient.class);
+        projectResponsibilityExtractionService =
+                mock(ProjectResponsibilityExtractionService.class);
+        when(projectResponsibilityExtractionService.extract(any(), any()))
+                .thenReturn(new ProjectResponsibilityExtractionOutcome(false, false));
 
         ObjectProvider<JobPostingProvider> objectProvider = mock(ObjectProvider.class);
         when(objectProvider.getIfAvailable()).thenReturn(jobPostingProvider);
@@ -102,6 +109,7 @@ class JobAnalysisWorkerIntegrationTest {
                 jobAnalysisService,
                 objectProvider,
                 pythonJobPostingExtractionClient,
+                projectResponsibilityExtractionService,
                 Clock.fixed(Instant.parse("2026-08-09T00:00:00Z"), ZoneOffset.UTC),
                 5
         );
@@ -188,6 +196,7 @@ class JobAnalysisWorkerIntegrationTest {
                 jobAnalysisService,
                 emptyProvider,
                 pythonJobPostingExtractionClient,
+                projectResponsibilityExtractionService,
                 Clock.fixed(Instant.parse("2026-08-09T00:00:00Z"), ZoneOffset.UTC),
                 5
         );

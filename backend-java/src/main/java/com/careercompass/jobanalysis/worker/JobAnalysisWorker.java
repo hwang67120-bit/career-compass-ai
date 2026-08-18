@@ -17,9 +17,15 @@ import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredExce
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionService;
+import com.careercompass.projectsource.exception.RepositorySnapshotException;
+import com.careercompass.projectsource.exception.RepositorySnapshotFailure;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
+import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionException;
+import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionFailure;
 import com.careercompass.userprofile.domain.UserProfileVersion;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,10 +40,8 @@ import org.springframework.stereotype.Component;
 /**
  * 대기 중인 {@link JobAnalysis}를 하나씩 선점해 실제로 진행시킨다.
  *
- * 현재는 검색(공공취업정보 API)과 추출(Python) 두 단계만 실제로 연결한다.
- * 조건판정·유사도 비교(COMPARING_EVIDENCE 이후)는 Python 쪽에
- * 아직 API가 없어서 이번 범위에 없다(docs/current-work.md, 계획 파일 참고) — 코덱스가
- * 돌아오면 이어서 확장해야 한다.
+ * 공개 저장소 프로젝트 근거 후보 추출과 공고 검색·구조화 추출을 연결한다.
+ * 사용자 확인 뒤 조건 판정·의미 비교 단계는 별도 구현 단위에서 이어진다.
  *
  * test 프로필에서는 빈을 만들지 않는다 — 테스트가 끝나 Testcontainers DB가 종료된 뒤에도
  * 스케줄러가 계속 폴링해 연결 오류·타임아웃을 일으키는 문제를 막는다.
@@ -51,6 +55,8 @@ public class JobAnalysisWorker {
     private final JobAnalysisService jobAnalysisService;
     private final ObjectProvider<JobPostingProvider> jobPostingProvider;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
+    private final ProjectResponsibilityExtractionService
+            projectResponsibilityExtractionService;
     private final Clock clock;
     private final int searchResultLimit;
 
@@ -65,12 +71,15 @@ public class JobAnalysisWorker {
             JobAnalysisService jobAnalysisService,
             ObjectProvider<JobPostingProvider> jobPostingProvider,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
+            ProjectResponsibilityExtractionService projectResponsibilityExtractionService,
             Clock clock,
             @Value("${job-analysis.worker.search-result-limit}") int searchResultLimit
     ) {
         this.jobAnalysisService = jobAnalysisService;
         this.jobPostingProvider = jobPostingProvider;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
+        this.projectResponsibilityExtractionService =
+                projectResponsibilityExtractionService;
         this.clock = clock;
         this.searchResultLimit = searchResultLimit;
     }
@@ -96,8 +105,20 @@ public class JobAnalysisWorker {
                 throw new JobPostingProviderNotConfiguredException();
             }
 
+            if (jobAnalysis.getCurrentStep() == JobAnalysisStep.COMPARING_EVIDENCE) {
+                jobAnalysisService.markAnalysisFailed(
+                        jobAnalysisId,
+                        JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
+                return;
+            }
+
             UserProfileVersion profileVersion =
                     jobAnalysisService.loadFixedProfileVersion(jobAnalysis);
+            jobAnalysisService.advanceStep(
+                    jobAnalysisId, JobAnalysisStep.ANALYZING_REPOSITORIES);
+            ProjectResponsibilityExtractionOutcome responsibilityOutcome =
+                    projectResponsibilityExtractionService.extract(
+                            jobAnalysis, profileVersion);
             String keyword = profileVersion.getTargetJobTitle();
 
             jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
@@ -115,6 +136,9 @@ public class JobAnalysisWorker {
             if (savedPostings.isEmpty()) {
                 jobAnalysisService.markAnalysisFailed(
                         jobAnalysisId, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
+            } else if (responsibilityOutcome.requiresUserConfirmation()) {
+                jobAnalysisService.recordExtractionAwaitingUserConfirmation(
+                        jobAnalysisId, savedPostings);
             } else {
                 jobAnalysisService.recordExtractionCompletedWithoutComparison(
                         jobAnalysisId, savedPostings);
@@ -123,6 +147,22 @@ public class JobAnalysisWorker {
             logProcessingFailure(jobAnalysisId, exception);
             jobAnalysisService.markAnalysisFailed(
                     jobAnalysisId, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
+        } catch (RepositorySnapshotException exception) {
+            logProcessingFailure(jobAnalysisId, exception);
+            JobAnalysisFailureCode failureCode =
+                    exception.getFailure() == RepositorySnapshotFailure.TREE_TRUNCATED
+                            ? JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED
+                            : JobAnalysisFailureCode.PROJECT_REPOSITORY_SNAPSHOT_INVALID;
+            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
+        } catch (PythonProjectResponsibilityExtractionException exception) {
+            logProcessingFailure(jobAnalysisId, exception);
+            JobAnalysisFailureCode failureCode =
+                    exception.getFailure()
+                            == PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE
+                            ? JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE
+                            : JobAnalysisFailureCode
+                                    .PROJECT_RESPONSIBILITY_EXTRACTION_INVALID_RESPONSE;
+            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (PublicEmploymentAccessException exception) {
             logProcessingFailure(jobAnalysisId, exception);
             JobAnalysisFailureCode failureCode =

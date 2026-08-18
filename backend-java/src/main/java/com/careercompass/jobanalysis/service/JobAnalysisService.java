@@ -257,6 +257,28 @@ public class JobAnalysisService {
     }
 
     /**
+     * 기능: 추출된 채용공고를 저장하고 프로젝트 근거 후보에 대한 사용자 확인을 기다린다.
+     * 반환 값: 없음.
+     */
+    @Transactional
+    public void recordExtractionAwaitingUserConfirmation(
+            UUID jobAnalysisId,
+            List<JobAnalysisPosting> postings
+    ) {
+        JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        postings.forEach(jobAnalysisPostingRepository::save);
+        jobAnalysis.awaitUserConfirmation(Instant.now(clock));
+        jobAnalysisRepository.save(jobAnalysis);
+        log.info(
+                "job_analysis_extraction_awaiting_user_confirmation "
+                        + "jobAnalysisId={} postingCount={}",
+                jobAnalysisId,
+                postings.size()
+        );
+    }
+
+    /**
      * 기능: 추출에 성공한 채용공고를 저장하고 비교 단계로 전환한 뒤, 비교 결과가 아직
      * 구현되지 않은 작업을 실패로 표시한다. 확정 계약의 PARTIALLY_COMPLETED는 비교
      * 결과가 하나 이상 생성된 뒤 후속 단계가 실패해야 한다. 여기서 저장하는 결과는

@@ -55,7 +55,9 @@ class ProjectResponsibilityControllerTest {
         when(service.retrieve(PROJECT_SOURCE_ID)).thenReturn(
                 new ProjectResponsibilityReviewResponse(
                         PROJECT_SOURCE_ID, "a".repeat(40),
-                        "AWAITING_USER_CONFIRMATION", null,
+                        "AWAITING_USER_CONFIRMATION", "EXTRACTED", null,
+                        List.of(), null,
+                        List.of(), List.of(),
                         List.of(candidate("UNCONFIRMED", 0))));
 
         mockMvc.perform(get("/api/v1/project-sources/{projectSourceId}/responsibility-candidates",

@@ -30,4 +30,12 @@ public class ProjectResponsibilityController {
             @RequestBody ProjectResponsibilityDecisionRequest request) {
         return responseFactory.success(service.decide(candidateId, request));
     }
+
+    @PutMapping("/project-technology-suggestions/{suggestionId}/decision")
+    public ApiResponse<ProjectTechnologySuggestionDecisionResponse> decideSuggestion(
+            @PathVariable UUID suggestionId,
+            @RequestBody ProjectTechnologySuggestionDecisionRequest request) {
+        return responseFactory.success(
+                service.decideSuggestion(suggestionId, request));
+    }
 }

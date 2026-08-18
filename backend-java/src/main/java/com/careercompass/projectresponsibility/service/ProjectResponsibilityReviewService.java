@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -32,6 +33,8 @@ public class ProjectResponsibilityReviewService {
     private static final int MAX_CONFIRMED_TEXT_CODE_POINTS = 500;
     private final ProjectResponsibilityExtractionTaskRepository taskRepository;
     private final ProjectResponsibilityCandidateRepository candidateRepository;
+    private final ProjectTechnologyFindingRepository findingRepository;
+    private final ProjectTechnologySuggestionRepository suggestionRepository;
     private final UserProfileProjectResponsibilityRepository responsibilityRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserProfileVersionRepository profileVersionRepository;
@@ -43,6 +46,8 @@ public class ProjectResponsibilityReviewService {
     public ProjectResponsibilityReviewService(
             ProjectResponsibilityExtractionTaskRepository taskRepository,
             ProjectResponsibilityCandidateRepository candidateRepository,
+            ProjectTechnologyFindingRepository findingRepository,
+            ProjectTechnologySuggestionRepository suggestionRepository,
             UserProfileProjectResponsibilityRepository responsibilityRepository,
             UserProfileRepository userProfileRepository,
             UserProfileVersionRepository profileVersionRepository,
@@ -52,6 +57,8 @@ public class ProjectResponsibilityReviewService {
             Clock clock) {
         this.taskRepository = taskRepository;
         this.candidateRepository = candidateRepository;
+        this.findingRepository = findingRepository;
+        this.suggestionRepository = suggestionRepository;
         this.responsibilityRepository = responsibilityRepository;
         this.userProfileRepository = userProfileRepository;
         this.profileVersionRepository = profileVersionRepository;
@@ -118,8 +125,7 @@ public class ProjectResponsibilityReviewService {
             candidate.reject(now);
         }
         candidateRepository.saveAndFlush(candidate);
-        if (candidateRepository.existsByExtractionTask_IdAndCandidateStatus(
-                task.getId(), ProjectResponsibilityCandidateStatus.UNCONFIRMED)) {
+        if (hasPendingReview(task.getId())) {
             return new ProjectResponsibilityDecisionResponse(toCandidateResponse(candidate), false, null);
         }
         UUID resumedAnalysisId = completeReview(task, now);
@@ -127,13 +133,72 @@ public class ProjectResponsibilityReviewService {
                 toCandidateResponse(candidate), true, resumedAnalysisId);
     }
 
+    /**
+     * 기능: 감지됐지만 사용자가 선택하지 않은 기술의 추가 또는 무시 결정을 저장한다.
+     * 반환 값: 갱신된 제안, 전체 검토 완료 여부와 재개한 분석 식별자를 반환한다.
+     */
+    @Transactional
+    public ProjectTechnologySuggestionDecisionResponse decideSuggestion(
+            UUID suggestionId, ProjectTechnologySuggestionDecisionRequest request) {
+        validateSuggestionRequest(request);
+        UUID userId = currentUserProvider.getCurrentUserId();
+        ProjectResponsibilityExtractionTask task = taskRepository
+                .findBySuggestionIdForUpdate(suggestionId)
+                .filter(found -> found.getProjectSource().getUserId().equals(userId))
+                .orElseThrow(ProjectTechnologySuggestionNotFoundException::new);
+        ProjectTechnologySuggestion suggestion = suggestionRepository
+                .findByIdAndExtractionTask_Id(suggestionId, task.getId())
+                .orElseThrow(ProjectTechnologySuggestionNotFoundException::new);
+        Instant now = Instant.now(clock);
+        if (!suggestion.getExpiresAt().isAfter(now)) {
+            throw new ProjectTechnologySuggestionExpiredException();
+        }
+        if (suggestion.getDecisionStatus() != ProjectTechnologySuggestionStatus.PENDING) {
+            if (isSameSuggestionDecision(suggestion, request)
+                    && isReplayVersion(suggestion.getLockVersion(), request.expectedVersion())) {
+                boolean reviewCompleted =
+                        task.getReviewStatus() == ProjectResponsibilityReviewStatus.REVIEW_COMPLETED;
+                return new ProjectTechnologySuggestionDecisionResponse(
+                        toSuggestionResponse(suggestion), reviewCompleted,
+                        reviewCompleted ? task.getLinkedJobAnalysisId() : null);
+            }
+            throw new ProjectTechnologySuggestionStateConflictException();
+        }
+        if (suggestion.getLockVersion() != request.expectedVersion()) {
+            throw new ProjectTechnologySuggestionConflictException();
+        }
+        if (request.decision() == ProjectTechnologySuggestionDecisionRequest.Decision.ADD) {
+            suggestion.add(now);
+        } else {
+            suggestion.ignore(now);
+        }
+        suggestionRepository.saveAndFlush(suggestion);
+        if (hasPendingReview(task.getId())) {
+            return new ProjectTechnologySuggestionDecisionResponse(
+                    toSuggestionResponse(suggestion), false, null);
+        }
+        UUID resumedAnalysisId = completeReview(task, now);
+        return new ProjectTechnologySuggestionDecisionResponse(
+                toSuggestionResponse(suggestion), true, resumedAnalysisId);
+    }
+
+    private boolean hasPendingReview(UUID taskId) {
+        return candidateRepository.existsByExtractionTask_IdAndCandidateStatus(
+                taskId, ProjectResponsibilityCandidateStatus.UNCONFIRMED)
+                || suggestionRepository.existsByExtractionTask_IdAndDecisionStatus(
+                taskId, ProjectTechnologySuggestionStatus.PENDING);
+    }
+
     private UUID completeReview(ProjectResponsibilityExtractionTask task, Instant now) {
         List<ProjectResponsibilityCandidate> confirmed = candidateRepository
                 .findAllByExtractionTask_IdAndCandidateStatusOrderByCreatedAtAsc(
                         task.getId(), ProjectResponsibilityCandidateStatus.CONFIRMED);
+        List<ProjectTechnologySuggestion> added = suggestionRepository
+                .findAllByExtractionTask_IdAndDecisionStatusOrderByCreatedAtAsc(
+                        task.getId(), ProjectTechnologySuggestionStatus.ADDED);
         UserProfileVersion fixedVersion = task.getBaseUserProfileVersion();
-        if (!confirmed.isEmpty()) {
-            fixedVersion = createProfileVersion(task, confirmed, now);
+        if (!confirmed.isEmpty() || !added.isEmpty()) {
+            fixedVersion = createProfileVersion(task, confirmed, added, now);
         }
         UUID analysisId = task.getLinkedJobAnalysisId();
         if (analysisId != null) {
@@ -148,7 +213,8 @@ public class ProjectResponsibilityReviewService {
 
     private UserProfileVersion createProfileVersion(
             ProjectResponsibilityExtractionTask task,
-            List<ProjectResponsibilityCandidate> confirmed, Instant now) {
+            List<ProjectResponsibilityCandidate> confirmed,
+            List<ProjectTechnologySuggestion> added, Instant now) {
         UserProfileVersion base = task.getBaseUserProfileVersion();
         UserProfile profile = userProfileRepository.findByIdForUpdate(base.getUserProfile().getId())
                 .orElseThrow(ProjectResponsibilityNotFoundException::new);
@@ -156,12 +222,29 @@ public class ProjectResponsibilityReviewService {
         profile.advanceVersion(nextVersion, now);
         UserProfileVersion created = UserProfileVersion.create(
                 UUID.randomUUID(), profile, nextVersion, base.getTargetJobTitle(),
-                fingerprint(base, confirmed), now);
+                fingerprint(base, confirmed, added), now);
+        int technologyDisplayOrder = 0;
         for (UserProfileTechnologyTag tag : base.getTechnologyTags()) {
             created.addTechnologyTag(UserProfileTechnologyTag.create(
                     UUID.randomUUID(), created, tag.getTechnologyTag(), tag.getRawName(),
                     tag.getNormalizedName(), tag.getDisplayName(), tag.getSourceType(),
                     tag.getDisplayOrder()));
+            technologyDisplayOrder = Math.max(
+                    technologyDisplayOrder, tag.getDisplayOrder() + 1);
+        }
+        Set<UUID> existingTechnologyTagIds = base.getTechnologyTags().stream()
+                .map(UserProfileTechnologyTag::getTechnologyTagId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (ProjectTechnologySuggestion suggestion : added) {
+            TechnologyTag tag = suggestion.getTechnologyTag();
+            if (existingTechnologyTagIds.add(tag.getId())) {
+                created.addTechnologyTag(UserProfileTechnologyTag.create(
+                        UUID.randomUUID(), created, tag, tag.getDisplayName(),
+                        tag.getNormalizedKey(), tag.getDisplayName(),
+                        UserProfileTechnologyTagSourceType.USER_SELECTED,
+                        technologyDisplayOrder++));
+            }
         }
         profileVersionRepository.save(created);
         int displayOrder = 0;
@@ -181,13 +264,18 @@ public class ProjectResponsibilityReviewService {
         return created;
     }
 
-    private String fingerprint(UserProfileVersion base, List<ProjectResponsibilityCandidate> candidates) {
+    private String fingerprint(
+            UserProfileVersion base, List<ProjectResponsibilityCandidate> candidates,
+            List<ProjectTechnologySuggestion> suggestions) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             digest.update(base.getContentFingerprint().getBytes(StandardCharsets.UTF_8));
             for (ProjectResponsibilityCandidate candidate : candidates) {
                 digest.update(candidate.getId().toString().getBytes(StandardCharsets.UTF_8));
                 digest.update(candidate.getConfirmedText().getBytes(StandardCharsets.UTF_8));
+            }
+            for (ProjectTechnologySuggestion suggestion : suggestions) {
+                digest.update(suggestion.getTechnologyTag().getId().toString().getBytes(StandardCharsets.UTF_8));
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
@@ -198,6 +286,12 @@ public class ProjectResponsibilityReviewService {
     private void validateRequest(ProjectResponsibilityDecisionRequest request) {
         if (request == null || request.decision() == null || request.expectedVersion() < 0) {
             throw new InvalidProjectResponsibilityDecisionException();
+        }
+    }
+
+    private void validateSuggestionRequest(ProjectTechnologySuggestionDecisionRequest request) {
+        if (request == null || request.decision() == null || request.expectedVersion() < 0) {
+            throw new InvalidProjectTechnologySuggestionDecisionException();
         }
     }
 
@@ -231,11 +325,26 @@ public class ProjectResponsibilityReviewService {
                 || (expectedVersion < Long.MAX_VALUE && expectedVersion + 1 == currentVersion);
     }
 
+    private boolean isSameSuggestionDecision(
+            ProjectTechnologySuggestion suggestion,
+            ProjectTechnologySuggestionDecisionRequest request) {
+        return request.decision() == ProjectTechnologySuggestionDecisionRequest.Decision.ADD
+                ? suggestion.getDecisionStatus() == ProjectTechnologySuggestionStatus.ADDED
+                : suggestion.getDecisionStatus() == ProjectTechnologySuggestionStatus.IGNORED;
+    }
+
     private ProjectResponsibilityReviewResponse toReviewResponse(
             ProjectResponsibilityExtractionTask task) {
         return new ProjectResponsibilityReviewResponse(
                 task.getProjectSource().getId(), task.getRepositoryVersion(),
-                task.getReviewStatus().name(), task.getLinkedJobAnalysisId(),
+                task.getReviewStatus().name(),
+                task.getExtractionStatus().name(), task.getFailureCode(),
+                task.getFailedTechnologyTagIds().stream().sorted().toList(),
+                task.getLinkedJobAnalysisId(),
+                findingRepository.findAllByExtractionTask_IdOrderByTechnologyTag_DisplayNameAsc(
+                        task.getId()).stream().map(this::toFindingResponse).toList(),
+                suggestionRepository.findAllByExtractionTask_IdOrderByCreatedAtAsc(
+                        task.getId()).stream().map(this::toSuggestionResponse).toList(),
                 candidateRepository.findAllByExtractionTask_IdOrderByCreatedAtAsc(task.getId())
                         .stream().map(this::toCandidateResponse).toList());
     }
@@ -266,5 +375,35 @@ public class ProjectResponsibilityReviewService {
                 candidate.getCandidateStatus().name(), candidate.getLockVersion(),
                 relatedTechnologyTags, sourceEvidence, candidate.getCreatedAt(),
                 candidate.getExpiresAt(), candidate.getDecidedAt());
+    }
+
+    private ProjectTechnologyFindingResponse toFindingResponse(
+            ProjectTechnologyFinding finding) {
+        return new ProjectTechnologyFindingResponse(
+                finding.getTechnologyTag().getId(),
+                finding.getTechnologyTag().getDisplayName(),
+                finding.getFindingStatus().name(),
+                finding.getSourceEvidence().stream()
+                        .map(evidence -> new ProjectResponsibilityEvidenceResponse(
+                                evidence.getEvidenceId(), evidence.getFilePath(),
+                                evidence.getExcerpt()))
+                        .toList());
+    }
+
+    private ProjectTechnologySuggestionResponse toSuggestionResponse(
+            ProjectTechnologySuggestion suggestion) {
+        return new ProjectTechnologySuggestionResponse(
+                suggestion.getId(),
+                suggestion.getTechnologyTag().getId(),
+                suggestion.getTechnologyTag().getDisplayName(),
+                suggestion.getDecisionStatus().name(),
+                suggestion.getLockVersion(),
+                suggestion.getSourceEvidence().stream()
+                        .map(evidence -> new ProjectResponsibilityEvidenceResponse(
+                                evidence.getEvidenceId(), evidence.getFilePath(),
+                                evidence.getExcerpt()))
+                        .toList(),
+                suggestion.getCreatedAt(), suggestion.getExpiresAt(),
+                suggestion.getDecidedAt());
     }
 }
