@@ -21,6 +21,8 @@ import com.careercompass.projectresponsibility.exception.ProjectResponsibilityCo
 import com.careercompass.projectresponsibility.exception.ProjectResponsibilityStateConflictException;
 import com.careercompass.projectresponsibility.repository.ProjectResponsibilityCandidateRepository;
 import com.careercompass.projectresponsibility.repository.ProjectResponsibilityExtractionTaskRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologyFindingRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologySuggestionRepository;
 import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
 import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.security.currentuser.CurrentUserProvider;
@@ -49,6 +51,8 @@ class ProjectResponsibilityReviewServiceTest {
 
     @Mock private ProjectResponsibilityExtractionTaskRepository taskRepository;
     @Mock private ProjectResponsibilityCandidateRepository candidateRepository;
+    @Mock private ProjectTechnologyFindingRepository findingRepository;
+    @Mock private ProjectTechnologySuggestionRepository suggestionRepository;
     @Mock private UserProfileProjectResponsibilityRepository responsibilityRepository;
     @Mock private UserProfileRepository userProfileRepository;
     @Mock private UserProfileVersionRepository profileVersionRepository;
@@ -61,7 +65,8 @@ class ProjectResponsibilityReviewServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectResponsibilityReviewService(
-                taskRepository, candidateRepository, responsibilityRepository,
+                taskRepository, candidateRepository, findingRepository,
+                suggestionRepository, responsibilityRepository,
                 userProfileRepository, profileVersionRepository,
                 jobAnalysisRepository, currentUserProvider,
                 technologyTagRepository, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -103,6 +108,35 @@ class ProjectResponsibilityReviewServiceTest {
         assertThat(fixture.analysis().getUserProfileVersion()).isEqualTo(2);
         verify(profileVersionRepository, times(1)).save(any(UserProfileVersion.class));
         verify(responsibilityRepository, times(1)).save(any());
+    }
+
+    @Test
+    void decide_lastCandidateWithPendingTechnologySuggestion_keepsReviewWaiting() {
+        TestFixture fixture = fixture();
+        when(taskRepository.findByCandidateIdForUpdate(fixture.candidate().getId()))
+                .thenReturn(Optional.of(fixture.task()));
+        when(candidateRepository.findByIdAndExtractionTask_Id(
+                fixture.candidate().getId(), fixture.task().getId()))
+                .thenReturn(Optional.of(fixture.candidate()));
+        when(candidateRepository.existsByExtractionTask_IdAndCandidateStatus(
+                fixture.task().getId(), ProjectResponsibilityCandidateStatus.UNCONFIRMED))
+                .thenReturn(false);
+        when(suggestionRepository.existsByExtractionTask_IdAndDecisionStatus(
+                eq(fixture.task().getId()), any()))
+                .thenReturn(true);
+
+        ProjectResponsibilityDecisionResponse response = service.decide(
+                fixture.candidate().getId(),
+                new ProjectResponsibilityDecisionRequest(
+                        0, ProjectResponsibilityDecisionRequest.Decision.CONFIRM,
+                        "Spring Boot 주문 API 요청 검증 담당"));
+
+        assertThat(response.reviewCompleted()).isFalse();
+        assertThat(response.resumedJobAnalysisId()).isNull();
+        assertThat(fixture.task().getReviewStatus())
+                .isEqualTo(ProjectResponsibilityReviewStatus.AWAITING_USER_CONFIRMATION);
+        verify(profileVersionRepository, never()).save(any());
+        verify(jobAnalysisRepository, never()).findByIdForUpdate(any());
     }
 
     @Test

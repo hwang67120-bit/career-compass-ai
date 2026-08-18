@@ -14,6 +14,12 @@ public interface ProjectResponsibilityExtractionTaskRepository
             + "where candidate.extractionTask = task and candidate.id = :candidateId)")
     Optional<ProjectResponsibilityExtractionTask> findByCandidateIdForUpdate(UUID candidateId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from ProjectResponsibilityExtractionTask task "
+            + "where exists (select suggestion.id from ProjectTechnologySuggestion suggestion "
+            + "where suggestion.extractionTask = task and suggestion.id = :suggestionId)")
+    Optional<ProjectResponsibilityExtractionTask> findBySuggestionIdForUpdate(UUID suggestionId);
+
     Optional<ProjectResponsibilityExtractionTask>
     findFirstByProjectSource_IdOrderByCreatedAtDesc(UUID projectSourceId);
 }

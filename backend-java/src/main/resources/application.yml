@@ -36,6 +36,66 @@ github:
     user-agent: ${GITHUB_API_USER_AGENT:career-compass-ai}
     connect-timeout: ${GITHUB_API_CONNECT_TIMEOUT}
     read-timeout: ${GITHUB_API_READ_TIMEOUT}
+  snapshot:
+    max-remote-file-bytes: ${REPOSITORY_SNAPSHOT_MAX_REMOTE_FILE_BYTES:102400}
+    max-source-and-test-files-per-technology: ${REPOSITORY_SNAPSHOT_MAX_SOURCE_TEST_FILES_PER_TECHNOLOGY:3}
+    excluded-path-segments:
+      - .git
+      - .gradle
+      - .idea
+      - .venv
+      - __pycache__
+      - build
+      - coverage
+      - dist
+      - node_modules
+      - out
+      - target
+      - venv
+    excluded-file-name-fragments:
+      - .env
+      - credentials.
+      - id_ed25519
+      - id_rsa
+      - .pem
+      - .p12
+      - .pfx
+    manifest-file-names:
+      - Cargo.lock
+      - Cargo.toml
+      - build.gradle
+      - build.gradle.kts
+      - go.mod
+      - go.sum
+      - package-lock.json
+      - package.json
+      - pnpm-lock.yaml
+      - poetry.lock
+      - pom.xml
+      - pyproject.toml
+      - requirements.txt
+      - settings.gradle
+      - settings.gradle.kts
+      - yarn.lock
+    configuration-file-names:
+      - Dockerfile
+      - application.properties
+      - application.yaml
+      - application.yml
+      - compose.yaml
+      - compose.yml
+    source-extensions:
+      - .go
+      - .java
+      - .js
+      - .jsx
+      - .kt
+      - .kts
+      - .py
+      - .rs
+      - .ts
+      - .tsx
+
 
 python:
   worker:
@@ -89,3 +149,7 @@ user:
     max-target-job-title-length: ${USER_PROFILE_MAX_TARGET_JOB_TITLE_LENGTH:100}
     max-technology-tag-count: ${USER_PROFILE_MAX_TECHNOLOGY_TAG_COUNT:30}
     max-custom-tag-name-length: ${USER_PROFILE_MAX_CUSTOM_TAG_NAME_LENGTH:100}
+
+project-responsibility:
+  review:
+    candidate-retention-days: ${PROJECT_RESPONSIBILITY_CANDIDATE_RETENTION_DAYS:30}

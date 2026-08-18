@@ -23,7 +23,13 @@ import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
+import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionService;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
+import com.careercompass.projectsource.exception.RepositorySnapshotException;
+import com.careercompass.projectsource.exception.RepositorySnapshotFailure;
+import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionException;
+import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionFailure;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessFailure;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
@@ -49,6 +55,7 @@ class JobAnalysisWorkerTest {
     private JobPostingProvider jobPostingProvider;
     private ObjectProvider<JobPostingProvider> jobPostingProviderObjectProvider;
     private PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
+    private ProjectResponsibilityExtractionService projectResponsibilityExtractionService;
     private JobAnalysisWorker worker;
     private JobAnalysis jobAnalysis;
     private UserProfileVersion profileVersion;
@@ -63,12 +70,15 @@ class JobAnalysisWorkerTest {
         when(jobPostingProvider.providerName()).thenReturn("PUBLIC_EMPLOYMENT");
         pythonJobPostingExtractionClient =
                 org.mockito.Mockito.mock(PythonJobPostingExtractionClient.class);
+        projectResponsibilityExtractionService = org.mockito.Mockito.mock(
+                ProjectResponsibilityExtractionService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-04T00:00:00Z"), ZoneOffset.UTC);
 
         worker = new JobAnalysisWorker(
                 jobAnalysisService,
                 jobPostingProviderObjectProvider,
                 pythonJobPostingExtractionClient,
+                projectResponsibilityExtractionService,
                 clock,
                 5
         );
@@ -85,6 +95,8 @@ class JobAnalysisWorkerTest {
         when(profileVersion.getTargetJobTitle()).thenReturn("백엔드 개발자");
         when(jobAnalysisService.loadFixedProfileVersion(jobAnalysis))
                 .thenReturn(profileVersion);
+        when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
+                .thenReturn(new ProjectResponsibilityExtractionOutcome(false, false));
     }
 
     @Test
@@ -239,6 +251,37 @@ class JobAnalysisWorkerTest {
 
         verify(jobAnalysisService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE);
+    }
+
+    @Test
+    void pollAndProcessOne_withTruncatedRepositoryTree_marksRepositoryTreeTruncated() {
+        when(jobAnalysisService.claimNextQueuedAnalysis())
+                .thenReturn(Optional.of(jobAnalysis));
+        when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
+                .thenThrow(new RepositorySnapshotException(
+                        RepositorySnapshotFailure.TREE_TRUNCATED));
+
+        worker.pollAndProcessOne();
+
+        verify(jobAnalysisService).markAnalysisFailed(
+                JOB_ANALYSIS_ID, JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED);
+        verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
+    }
+
+    @Test
+    void pollAndProcessOne_withResponsibilityModelUnavailable_marksModelUnavailable() {
+        when(jobAnalysisService.claimNextQueuedAnalysis())
+                .thenReturn(Optional.of(jobAnalysis));
+        when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
+                .thenThrow(new PythonProjectResponsibilityExtractionException(
+                        PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE));
+
+        worker.pollAndProcessOne();
+
+        verify(jobAnalysisService).markAnalysisFailed(
+                JOB_ANALYSIS_ID,
+                JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE);
+        verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
     }
 
     private JobPostingCandidate candidate(String providerPostingId) {

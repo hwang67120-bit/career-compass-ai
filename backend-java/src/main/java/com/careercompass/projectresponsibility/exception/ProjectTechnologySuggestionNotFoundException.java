@@ -1,0 +1,2 @@
+package com.careercompass.projectresponsibility.exception;
+public class ProjectTechnologySuggestionNotFoundException extends RuntimeException {}

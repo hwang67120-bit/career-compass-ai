@@ -28,8 +28,22 @@ public class ProjectResponsibilityExtractionTask {
     @Column(name = "technology_tag_id", nullable = false)
     private Set<UUID> selectedTechnologyTagIds = new LinkedHashSet<>();
     @Enumerated(EnumType.STRING)
+    @Column(name = "extraction_status", nullable = false, length = 40)
+    private ProjectResponsibilityExtractionStatus extractionStatus;
+    @Enumerated(EnumType.STRING)
     @Column(name = "review_status", nullable = false, length = 40)
     private ProjectResponsibilityReviewStatus reviewStatus;
+    @ElementCollection
+    @CollectionTable(name = "project_responsibility_failed_technology",
+            joinColumns = @JoinColumn(name = "extraction_task_id"))
+    @Column(name = "technology_tag_id", nullable = false)
+    private Set<UUID> failedTechnologyTagIds = new LinkedHashSet<>();
+    @Column(name = "failure_code", length = 80)
+    private String failureCode;
+    @Column(name = "model_provider", length = 30)
+    private String modelProvider;
+    @Column(name = "model_name", length = 200)
+    private String modelName;
     @Version @Column(name = "lock_version", nullable = false) private long lockVersion;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "reviewed_at") private Instant reviewedAt;
@@ -47,9 +61,36 @@ public class ProjectResponsibilityExtractionTask {
         task.baseUserProfileVersion = baseVersion;
         task.repositoryVersion = source.getCommitSha();
         task.selectedTechnologyTagIds.addAll(selectedTechnologyTagIds);
+        task.extractionStatus = ProjectResponsibilityExtractionStatus.EXTRACTING;
         task.reviewStatus = ProjectResponsibilityReviewStatus.AWAITING_USER_CONFIRMATION;
         task.createdAt = createdAt;
         return task;
+    }
+
+    public void completeExtraction(
+            Set<UUID> failedTechnologyTagIds,
+            String failureCode,
+            String modelProvider,
+            String modelName
+    ) {
+        if (extractionStatus != ProjectResponsibilityExtractionStatus.EXTRACTING) {
+            throw new IllegalStateException("PROJECT_RESPONSIBILITY_EXTRACTION_FINAL");
+        }
+        this.failedTechnologyTagIds.addAll(failedTechnologyTagIds);
+        this.failureCode = failureCode;
+        this.modelProvider = modelProvider;
+        this.modelName = modelName;
+        extractionStatus = failedTechnologyTagIds.isEmpty()
+                ? ProjectResponsibilityExtractionStatus.EXTRACTED
+                : ProjectResponsibilityExtractionStatus.PARTIALLY_EXTRACTED;
+    }
+
+    public void failExtraction(String failureCode) {
+        if (extractionStatus != ProjectResponsibilityExtractionStatus.EXTRACTING) {
+            throw new IllegalStateException("PROJECT_RESPONSIBILITY_EXTRACTION_FINAL");
+        }
+        this.failureCode = failureCode;
+        extractionStatus = ProjectResponsibilityExtractionStatus.FAILED;
     }
 
     public void completeReview(Instant reviewedAt) {
@@ -66,5 +107,12 @@ public class ProjectResponsibilityExtractionTask {
     public UserProfileVersion getBaseUserProfileVersion() { return baseUserProfileVersion; }
     public String getRepositoryVersion() { return repositoryVersion; }
     public Set<UUID> getSelectedTechnologyTagIds() { return Set.copyOf(selectedTechnologyTagIds); }
+    public ProjectResponsibilityExtractionStatus getExtractionStatus() { return extractionStatus; }
     public ProjectResponsibilityReviewStatus getReviewStatus() { return reviewStatus; }
+    public Set<UUID> getFailedTechnologyTagIds() {
+        return Set.copyOf(failedTechnologyTagIds);
+    }
+    public String getFailureCode() { return failureCode; }
+    public String getModelProvider() { return modelProvider; }
+    public String getModelName() { return modelName; }
 }

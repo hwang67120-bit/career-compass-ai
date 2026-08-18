@@ -7,4 +7,9 @@ public interface GitHubRepositoryGateway {
     GitHubRepositoryMetadata fetchRepository(GitHubRepositoryCoordinates coordinates);
 
     String fetchLatestCommitSha(GitHubRepositoryCoordinates coordinates, String defaultBranch);
+
+    GitHubRepositoryTree fetchTree(
+            GitHubRepositoryCoordinates coordinates, String commitSha);
+
+    GitHubRepositoryBlob fetchBlob(GitHubRepositoryCoordinates coordinates, String blobSha);
 }

@@ -5,4 +5,9 @@ import java.util.UUID;
 
 public record ProjectResponsibilityReviewResponse(
         UUID projectSourceId, String repositoryVersion, String reviewStatus,
-        UUID linkedJobAnalysisId, List<ProjectResponsibilityCandidateResponse> candidates) {}
+        String extractionStatus, String failureCode, List<UUID> failedTechnologyTagIds,
+        UUID linkedJobAnalysisId,
+        List<ProjectTechnologyFindingResponse> selectedTechnologyFindings,
+        List<ProjectTechnologySuggestionResponse> technologySuggestions,
+        List<ProjectResponsibilityCandidateResponse> candidates
+) {}
