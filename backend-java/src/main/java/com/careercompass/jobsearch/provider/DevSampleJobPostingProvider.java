@@ -8,17 +8,21 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * 승인된 채용 API가 없는 동안 Java–PostgreSQL–Python–LLM–브라우저 파이프라인을
- * 검증하기 위한 개발 전용 Provider다(PR #49, docs/claude-dev-sample-provider-handoff.md).
- * 네트워크를 호출하지 않고 API 키도 필요 없다. `dev` 프로필과 `job-search.provider=
- * dev-sample` 설정이 모두 있어야 빈이 만들어진다 — 운영·기본 프로필에서는 절대 선택되지
- * 않는다.
+ * 승인된 채용 API의 데이터가 개발 직무에 부적합함을 확인한 뒤(2026-08-18, 공공 API가
+ * 2008년 행정 공고 반환) 기술 콘텐츠 있는 대표 공고로 전체 파이프라인을 시연하기 위한
+ * Provider다(PR #49, docs/claude-dev-sample-provider-handoff.md). 네트워크를 호출하지
+ * 않고 API 키도 필요 없다.
+ *
+ * `dev`(로컬) 또는 `demo`(의도적 시연) 프로필에서, 그리고 `job-search.provider=dev-sample`
+ * 설정이 있을 때만 빈이 만들어진다 — 운영 기본(profile 미지정) 또는 기본 provider
+ * 설정에서는 절대 선택되지 않는다. 서버 시연은 `SPRING_PROFILES_ACTIVE=prod,demo` +
+ * `JOB_SEARCH_PROVIDER=dev-sample`로 명시적으로만 켠다.
  *
  * 이 결과는 실제 채용 시장 데이터가 아니다 — 시장 통계·배포 완료 근거로 쓰지 않는다.
  * 경력·학력처럼 명세에 없는 조건은 지어내지 않고 비워 둔다.
  */
 @Component
-@Profile("dev")
+@Profile({"dev", "demo"})
 @ConditionalOnProperty(prefix = "job-search", name = "provider", havingValue = "dev-sample")
 public class DevSampleJobPostingProvider implements JobPostingProvider {
 
