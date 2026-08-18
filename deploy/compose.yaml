@@ -76,6 +76,8 @@ services:
       # 필수(기본값 없음) — 없으면 Java 기동 실패
       GITHUB_API_CONNECT_TIMEOUT: "3s"
       GITHUB_API_READ_TIMEOUT: "10s"
+      # GitHub PAT(선택). 있으면 저장소 조회가 인증 요청이 되어 레이트 리밋 60→5000/시간.
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
       PUBLIC_EMPLOYMENT_API_SERVICE_KEY: ${PUBLIC_EMPLOYMENT_API_SERVICE_KEY}
       # OAuth(prod 프로파일) — 로그인에 필요. GitHub OAuth App client-id/secret.
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID}
