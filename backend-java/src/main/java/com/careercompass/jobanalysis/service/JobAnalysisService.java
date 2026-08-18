@@ -210,6 +210,7 @@ public class JobAnalysisService {
                 jobAnalysisRepository.findNextQueuedForUpdateSkipLocked();
         claimed.ifPresent(analysis -> {
             analysis.markRunning(Instant.now(clock));
+            analysis.getProjectSources();
             jobAnalysisRepository.save(analysis);
         });
         return claimed;
