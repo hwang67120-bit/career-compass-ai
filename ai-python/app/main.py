@@ -90,6 +90,27 @@ async def handle_request_validation_error(
     )
 
 
+@app.exception_handler(Exception)
+async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
+    """처리되지 않은 예외도 계약 봉투(JSON)로 반환한다 — Java가 text/plain 500을 받지 않도록.
+
+    계약(job-posting-extraction.md 5절)에 일반 500 코드가 없어, 재시도 가능한
+    `MODEL_UNAVAILABLE`(503)로 매핑하고 전체 예외는 로그로 남긴다. 개별 엔드포인트가
+    이미 잡는 예외(Ollama·검증 등)는 여기까지 오지 않는다.
+    """
+    request_id = resolve_request_id(request.headers.get("x-request-id"))
+    logger.exception("unhandled_exception request_id=%s", request_id)
+    return JSONResponse(
+        status_code=503,
+        content=error_envelope(
+            request_id,
+            "MODEL_UNAVAILABLE",
+            "Python 내부에서 처리되지 않은 오류가 발생했습니다.",
+            retryable=True,
+        ),
+    )
+
+
 @app.exception_handler(HTTPException)
 async def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
     """내부 토큰 불일치(401)만 계약 봉투 형식으로 재구성한다."""

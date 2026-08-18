@@ -22,11 +22,19 @@ from app.providers.settings import GeminiSettings
 
 
 def get_gemini_settings_if_configured() -> GeminiSettings | None:
-    """Gemini 환경변수가 있으면 설정 객체를, 없으면 `None`을 반환한다(예외로 죽지 않음)."""
+    """Gemini 환경변수가 있으면 설정 객체를, 없거나 비어 있으면 `None`을 반환한다(예외로 죽지 않음).
+
+    환경변수가 빈 문자열로 존재하는 경우(예: 서버 `.env`의 `GEMINI_API_KEY=`)도
+    미설정으로 다룬다 — 그렇지 않으면 폴백에서 `genai.Client("")`가
+    `ValueError`로 죽는다.
+    """
     try:
-        return GeminiSettings()
+        settings = GeminiSettings()
     except ValidationError:
         return None
+    if not settings.gemini_api_key.strip() or not settings.gemini_model.strip():
+        return None
+    return settings
 
 
 @asynccontextmanager
