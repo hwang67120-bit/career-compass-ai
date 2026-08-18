@@ -10,12 +10,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserProfileVersionRepository
         extends JpaRepository<UserProfileVersion, UUID> {
 
-    @EntityGraph(attributePaths = "technologyTags")
+    @EntityGraph(attributePaths = {"technologyTags", "technologyTags.technologyTag"})
     Optional<UserProfileVersion> findByUserProfile_IdAndProfileVersion(
             UUID userProfileId, int profileVersion
     );
 
-    @EntityGraph(attributePaths = "technologyTags")
+    @EntityGraph(attributePaths = {"technologyTags", "technologyTags.technologyTag"})
     Optional<UserProfileVersion>
     findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
             UUID userProfileId, int profileVersion, UUID userId
