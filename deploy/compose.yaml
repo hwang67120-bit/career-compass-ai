@@ -61,7 +61,11 @@ services:
       ai-python:
         condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: prod          # application-prod.yml(OAuth·세션) 활성화
+      # 기본 prod(OAuth·세션). 시연 시 .env에서 "prod,demo"로 바꾸면 DevSample 공급자
+      # 사용 가능(JOB_SEARCH_PROVIDER=dev-sample와 함께).
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # 채용공고 공급자. 기본 public-employment. 시연은 dev-sample(기술 콘텐츠 대표 공고).
+      JOB_SEARCH_PROVIDER: ${JOB_SEARCH_PROVIDER:-public-employment}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       PYTHON_WORKER_BASE_URL: http://ai-python:8000
       DB_HOST: postgres
