@@ -15,6 +15,7 @@
 
 - [ADR 0001 · 멀티 머신 · 도메인별 병렬 에이전트 구성](adr/0001-multi-machine-parallel-agent-setup.md)
 - [ADR 0002 · 바이브 코딩 품질 관리](adr/0002-vibe-coding-quality-management.md)
+- [ADR 0003 · 로컬 vs 호스팅 LLM 선택과 Java·Python 경계](adr/0003-local-vs-hosted-llm-boundary.md)
 
 ## 폐기된 이전 설계
 
