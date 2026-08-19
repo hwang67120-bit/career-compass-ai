@@ -9,6 +9,19 @@ from app.schemas.job_evidence_similarity import JudgeVerdict
 from app.schemas.job_posting import JobPostingCoreExtraction, JobPostingResponsibilityExtraction
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
 from app.schemas.project_responsibility import ProjectResponsibilityExtraction
+from app.services.performance_tracking import set_last_usage
+
+
+def _content_and_record_usage(response: httpx.Response) -> str:
+    """Ollama 응답에서 content를 꺼내고, 토큰 사용량을 계측에 기록한다.
+
+    Ollama `/api/chat`는 `prompt_eval_count`(입력)와 `eval_count`(출력) 토큰 수를
+    함께 반환한다 — 지금까지 버리던 값을 계측으로 넘긴다. 응답 내용(content)은
+    로그에 남기지 않고 호출부로만 반환한다.
+    """
+    payload = response.json()
+    set_last_usage(payload.get("prompt_eval_count"), payload.get("eval_count"))
+    return payload["message"]["content"]
 
 _JOB_SEARCH_KEYWORD_SYSTEM_PROMPT = (
     "제공된 희망 직무와 기술 목록에 대한 동의어, 영문 표기, 채용 사이트에서 실제로 "
@@ -148,7 +161,7 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            content = _content_and_record_usage(response)
             return JobPostingCoreExtraction.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
@@ -209,7 +222,7 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            content = _content_and_record_usage(response)
             return JobPostingResponsibilityExtraction.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
@@ -271,7 +284,7 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            content = _content_and_record_usage(response)
             return ProjectResponsibilityExtraction.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError("Ollama 응답 제한시간을 초과했습니다.") from error
@@ -324,7 +337,7 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            content = _content_and_record_usage(response)
             return JudgeVerdict.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
@@ -408,7 +421,7 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            content = _content_and_record_usage(response)
             return GeneratedKeywordSuggestions.model_validate_json(content)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(

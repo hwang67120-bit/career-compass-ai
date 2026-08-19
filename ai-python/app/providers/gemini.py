@@ -7,6 +7,21 @@ from pydantic import ValidationError
 
 from app.schemas.job_posting import JobPostingExtraction
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
+from app.services.performance_tracking import set_last_usage
+
+
+def _record_gemini_usage(response: object) -> None:
+    """Gemini 응답의 usage_metadata에서 토큰 수를 계측에 기록한다(없으면 건너뛴다).
+
+    토큰 개수만 기록하고 응답 본문은 남기지 않는다.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return
+    set_last_usage(
+        getattr(usage, "prompt_token_count", None),
+        getattr(usage, "candidates_token_count", None),
+    )
 
 _JOB_SEARCH_KEYWORD_SYSTEM_PROMPT = (
     "제공된 희망 직무와 기술 목록에 대한 동의어, 영문 표기, 채용 사이트에서 실제로 "
@@ -81,6 +96,7 @@ class GeminiProvider:
         except httpx.HTTPError as error:
             raise GeminiUnavailableError("Gemini 요청에 실패했습니다.") from error
 
+        _record_gemini_usage(response)
         if response.text is None:
             raise GeminiResponseError("Gemini가 빈 응답을 반환했습니다.")
 
@@ -132,6 +148,7 @@ class GeminiProvider:
         except httpx.HTTPError as error:
             raise GeminiUnavailableError("Gemini 요청에 실패했습니다.") from error
 
+        _record_gemini_usage(response)
         if response.text is None:
             raise GeminiResponseError("Gemini가 빈 응답을 반환했습니다.")
 
