@@ -21,6 +21,7 @@ import java.util.UUID;
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
+import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
@@ -52,6 +53,7 @@ class JobAnalysisWorkerTest {
             "10000000-0000-0000-0000-000000000001");
 
     private JobAnalysisService jobAnalysisService;
+    private JobEvidenceComparisonService jobEvidenceComparisonService;
     private JobPostingProvider jobPostingProvider;
     private ObjectProvider<JobPostingProvider> jobPostingProviderObjectProvider;
     private PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
@@ -64,6 +66,8 @@ class JobAnalysisWorkerTest {
     @BeforeEach
     void setUp() {
         jobAnalysisService = org.mockito.Mockito.mock(JobAnalysisService.class);
+        jobEvidenceComparisonService =
+                org.mockito.Mockito.mock(JobEvidenceComparisonService.class);
         jobPostingProvider = org.mockito.Mockito.mock(JobPostingProvider.class);
         jobPostingProviderObjectProvider = org.mockito.Mockito.mock(ObjectProvider.class);
         when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(jobPostingProvider);
@@ -76,6 +80,7 @@ class JobAnalysisWorkerTest {
 
         worker = new JobAnalysisWorker(
                 jobAnalysisService,
+                jobEvidenceComparisonService,
                 jobPostingProviderObjectProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,
@@ -107,7 +112,7 @@ class JobAnalysisWorkerTest {
 
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
         verify(jobAnalysisService, never())
-                .recordExtractionCompletedWithoutComparison(any(), any());
+                .recordExtractionReadyForComparison(any(), any());
         verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
     }
 
@@ -123,7 +128,7 @@ class JobAnalysisWorkerTest {
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
         verify(jobAnalysisService, never()).loadFixedProfileVersion(any());
         verify(jobAnalysisService, never())
-                .recordExtractionCompletedWithoutComparison(any(), any());
+                .recordExtractionReadyForComparison(any(), any());
     }
 
     @Test
@@ -138,7 +143,7 @@ class JobAnalysisWorkerTest {
         verify(jobAnalysisService).recordEmptySearchResult(JOB_ANALYSIS_ID);
         verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
         verify(jobAnalysisService, never())
-                .recordExtractionCompletedWithoutComparison(any(), any());
+                .recordExtractionReadyForComparison(any(), any());
         verify(jobPostingProvider, never()).fetchSourceText(any());
     }
 
@@ -160,7 +165,7 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionCompletedWithoutComparison(
+        verify(jobAnalysisService).recordExtractionReadyForComparison(
                 eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
         assertThat(captor.getValue()).allSatisfy(
@@ -198,7 +203,7 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionCompletedWithoutComparison(
+        verify(jobAnalysisService).recordExtractionReadyForComparison(
                 eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).getProviderPostingId()).isEqualTo("posting-2");
@@ -220,7 +225,7 @@ class JobAnalysisWorkerTest {
         verify(jobAnalysisService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
         verify(jobAnalysisService, never())
-                .recordExtractionCompletedWithoutComparison(any(), any());
+                .recordExtractionReadyForComparison(any(), any());
     }
 
     @Test

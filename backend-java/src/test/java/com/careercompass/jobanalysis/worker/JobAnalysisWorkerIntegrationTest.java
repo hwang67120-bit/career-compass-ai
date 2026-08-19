@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
@@ -81,6 +82,7 @@ class JobAnalysisWorkerIntegrationTest {
     @Autowired
     private JobAnalysisService jobAnalysisService;
 
+    private JobEvidenceComparisonService jobEvidenceComparisonService;
     private JobPostingProvider jobPostingProvider;
     private PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private ProjectResponsibilityExtractionService projectResponsibilityExtractionService;
@@ -94,6 +96,7 @@ class JobAnalysisWorkerIntegrationTest {
         insertUser(TEST_USER_ID);
         insertProjectSource(PROJECT_SOURCE_ID, TEST_USER_ID);
 
+        jobEvidenceComparisonService = mock(JobEvidenceComparisonService.class);
         jobPostingProvider = mock(JobPostingProvider.class);
         when(jobPostingProvider.providerName()).thenReturn("PUBLIC_EMPLOYMENT");
         pythonJobPostingExtractionClient = mock(PythonJobPostingExtractionClient.class);
@@ -107,6 +110,7 @@ class JobAnalysisWorkerIntegrationTest {
 
         worker = new JobAnalysisWorker(
                 jobAnalysisService,
+                jobEvidenceComparisonService,
                 objectProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,
@@ -194,6 +198,7 @@ class JobAnalysisWorkerIntegrationTest {
         when(emptyProvider.getIfAvailable()).thenReturn(null);
         JobAnalysisWorker workerWithoutProvider = new JobAnalysisWorker(
                 jobAnalysisService,
+                jobEvidenceComparisonService,
                 emptyProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,

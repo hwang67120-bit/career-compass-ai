@@ -11,6 +11,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
+import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
@@ -53,6 +54,7 @@ public class JobAnalysisWorker {
     private static final Logger log = LoggerFactory.getLogger(JobAnalysisWorker.class);
 
     private final JobAnalysisService jobAnalysisService;
+    private final JobEvidenceComparisonService jobEvidenceComparisonService;
     private final ObjectProvider<JobPostingProvider> jobPostingProvider;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private final ProjectResponsibilityExtractionService
@@ -69,6 +71,7 @@ public class JobAnalysisWorker {
 
     public JobAnalysisWorker(
             JobAnalysisService jobAnalysisService,
+            JobEvidenceComparisonService jobEvidenceComparisonService,
             ObjectProvider<JobPostingProvider> jobPostingProvider,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
             ProjectResponsibilityExtractionService projectResponsibilityExtractionService,
@@ -76,6 +79,7 @@ public class JobAnalysisWorker {
             @Value("${job-analysis.worker.search-result-limit}") int searchResultLimit
     ) {
         this.jobAnalysisService = jobAnalysisService;
+        this.jobEvidenceComparisonService = jobEvidenceComparisonService;
         this.jobPostingProvider = jobPostingProvider;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
         this.projectResponsibilityExtractionService =
@@ -100,18 +104,15 @@ public class JobAnalysisWorker {
     private void processClaimedAnalysis(JobAnalysis jobAnalysis) {
         UUID jobAnalysisId = jobAnalysis.getId();
         try {
+            if (jobAnalysis.getCurrentStep() == JobAnalysisStep.COMPARING_EVIDENCE) {
+                jobEvidenceComparisonService.compare(jobAnalysis);
+                return;
+            }
+
             JobPostingProvider provider = jobPostingProvider.getIfAvailable();
             if (provider == null) {
                 throw new JobPostingProviderNotConfiguredException();
             }
-
-            if (jobAnalysis.getCurrentStep() == JobAnalysisStep.COMPARING_EVIDENCE) {
-                jobAnalysisService.markAnalysisFailed(
-                        jobAnalysisId,
-                        JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
-                return;
-            }
-
             UserProfileVersion profileVersion =
                     jobAnalysisService.loadFixedProfileVersion(jobAnalysis);
             jobAnalysisService.advanceStep(
@@ -140,8 +141,9 @@ public class JobAnalysisWorker {
                 jobAnalysisService.recordExtractionAwaitingUserConfirmation(
                         jobAnalysisId, savedPostings);
             } else {
-                jobAnalysisService.recordExtractionCompletedWithoutComparison(
+                jobAnalysisService.recordExtractionReadyForComparison(
                         jobAnalysisId, savedPostings);
+                jobEvidenceComparisonService.compare(jobAnalysis);
             }
         } catch (JobPostingProviderNotConfiguredException exception) {
             logProcessingFailure(jobAnalysisId, exception);

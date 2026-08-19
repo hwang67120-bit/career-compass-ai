@@ -14,18 +14,24 @@ import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.dto.CreateJobAnalysisRequest;
+import com.careercompass.jobanalysis.dto.JobAnalysisPostingResponse;
+import com.careercompass.jobanalysis.dto.JobPostingComparisonSnapshot;
 import com.careercompass.jobanalysis.exception.InvalidJobAnalysisRequestException;
 import com.careercompass.jobanalysis.exception.JobAnalysisInputNotFoundException;
 import com.careercompass.jobanalysis.exception.JobAnalysisNotFoundException;
 import com.careercompass.jobanalysis.exception.ProjectSourceUnavailableException;
 import com.careercompass.jobanalysis.repository.JobAnalysisPostingRepository;
 import com.careercompass.jobanalysis.repository.JobAnalysisRepository;
+import com.careercompass.projectresponsibility.domain.UserProfileProjectResponsibility;
+import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
 import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.projectsource.domain.ProjectSourceStatus;
 import com.careercompass.projectsource.repository.ProjectSourceRepository;
 import com.careercompass.security.currentuser.CurrentUserProvider;
 import com.careercompass.userprofile.domain.UserProfileVersion;
 import com.careercompass.userprofile.repository.UserProfileVersionRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -40,14 +46,19 @@ public class JobAnalysisService {
     private final JobAnalysisRepository jobAnalysisRepository;
     private final JobAnalysisPostingRepository jobAnalysisPostingRepository;
     private final UserProfileVersionRepository userProfileVersionRepository;
+    private final UserProfileProjectResponsibilityRepository
+            userProfileProjectResponsibilityRepository;
     private final ProjectSourceRepository projectSourceRepository;
     private final CurrentUserProvider currentUserProvider;
     private final Clock clock;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public JobAnalysisService(
             JobAnalysisRepository jobAnalysisRepository,
             JobAnalysisPostingRepository jobAnalysisPostingRepository,
             UserProfileVersionRepository userProfileVersionRepository,
+            UserProfileProjectResponsibilityRepository
+                    userProfileProjectResponsibilityRepository,
             ProjectSourceRepository projectSourceRepository,
             CurrentUserProvider currentUserProvider,
             Clock clock
@@ -55,6 +66,8 @@ public class JobAnalysisService {
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.jobAnalysisPostingRepository = jobAnalysisPostingRepository;
         this.userProfileVersionRepository = userProfileVersionRepository;
+        this.userProfileProjectResponsibilityRepository =
+                userProfileProjectResponsibilityRepository;
         this.projectSourceRepository = projectSourceRepository;
         this.currentUserProvider = currentUserProvider;
         this.clock = clock;
@@ -280,32 +293,104 @@ public class JobAnalysisService {
     }
 
     /**
-     * 기능: 추출에 성공한 채용공고를 저장하고 비교 단계로 전환한 뒤, 비교 결과가 아직
-     * 구현되지 않은 작업을 실패로 표시한다. 확정 계약의 PARTIALLY_COMPLETED는 비교
-     * 결과가 하나 이상 생성된 뒤 후속 단계가 실패해야 한다. 여기서 저장하는 결과는
-     * 개발 연결 검증용 중간 산출물이며 사용자용 완료 결과로 노출하지 않는다.
-     * 화면에서는 공고 추출 성공과 비교 분석 미완료를 구분한다.
+     * 기능: 추출에 성공한 채용공고를 저장하고 근거 비교 단계로 전환한다.
      * 반환 값: 없음.
      */
     @Transactional
-    public void recordExtractionCompletedWithoutComparison(
+    public void recordExtractionReadyForComparison(
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings
     ) {
         JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
                 .orElseThrow(JobAnalysisInputNotFoundException::new);
         postings.forEach(jobAnalysisPostingRepository::save);
-        Instant now = Instant.now(clock);
-        jobAnalysis.advanceStep(JobAnalysisStep.COMPARING_EVIDENCE, now);
-        jobAnalysis.markFailed(
-                now,
-                JobAnalysisFailureCode.COMPARISON_STAGE_NOT_IMPLEMENTED);
+        jobAnalysis.advanceStep(JobAnalysisStep.COMPARING_EVIDENCE, Instant.now(clock));
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
-                "job_analysis_extraction_completed_comparison_unavailable "
+                "job_analysis_extraction_ready_for_comparison "
                         + "jobAnalysisId={} postingCount={}",
                 jobAnalysisId,
                 postings.size()
+        );
+    }
+
+    /**
+     * 기능: 분석에 고정된 프로필 버전에서 사용자가 확정한 프로젝트 담당 업무를 조회한다.
+     * 반환 값: 비교에 사용할 후보 식별자, 저장소 식별자와 확정 문장을 반환한다.
+     */
+    @Transactional(readOnly = true)
+    public List<ConfirmedProjectResponsibility> listConfirmedResponsibilities(
+            JobAnalysis jobAnalysis
+    ) {
+        UserProfileVersion profileVersion = userProfileVersionRepository
+                .findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
+                        jobAnalysis.getUserProfileId(),
+                        jobAnalysis.getUserProfileVersion(),
+                        jobAnalysis.getUserId()
+                )
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        List<UserProfileProjectResponsibility> responsibilities =
+                userProfileProjectResponsibilityRepository
+                        .findAllByUserProfileVersion_IdOrderByDisplayOrderAsc(
+                                profileVersion.getId());
+        return responsibilities.stream()
+                .map(responsibility -> new ConfirmedProjectResponsibility(
+                        responsibility.getSourceCandidateId(),
+                        responsibility.getProjectSource().getId(),
+                        responsibility.getConfirmedText()
+                ))
+                .toList();
+    }
+
+    /**
+     * 기능: 공고 하나의 의미 비교 결과 JSON을 해당 분석 소유 공고에 저장한다.
+     * 반환 값: 없음.
+     */
+    @Transactional
+    public void recordPostingComparison(
+            UUID jobAnalysisId,
+            UUID postingId,
+            String comparisonJson
+    ) {
+        JobAnalysisPosting posting = jobAnalysisPostingRepository
+                .findByIdAndJobAnalysisId(postingId, jobAnalysisId)
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        posting.recordComparison(comparisonJson);
+        jobAnalysisPostingRepository.save(posting);
+    }
+
+    /**
+     * 기능: 공고별 비교 처리 결과를 기준으로 분석을 완료, 부분 완료 또는 실패로 확정한다.
+     * 반환 값: 없음.
+     */
+    @Transactional
+    public void finishEvidenceComparison(
+            UUID jobAnalysisId,
+            int completedUnits,
+            int totalUnits,
+            int successfulCallCount,
+            JobAnalysisFailureCode failureCode
+    ) {
+        JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        Instant now = Instant.now(clock);
+        jobAnalysis.advanceStep(JobAnalysisStep.FINALIZING_RESULT, now);
+        if (failureCode == null) {
+            jobAnalysis.markComparisonCompleted(completedUnits, totalUnits, now);
+        } else if (successfulCallCount > 0) {
+            jobAnalysis.markComparisonPartiallyCompleted(
+                    completedUnits, totalUnits, failureCode, now);
+        } else {
+            jobAnalysis.markFailed(now, failureCode);
+        }
+        jobAnalysisRepository.save(jobAnalysis);
+        log.info(
+                "job_analysis_comparison_finished jobAnalysisId={} status={} "
+                        + "completedUnits={} totalUnits={}",
+                jobAnalysisId,
+                jobAnalysis.getAnalysisStatus(),
+                completedUnits,
+                totalUnits
         );
     }
 
@@ -350,5 +435,37 @@ public class JobAnalysisService {
     @Transactional(readOnly = true)
     public List<JobAnalysisPosting> listPostings(UUID jobAnalysisId) {
         return jobAnalysisPostingRepository.findByJobAnalysisIdOrderByCreatedAtAsc(jobAnalysisId);
+    }
+    /**
+     * 기능: 분석 작업에 저장된 공고 메타데이터와 의미 비교 결과를 사용자 응답 형태로 조회한다.
+     * 반환 값: 저장 순서대로 정렬된 공고별 비교 결과를 반환한다.
+     */
+    @Transactional(readOnly = true)
+    public List<JobAnalysisPostingResponse> listPostingResults(UUID jobAnalysisId) {
+        return jobAnalysisPostingRepository
+                .findByJobAnalysisIdOrderByCreatedAtAsc(jobAnalysisId)
+                .stream()
+                .map(posting -> new JobAnalysisPostingResponse(
+                        posting.getId(),
+                        posting.getJobPostingId(),
+                        posting.getProviderPostingId(),
+                        posting.getProvider(),
+                        posting.getCompanyName(),
+                        posting.getOriginalJobTitle(),
+                        posting.getSourceUrl(),
+                        parseComparison(posting.getComparisonJson())
+                ))
+                .toList();
+    }
+
+    private JobPostingComparisonSnapshot parseComparison(String comparisonJson) {
+        if (comparisonJson == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(comparisonJson, JobPostingComparisonSnapshot.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("STORED_COMPARISON_JSON_INVALID", exception);
+        }
     }
 }
