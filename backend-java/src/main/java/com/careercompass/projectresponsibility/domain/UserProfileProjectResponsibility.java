@@ -53,4 +53,12 @@ public class UserProfileProjectResponsibility {
     public ProjectSource getProjectSource() {
         return projectSource;
     }
+
+    public UUID getSourceCandidateId() {
+        return sourceCandidate.getId();
+    }
+
+    public String getConfirmedText() {
+        return confirmedText;
+    }
 }

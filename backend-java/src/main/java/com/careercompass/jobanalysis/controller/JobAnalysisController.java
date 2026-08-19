@@ -63,7 +63,8 @@ public class JobAnalysisController {
                 jobAnalysis.getTotalUnits(),
                 jobAnalysis.getFailureCode() != null
                         ? jobAnalysis.getFailureCode().name()
-                        : null
+                        : null,
+                jobAnalysisService.listPostingResults(jobAnalysis.getId())
         );
     }
 }

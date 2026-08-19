@@ -45,6 +45,9 @@ public class JobAnalysisPosting {
     @Column(name = "model_executions", nullable = false)
     private String modelExecutionsJson;
 
+    @Column(name = "comparison")
+    private String comparisonJson;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -151,6 +154,17 @@ public class JobAnalysisPosting {
 
     public String getModelExecutionsJson() {
         return modelExecutionsJson;
+    }
+
+    public String getComparisonJson() {
+        return comparisonJson;
+    }
+
+    public void recordComparison(String comparisonJson) {
+        if (comparisonJson == null || comparisonJson.isBlank()) {
+            throw new IllegalArgumentException("COMPARISON_JSON_REQUIRED");
+        }
+        this.comparisonJson = comparisonJson;
     }
 
     public Instant getCreatedAt() {

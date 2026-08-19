@@ -1,5 +1,6 @@
 package com.careercompass.jobanalysis.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 public record JobAnalysisResponse(
@@ -8,6 +9,7 @@ public record JobAnalysisResponse(
         String currentStep,
         int completedUnits,
         int totalUnits,
-        String failureCode
+        String failureCode,
+        List<JobAnalysisPostingResponse> postings
 ) {
 }

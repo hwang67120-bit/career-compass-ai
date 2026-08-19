@@ -243,7 +243,8 @@ class JobAnalysisIntegrationTest {
                 .andExpect(jsonPath("$.data.completedUnits").value(0))
                 .andExpect(jsonPath("$.data.totalUnits").value(0))
                 .andExpect(jsonPath("$.data.failureCode").doesNotExist())
-                .andExpect(jsonPath("$.data.postings").doesNotExist())
+                .andExpect(jsonPath("$.data.postings").isArray())
+                .andExpect(jsonPath("$.data.postings").isEmpty())
                 .andExpect(jsonPath("$.data.extraction").doesNotExist())
                 .andExpect(jsonPath("$.data.modelExecutions").doesNotExist());
     }

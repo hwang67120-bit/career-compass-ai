@@ -214,6 +214,27 @@ public class JobAnalysis {
     public void markCompleted(Instant now) {
         this.analysisStatus = JobAnalysisStatus.COMPLETED;
         this.currentStep = JobAnalysisStep.FINISHED;
+        this.failureCode = null;
+        this.updatedAt = now;
+    }
+
+    public void markComparisonCompleted(int completedUnits, int totalUnits, Instant now) {
+        this.completedUnits = completedUnits;
+        this.totalUnits = totalUnits;
+        markCompleted(now);
+    }
+
+    public void markComparisonPartiallyCompleted(
+            int completedUnits,
+            int totalUnits,
+            JobAnalysisFailureCode failureCode,
+            Instant now
+    ) {
+        this.analysisStatus = JobAnalysisStatus.PARTIALLY_COMPLETED;
+        this.currentStep = JobAnalysisStep.FINISHED;
+        this.completedUnits = completedUnits;
+        this.totalUnits = totalUnits;
+        this.failureCode = failureCode;
         this.updatedAt = now;
     }
 
