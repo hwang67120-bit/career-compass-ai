@@ -26,6 +26,7 @@ provider(`OllamaProvider` 등) 함수 시그니처는 바꾸지 않는다 — �
 열거형)을 조합해서만 만든다. 원문이 실수로 로그에 섞여 들어가는 걸 막는다.
 """
 
+import contextvars
 import logging
 import time
 from collections.abc import Iterator
@@ -33,6 +34,29 @@ from contextlib import contextmanager
 from enum import Enum
 
 _logger = logging.getLogger("app.performance")
+
+# 요청 단위 식별자와 직전 모델 호출의 토큰 사용량을 계측에 연결한다. provider 함수
+# 시그니처를 바꾸지 않으려고 contextvar로 전달한다(같은 async 컨텍스트에서 전파됨).
+_request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "performance_request_id", default=None
+)
+_usage_var: contextvars.ContextVar[tuple[int | None, int | None] | None] = (
+    contextvars.ContextVar("performance_model_usage", default=None)
+)
+
+
+def set_request_id(request_id: str | None) -> None:
+    """요청 식별자를 계측 로그에 연결한다(라우터가 요청 시작 시 호출)."""
+    _request_id_var.set(request_id)
+
+
+def set_last_usage(prompt_tokens: int | None, completion_tokens: int | None) -> None:
+    """직전 모델 호출의 토큰 사용량을 기록한다(provider가 응답을 읽을 때 호출).
+
+    현재 `measure_stage` 블록이 finally에서 이 값을 수거해 로그로 남기고 비운다.
+    토큰 개수 외의 응답 내용(원문·개인정보)은 저장하지 않는다.
+    """
+    _usage_var.set((prompt_tokens, completion_tokens))
 
 
 class StageOperation(str, Enum):
@@ -66,9 +90,31 @@ def measure_stage(component: str, operation: StageOperation) -> Iterator[None]:
     단계 중 예외가 발생해도 소요 시간은 그대로 로그에 남기고 예외를 다시 던진다.
     지금은 성공·실패를 구분하지 않는다(확인 필요 — 위 모듈 docstring 참고).
     """
+    _usage_var.set(None)  # 이전 호출의 잔여 사용량이 이 단계에 섞이지 않게 초기화
     start = time.perf_counter()
+    outcome = "success"
+    error_type = "none"
     try:
         yield
+    except Exception as error:  # 결과만 기록하고 그대로 다시 던진다
+        outcome = "error"
+        error_type = type(error).__name__
+        raise
     finally:
         duration_ms = (time.perf_counter() - start) * 1000
-        _logger.info("stage=%s.%s duration_ms=%.1f", component, operation.value, duration_ms)
+        usage = _usage_var.get()
+        prompt_tokens = usage[0] if usage else None
+        completion_tokens = usage[1] if usage else None
+        _logger.info(
+            "stage=%s.%s duration_ms=%.1f outcome=%s errorType=%s "
+            "requestId=%s promptTokens=%s completionTokens=%s",
+            component,
+            operation.value,
+            duration_ms,
+            outcome,
+            error_type,
+            _request_id_var.get() or "none",
+            prompt_tokens if prompt_tokens is not None else "none",
+            completion_tokens if completion_tokens is not None else "none",
+        )
+        _usage_var.set(None)

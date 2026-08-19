@@ -33,6 +33,7 @@ from app.providers.ollama_client import (
 )
 from app.providers.settings import GeminiSettings
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id, success_envelope
+from app.services.performance_tracking import set_request_id
 from app.schemas.job_evidence_similarity import SimilarityRequest
 from app.schemas.project_responsibility import ProjectResponsibilityRequest
 from app.services.job_evidence_similarity import compare_evidence
@@ -77,6 +78,7 @@ async def extract_job_posting(
     gemini_settings: GeminiSettings | None = Depends(get_gemini_settings_if_configured),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
+    set_request_id(request_id)
 
     field_errors = []
     if not _is_uuid(request.job_posting_id):
@@ -216,6 +218,7 @@ async def compare_job_evidence_similarities(
     provider: OllamaProvider = Depends(get_ollama_evidence_judge_provider),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
+    set_request_id(request_id)
 
     field_errors = _validate_similarity_request(request)
     if field_errors:
@@ -330,6 +333,7 @@ async def extract_project_responsibilities_endpoint(
     provider: OllamaProvider = Depends(get_ollama_project_responsibility_provider),
 ) -> JSONResponse:
     request_id = resolve_request_id(x_request_id)
+    set_request_id(request_id)
 
     field_errors = _validate_project_responsibility_request(request)
     if field_errors:
