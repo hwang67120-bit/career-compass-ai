@@ -120,7 +120,7 @@ class JobAnalysisWorkerIntegrationTest {
     }
 
     @Test
-    void pollAndProcessOne_withExtractionSucceeding_marksFailedWithComparisonStageNotImplemented()
+    void pollAndProcessOne_withExtractionSucceeding_completesComparison()
             throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         when(jobPostingProvider.search(anyString(), anyInt())).thenReturn(List.of(
@@ -143,14 +143,19 @@ class JobAnalysisWorkerIntegrationTest {
                 "SELECT analysis_status, current_step, failure_code FROM job_analysis WHERE id = ?",
                 jobAnalysisId
         );
-        assertThat(row.get("analysis_status")).isEqualTo("FAILED");
-        assertThat(row.get("current_step")).isEqualTo("COMPARING_EVIDENCE");
-        assertThat(row.get("failure_code")).isEqualTo("COMPARISON_STAGE_NOT_IMPLEMENTED");
+        assertThat(row.get("analysis_status")).isEqualTo("COMPLETED");
+        assertThat(row.get("current_step")).isEqualTo("FINISHED");
+        assertThat(row.get("failure_code")).isNull();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM job_analysis_posting WHERE job_analysis_id = ?",
                 Integer.class,
                 jobAnalysisId
         )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT comparison FROM job_analysis_posting WHERE job_analysis_id = ?",
+                String.class,
+                jobAnalysisId
+        )).isNotNull();
     }
 
     @Test
