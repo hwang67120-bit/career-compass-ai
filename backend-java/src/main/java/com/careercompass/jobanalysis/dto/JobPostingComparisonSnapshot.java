@@ -79,7 +79,7 @@ public record JobPostingComparisonSnapshot(
                         null,
                         null,
                         null,
-                        "COMPATIBLE_USER_EVIDENCE_MISSING"
+                        "USER_EVIDENCE_EMPTY_AFTER_SANITIZATION"
                 )).toList(),
                 null,
                 null,
