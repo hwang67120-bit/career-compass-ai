@@ -35,7 +35,10 @@
         selectedTechnologyTags: new Map(),
         userProfile: null,
         profileDirty: false,
-        github: null
+        github: null,
+        responsibilityReviewAnalysisId: null,
+        responsibilityReviewEntry: null,
+        comparisonResultAnalysisId: null
     };
 
     /**
@@ -671,6 +674,9 @@
         }
         stopAnalysisPolling();
         elements.progressLog.innerHTML = "";
+        state.responsibilityReviewAnalysisId = null;
+        state.responsibilityReviewEntry = null;
+        state.comparisonResultAnalysisId = null;
         showOnly(elements.analysisProgressView);
 
         appendCompletedStep(
@@ -775,6 +781,395 @@
         }
     }
 
+    async function ensureResponsibilityReview(jobAnalysisId) {
+        if (state.responsibilityReviewAnalysisId === jobAnalysisId) {
+            return;
+        }
+        state.responsibilityReviewAnalysisId = jobAnalysisId;
+        const entry = appendLogEntry(
+            "프로젝트 담당업무 확인",
+            "AI가 찾은 후보와 추가 기술을 불러오고 있습니다."
+        );
+        state.responsibilityReviewEntry = entry;
+
+        try {
+            if (!state.github?.projectSourceId) {
+                throw new Error("분석에 사용한 저장소 정보를 찾지 못했습니다.");
+            }
+            const review = await request(
+                `/api/v1/project-sources/${state.github.projectSourceId}/responsibility-candidates`
+            );
+            if (state.responsibilityReviewAnalysisId !== jobAnalysisId) {
+                return;
+            }
+            renderResponsibilityReviewControls(entry, review);
+        } catch (error) {
+            setLogEntryText(entry, "프로젝트 담당업무 확인 실패");
+            setLogEntryDetail(
+                entry,
+                error.message || "확인 후보를 불러오지 못했습니다."
+            );
+            markLogEntryFailed(entry);
+            appendReviewRetryButton(entry, jobAnalysisId);
+        }
+    }
+
+    function appendReviewRetryButton(entry, jobAnalysisId) {
+        const retryButton = createReviewButton("다시 불러오기", "secondary-button");
+        retryButton.addEventListener("click", () => {
+            entry.remove();
+            state.responsibilityReviewAnalysisId = null;
+            state.responsibilityReviewEntry = null;
+            void ensureResponsibilityReview(jobAnalysisId);
+        });
+        const actions = document.createElement("div");
+        actions.className = "review-actions";
+        actions.appendChild(retryButton);
+        entry.querySelector(".chat-bubble").appendChild(actions);
+    }
+
+    function renderResponsibilityReviewControls(entry, review) {
+        const pendingCandidates = (review?.candidates || [])
+            .filter((candidate) => candidate.status === "UNCONFIRMED");
+        const pendingSuggestions = (review?.technologySuggestions || [])
+            .filter((suggestion) => suggestion.decisionStatus === "PENDING");
+
+        setLogEntryText(entry, "프로젝트 근거를 확인해 주세요");
+        setLogEntryDetail(
+            entry,
+            `담당업무 ${pendingCandidates.length}개 · 추가 기술 ${pendingSuggestions.length}개`
+        );
+        const list = document.createElement("div");
+        list.className = "responsibility-review-list";
+        pendingCandidates.forEach((candidate) => {
+            list.appendChild(createResponsibilityCandidateCard(candidate, entry));
+        });
+        pendingSuggestions.forEach((suggestion) => {
+            list.appendChild(createTechnologySuggestionCard(suggestion, entry));
+        });
+        entry.querySelector(".chat-bubble").appendChild(list);
+
+        if (pendingCandidates.length === 0 && pendingSuggestions.length === 0) {
+            setLogEntryDetail(entry, "결정할 후보가 없습니다. 분석 재개 상태를 확인합니다.");
+            markLogEntryDone(entry);
+        }
+    }
+
+    function createResponsibilityCandidateCard(candidate, reviewEntry) {
+        const card = document.createElement("section");
+        card.className = "responsibility-review-card";
+        const title = document.createElement("strong");
+        title.textContent = "담당업무 후보";
+        const extractedText = document.createElement("p");
+        extractedText.className = "review-extracted-text";
+        extractedText.textContent = candidate.extractedText;
+        const evidence = document.createElement("p");
+        evidence.className = "review-evidence";
+        evidence.textContent = formatEvidence(candidate.sourceEvidence);
+        const confirmedText = document.createElement("textarea");
+        confirmedText.className = "review-confirmed-text";
+        confirmedText.maxLength = 500;
+        confirmedText.rows = 3;
+        confirmedText.value = candidate.confirmedText || candidate.extractedText || "";
+        confirmedText.setAttribute("aria-label", "확정할 담당업무 문장");
+
+        const actions = document.createElement("div");
+        actions.className = "review-actions";
+        const confirmButton = createReviewButton("확정", "primary-button");
+        const rejectButton = createReviewButton("거부", "secondary-button");
+        confirmButton.addEventListener("click", () => {
+            const text = confirmedText.value.trim();
+            if (!text) {
+                showReviewError(card, "확정할 담당업무 문장을 입력해 주세요.");
+                return;
+            }
+            void submitReviewDecision(
+                card,
+                reviewEntry,
+                `/api/v1/project-responsibility-candidates/${candidate.candidateId}/decision`,
+                {
+                    expectedVersion: candidate.version,
+                    decision: "CONFIRM",
+                    confirmedText: text
+                },
+                "확정됨"
+            );
+        });
+        rejectButton.addEventListener("click", () => {
+            void submitReviewDecision(
+                card,
+                reviewEntry,
+                `/api/v1/project-responsibility-candidates/${candidate.candidateId}/decision`,
+                {
+                    expectedVersion: candidate.version,
+                    decision: "REJECT",
+                    confirmedText: null
+                },
+                "거부됨"
+            );
+        });
+        actions.append(confirmButton, rejectButton);
+        card.append(title, extractedText, evidence, confirmedText, actions);
+        return card;
+    }
+
+    function createTechnologySuggestionCard(suggestion, reviewEntry) {
+        const card = document.createElement("section");
+        card.className = "responsibility-review-card";
+        const title = document.createElement("strong");
+        title.textContent = "추가 기술 제안";
+        const name = document.createElement("p");
+        name.className = "review-extracted-text";
+        name.textContent = suggestion.canonicalName;
+        const evidence = document.createElement("p");
+        evidence.className = "review-evidence";
+        evidence.textContent = formatEvidence(suggestion.sourceEvidence);
+        const actions = document.createElement("div");
+        actions.className = "review-actions";
+        const addButton = createReviewButton("기술에 추가", "primary-button");
+        const ignoreButton = createReviewButton("무시", "secondary-button");
+        addButton.addEventListener("click", () => {
+            void submitReviewDecision(
+                card,
+                reviewEntry,
+                `/api/v1/project-technology-suggestions/${suggestion.suggestionId}/decision`,
+                {expectedVersion: suggestion.version, decision: "ADD"},
+                "추가됨"
+            );
+        });
+        ignoreButton.addEventListener("click", () => {
+            void submitReviewDecision(
+                card,
+                reviewEntry,
+                `/api/v1/project-technology-suggestions/${suggestion.suggestionId}/decision`,
+                {expectedVersion: suggestion.version, decision: "IGNORE"},
+                "무시됨"
+            );
+        });
+        actions.append(addButton, ignoreButton);
+        card.append(title, name, evidence, actions);
+        return card;
+    }
+
+    function createReviewButton(label, className) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.textContent = label;
+        return button;
+    }
+
+    function formatEvidence(sourceEvidence) {
+        if (!sourceEvidence?.length) {
+            return "표시할 파일 근거가 없습니다.";
+        }
+        return `근거: ${sourceEvidence
+            .map((evidence) => evidence.path || evidence.evidenceId)
+            .filter(Boolean)
+            .join(", ")}`;
+    }
+
+    async function submitReviewDecision(
+            card,
+            reviewEntry,
+            path,
+            body,
+            completedLabel
+    ) {
+        setReviewCardBusy(card, true);
+        clearReviewError(card);
+        try {
+            const result = await mutation(path, body, "PUT");
+            card.dataset.decided = "true";
+            card.classList.add("is-decided");
+            card.querySelector(".review-actions").replaceChildren();
+            const completed = document.createElement("span");
+            completed.className = "review-decision-label";
+            completed.textContent = completedLabel;
+            card.querySelector(".review-actions").appendChild(completed);
+            if (result?.reviewCompleted) {
+                setLogEntryDetail(
+                    reviewEntry,
+                    "모든 결정을 저장했습니다. 비교 분석을 자동으로 재개합니다."
+                );
+                markLogEntryDone(reviewEntry);
+                try {
+                    await loadUserProfile();
+                } catch (error) {
+                    showGlobalMessage(
+                        "분석은 재개됐지만 최신 프로필을 다시 불러오지 못했습니다.",
+                        true
+                    );
+                }
+            } else {
+                const remaining = reviewEntry.querySelectorAll(
+                    ".responsibility-review-card:not(.is-decided)"
+                ).length;
+                setLogEntryDetail(reviewEntry, `남은 확인 항목 ${remaining}개`);
+            }
+        } catch (error) {
+            showReviewError(
+                card,
+                error.message || "결정을 저장하지 못했습니다."
+            );
+            setReviewCardBusy(card, false);
+        }
+    }
+
+    function setReviewCardBusy(card, busy) {
+        card.querySelectorAll("button, textarea").forEach((control) => {
+            control.disabled = busy;
+        });
+    }
+
+    function clearReviewError(card) {
+        card.querySelector(".review-error")?.remove();
+    }
+
+    function showReviewError(card, message) {
+        clearReviewError(card);
+        const error = document.createElement("p");
+        error.className = "review-error";
+        error.textContent = message;
+        card.appendChild(error);
+    }
+
+    function renderComparisonResults(jobAnalysis) {
+        if (state.comparisonResultAnalysisId === jobAnalysis.id) {
+            return;
+        }
+        state.comparisonResultAnalysisId = jobAnalysis.id;
+        const entry = appendLogEntry(
+            "채용공고와 프로젝트 근거 비교 결과",
+            null
+        );
+        const bubble = entry.querySelector(".chat-bubble");
+        const postings = (jobAnalysis.postings || [])
+            .filter((posting) => posting.comparison);
+        if (postings.length === 0) {
+            setLogEntryDetail(entry, "표시할 비교 결과가 없습니다.");
+            markLogEntryDone(entry);
+            return;
+        }
+
+        const container = document.createElement("div");
+        container.className = "comparison-results";
+        postings.forEach((posting) => {
+            container.appendChild(createComparisonPosting(posting));
+        });
+        bubble.appendChild(container);
+        markLogEntryDone(entry);
+    }
+
+    function createComparisonPosting(posting) {
+        const section = document.createElement("section");
+        section.className = "comparison-posting";
+        const heading = document.createElement("div");
+        heading.className = "comparison-posting-heading";
+        const titleGroup = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = posting.originalJobTitle || "채용공고";
+        const company = document.createElement("p");
+        company.textContent = posting.companyName || posting.provider;
+        titleGroup.append(title, company);
+        heading.appendChild(titleGroup);
+
+        const sourceUrl = safeHttpUrl(posting.sourceUrl);
+        if (sourceUrl) {
+            const link = document.createElement("a");
+            link.href = sourceUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "공고 보기";
+            heading.appendChild(link);
+        }
+        section.appendChild(heading);
+
+        const comparison = posting.comparison;
+        if (comparison.failureCode || comparison.unavailableReason) {
+            const unavailable = document.createElement("p");
+            unavailable.className = "comparison-unavailable";
+            unavailable.textContent = comparisonFailureLabel(
+                comparison.failureCode || comparison.unavailableReason
+            );
+            section.appendChild(unavailable);
+        }
+
+        if (comparison.results?.length) {
+            const bars = document.createElement("div");
+            bars.className = "similarity-bars";
+            comparison.results.forEach((result, index) => {
+                bars.appendChild(createJudgmentBar(result, index));
+            });
+            section.appendChild(bars);
+        }
+
+        if (comparison.modelExecution) {
+            const model = document.createElement("p");
+            model.className = "comparison-model";
+            model.textContent =
+                `${comparison.modelExecution.provider} · ${comparison.modelExecution.model}`;
+            section.appendChild(model);
+        }
+        return section;
+    }
+
+    function createJudgmentBar(result, index) {
+        const row = document.createElement("div");
+        const label = document.createElement("div");
+        label.className = "similarity-label";
+        const evidence = document.createElement("span");
+        evidence.textContent = `공고 담당업무 ${index + 1}`;
+        evidence.title = result.jobEvidenceId;
+        const judgment = document.createElement("strong");
+        judgment.textContent = judgmentLabel(result);
+        label.append(evidence, judgment);
+
+        const track = document.createElement("div");
+        track.className = "similarity-track";
+        track.setAttribute("role", "img");
+        track.setAttribute(
+            "aria-label",
+            `공고 담당업무 ${index + 1}: ${judgment.textContent}`
+        );
+        const fill = document.createElement("div");
+        fill.className = `similarity-fill ${judgmentClass(result)}`;
+        track.appendChild(fill);
+        row.append(label, track);
+        return row;
+    }
+
+    function judgmentLabel(result) {
+        if (result.status !== "CALCULATED") {
+            return "판단 불가";
+        }
+        return result.judgment === "RELATED" ? "관련 있음" : "관련 없음";
+    }
+
+    function judgmentClass(result) {
+        if (result.status !== "CALCULATED") {
+            return "is-unavailable";
+        }
+        return result.judgment === "RELATED" ? "is-related" : "is-not-related";
+    }
+
+    function comparisonFailureLabel(code) {
+        const labels = {
+            JOB_EVIDENCE_EMPTY_AFTER_SANITIZATION: "공고 담당업무 근거가 부족합니다.",
+            USER_EVIDENCE_EMPTY_AFTER_SANITIZATION: "확정된 프로젝트 근거가 부족합니다."
+        };
+        return labels[code] || "이 공고의 비교 결과를 계산하지 못했습니다.";
+    }
+
+    function safeHttpUrl(value) {
+        try {
+            const url = new URL(value);
+            return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+        } catch {
+            return null;
+        }
+    }
+
     function renderJobAnalysisState(statusEntry, jobAnalysis) {
         const {analysisStatus, currentStep, completedUnits, totalUnits, failureCode} = jobAnalysis;
         switch (analysisStatus) {
@@ -789,6 +1184,14 @@
                     JOB_ANALYSIS_STEP_LABELS[currentStep] || currentStep
                 );
                 break;
+            case "AWAITING_USER_CONFIRMATION":
+                setLogEntryText(statusEntry, "프로젝트 근거 확인 대기");
+                setLogEntryDetail(
+                    statusEntry,
+                    "아래 후보를 모두 결정하면 비교 분석이 자동으로 재개됩니다."
+                );
+                void ensureResponsibilityReview(jobAnalysis.id);
+                break;
             case "CANCELLATION_REQUESTED":
                 setLogEntryText(statusEntry, "취소 처리 중");
                 setLogEntryDetail(statusEntry, "취소 요청을 반영하고 있습니다.");
@@ -797,11 +1200,13 @@
                 setLogEntryText(statusEntry, "일부 완료");
                 setLogEntryDetail(statusEntry, `진행 단위 ${completedUnits}/${totalUnits}`);
                 markLogEntryDone(statusEntry);
+                renderComparisonResults(jobAnalysis);
                 break;
             case "COMPLETED":
                 setLogEntryText(statusEntry, "분석 완료");
                 setLogEntryDetail(statusEntry, `진행 단위 ${completedUnits}/${totalUnits}`);
                 markLogEntryDone(statusEntry);
+                renderComparisonResults(jobAnalysis);
                 break;
             case "FAILED":
                 if (failureCode === "COMPARISON_STAGE_NOT_IMPLEMENTED") {
