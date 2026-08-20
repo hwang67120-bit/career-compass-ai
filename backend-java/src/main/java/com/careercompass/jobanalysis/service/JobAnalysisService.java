@@ -32,11 +32,13 @@ import com.careercompass.userprofile.domain.UserProfileVersion;
 import com.careercompass.userprofile.repository.UserProfileVersionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class JobAnalysisService {
 
@@ -52,26 +54,6 @@ public class JobAnalysisService {
     private final CurrentUserProvider currentUserProvider;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    public JobAnalysisService(
-            JobAnalysisRepository jobAnalysisRepository,
-            JobAnalysisPostingRepository jobAnalysisPostingRepository,
-            UserProfileVersionRepository userProfileVersionRepository,
-            UserProfileProjectResponsibilityRepository
-                    userProfileProjectResponsibilityRepository,
-            ProjectSourceRepository projectSourceRepository,
-            CurrentUserProvider currentUserProvider,
-            Clock clock
-    ) {
-        this.jobAnalysisRepository = jobAnalysisRepository;
-        this.jobAnalysisPostingRepository = jobAnalysisPostingRepository;
-        this.userProfileVersionRepository = userProfileVersionRepository;
-        this.userProfileProjectResponsibilityRepository =
-                userProfileProjectResponsibilityRepository;
-        this.projectSourceRepository = projectSourceRepository;
-        this.currentUserProvider = currentUserProvider;
-        this.clock = clock;
-    }
 
     /**
      * 기능: 현재 사용자의 프로필 버전과 선택한 저장소를 검증하고 분석 작업을 대기열에 저장한다.
@@ -210,12 +192,8 @@ public class JobAnalysisService {
     }
 
     /**
-     * 기능: 대기 중인 분석 작업을 하나 선점하고 RUNNING으로 표시한다.
+     * 기능: 여러 워커가 중복 처리하지 않도록 SKIP LOCKED로 대기 작업을 하나 선점한다.
      * 반환 값: 선점한 작업(없으면 빈 값)을 반환한다.
-     *
-     * 2026-08-04 임시 작업(코덱스 사용량 한도 공백기 대응, docs/current-work.md 참고) —
-     * JobAnalysisWorker가 이 메서드를 호출한다. 짧은 트랜잭션 안에서 SKIP LOCKED로 잠금
-     * 선점하고 즉시 커밋해, 다른 워커 인스턴스와 경합하지 않는다.
      */
     @Transactional
     public Optional<JobAnalysis> claimNextQueuedAnalysis() {

@@ -44,8 +44,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * {@link JobAnalysisWorker}의 오케스트레이션 로직만 검증한다(실제 Provider·Python 호출
- * 없음, Spring 컨텍스트 없음) — 2026-08-04 임시 작업.
+ * 실제 외부 서비스와 Spring 컨텍스트 없이 {@link JobAnalysisWorker}의 작업 순서만 검증한다.
  */
 class JobAnalysisWorkerTest {
 

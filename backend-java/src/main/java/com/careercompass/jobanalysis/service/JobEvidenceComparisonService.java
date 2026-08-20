@@ -18,10 +18,12 @@ import com.careercompass.pythonworker.exception.PythonEvidenceSimilarityFailure;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+@RequiredArgsConstructor
 @Service
 public class JobEvidenceComparisonService {
 
@@ -31,14 +33,6 @@ public class JobEvidenceComparisonService {
     private final JobAnalysisService jobAnalysisService;
     private final PythonEvidenceSimilarityClient pythonEvidenceSimilarityClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    public JobEvidenceComparisonService(
-            JobAnalysisService jobAnalysisService,
-            PythonEvidenceSimilarityClient pythonEvidenceSimilarityClient
-    ) {
-        this.jobAnalysisService = jobAnalysisService;
-        this.pythonEvidenceSimilarityClient = pythonEvidenceSimilarityClient;
-    }
 
     /**
      * 기능: 저장된 공고 담당 업무와 확정된 사용자 프로젝트 담당 업무를 공고별로 비교하고 저장한다.

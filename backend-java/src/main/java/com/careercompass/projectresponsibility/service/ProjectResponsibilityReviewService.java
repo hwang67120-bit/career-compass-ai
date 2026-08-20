@@ -16,18 +16,59 @@ import java.util.stream.Collectors;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.repository.JobAnalysisRepository;
-import com.careercompass.projectresponsibility.domain.*;
-import com.careercompass.projectresponsibility.dto.*;
-import com.careercompass.projectresponsibility.exception.*;
-import com.careercompass.projectresponsibility.repository.*;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityCandidate;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityCandidateStatus;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityExtractionTask;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityReviewStatus;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologyFinding;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologySuggestion;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologySuggestionStatus;
+import com.careercompass.projectresponsibility.domain.UserProfileProjectResponsibility;
+
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityCandidateResponse;
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityDecisionRequest;
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityDecisionResponse;
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityEvidenceResponse;
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityReviewResponse;
+import com.careercompass.projectresponsibility.dto.ProjectResponsibilityTechnologyTagResponse;
+import com.careercompass.projectresponsibility.dto.ProjectTechnologyFindingResponse;
+import com.careercompass.projectresponsibility.dto.ProjectTechnologySuggestionDecisionRequest;
+import com.careercompass.projectresponsibility.dto.ProjectTechnologySuggestionDecisionResponse;
+import com.careercompass.projectresponsibility.dto.ProjectTechnologySuggestionResponse;
+
+import com.careercompass.projectresponsibility.exception.InvalidProjectResponsibilityDecisionException;
+import com.careercompass.projectresponsibility.exception.InvalidProjectTechnologySuggestionDecisionException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityExpiredException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityNotFoundException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityStateConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionExpiredException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionNotFoundException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionStateConflictException;
+
+import com.careercompass.projectresponsibility.repository.ProjectResponsibilityCandidateRepository;
+import com.careercompass.projectresponsibility.repository.ProjectResponsibilityExtractionTaskRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologyFindingRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologySuggestionRepository;
+import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
+
 import com.careercompass.security.currentuser.CurrentUserProvider;
 import com.careercompass.technologytag.domain.TechnologyTag;
 import com.careercompass.technologytag.repository.TechnologyTagRepository;
-import com.careercompass.userprofile.domain.*;
-import com.careercompass.userprofile.repository.*;
+import com.careercompass.userprofile.domain.UserProfile;
+import com.careercompass.userprofile.domain.UserProfileTechnologyTag;
+import com.careercompass.userprofile.domain.UserProfileTechnologyTagSourceType;
+import com.careercompass.userprofile.domain.UserProfileVersion;
+
+import com.careercompass.userprofile.repository.UserProfileRepository;
+import com.careercompass.userprofile.repository.UserProfileVersionRepository;
+
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class ProjectResponsibilityReviewService {
     private static final int MAX_CONFIRMED_TEXT_CODE_POINTS = 500;
@@ -42,31 +83,6 @@ public class ProjectResponsibilityReviewService {
     private final CurrentUserProvider currentUserProvider;
     private final TechnologyTagRepository technologyTagRepository;
     private final Clock clock;
-
-    public ProjectResponsibilityReviewService(
-            ProjectResponsibilityExtractionTaskRepository taskRepository,
-            ProjectResponsibilityCandidateRepository candidateRepository,
-            ProjectTechnologyFindingRepository findingRepository,
-            ProjectTechnologySuggestionRepository suggestionRepository,
-            UserProfileProjectResponsibilityRepository responsibilityRepository,
-            UserProfileRepository userProfileRepository,
-            UserProfileVersionRepository profileVersionRepository,
-            JobAnalysisRepository jobAnalysisRepository,
-            CurrentUserProvider currentUserProvider,
-            TechnologyTagRepository technologyTagRepository,
-            Clock clock) {
-        this.taskRepository = taskRepository;
-        this.candidateRepository = candidateRepository;
-        this.findingRepository = findingRepository;
-        this.suggestionRepository = suggestionRepository;
-        this.responsibilityRepository = responsibilityRepository;
-        this.userProfileRepository = userProfileRepository;
-        this.profileVersionRepository = profileVersionRepository;
-        this.jobAnalysisRepository = jobAnalysisRepository;
-        this.currentUserProvider = currentUserProvider;
-        this.technologyTagRepository = technologyTagRepository;
-        this.clock = clock;
-    }
 
     /**
      * 기능: 현재 사용자의 프로젝트 분석 미리보기 후보를 조회한다.
