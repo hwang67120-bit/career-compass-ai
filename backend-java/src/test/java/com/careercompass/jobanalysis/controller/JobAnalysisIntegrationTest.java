@@ -250,6 +250,77 @@ class JobAnalysisIntegrationTest {
     }
 
     @Test
+    void getJobAnalysis_withStoredComparison_returnsPostingComparison()
+            throws Exception {
+        UUID userProfileId = saveProfile();
+        UUID jobAnalysisId = UUID.randomUUID();
+        UUID postingId = UUID.randomUUID();
+        UUID jobPostingId = UUID.randomUUID();
+        UUID extractionTaskId = UUID.randomUUID();
+        String comparisonTaskId = UUID.randomUUID().toString();
+        insertJobAnalysis(jobAnalysisId, TEST_USER_ID, userProfileId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO job_analysis_posting (
+                    id, job_analysis_id, provider_posting_id, provider,
+                    job_posting_id, extraction_task_id, company_name,
+                    original_job_title, source_url, extraction,
+                    model_executions, comparison, created_at
+                )
+                VALUES (?, ?, 'posting-1', 'DEV_SAMPLE', ?, ?, '회사',
+                        '백엔드 개발자', 'https://example.invalid/posting-1',
+                        '{}', '[]', ?, ?)
+                """,
+                postingId,
+                jobAnalysisId,
+                jobPostingId,
+                extractionTaskId,
+                """
+                {
+                  "comparisonTaskId":"%s",
+                  "jobAnalysisId":"%s",
+                  "jobPostingId":"%s",
+                  "status":"CALCULATED",
+                  "method":"LLM_JUDGE",
+                  "results":[{
+                    "jobEvidenceId":"job-evidence-1",
+                    "status":"CALCULATED",
+                    "bestMatchUserEvidenceId":"user-evidence-1",
+                    "score":null,
+                    "judgment":"RELATED",
+                    "unavailableReason":null
+                  }],
+                  "modelExecution":{
+                    "stage":"EVIDENCE_SEMANTIC_COMPARISON",
+                    "provider":"OLLAMA",
+                    "model":"qwen2.5:latest"
+                  },
+                  "unavailableReason":null,
+                  "failureCode":null
+                }
+                """.formatted(comparisonTaskId, jobAnalysisId, jobPostingId),
+                Timestamp.from(Instant.parse("2026-08-04T01:00:00Z"))
+        );
+
+        mockMvc.perform(get(PATH + "/" + jobAnalysisId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.postings[0].id")
+                        .value(postingId.toString()))
+                .andExpect(jsonPath("$.data.postings[0].jobPostingId")
+                        .value(jobPostingId.toString()))
+                .andExpect(jsonPath("$.data.postings[0].provider")
+                        .value("DEV_SAMPLE"))
+                .andExpect(jsonPath("$.data.postings[0].comparison.status")
+                        .value("CALCULATED"))
+                .andExpect(jsonPath(
+                        "$.data.postings[0].comparison.results[0].judgment"
+                ).value("RELATED"))
+                .andExpect(jsonPath(
+                        "$.data.postings[0].comparison.modelExecution.provider"
+                ).value("OLLAMA"));
+    }
+
+    @Test
     void getJobAnalysis_forAnotherUsersAnalysis_returnsNotFound() throws Exception {
         UUID userProfileId = saveProfile();
         UUID otherUsersJobAnalysisId = UUID.randomUUID();

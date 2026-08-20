@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -119,12 +120,8 @@ class JobAnalysisWorkerIntegrationTest {
         );
     }
 
-    @org.junit.jupiter.api.Disabled("Phase C 인계(2026-08-19): 비교 배선 후 실-DB 흐름의 "
-            + "최종 상태 확정이 필요. 비어 있는 추출→NOT_CALCULABLE→COMPLETED 기대이나 실행 "
-            + "결과가 다름. 비교 로직은 JobEvidenceComparisonServiceTest(단위)로 커버됨. "
-            + "Codex가 로컬 빌드로 실제 status/failure_code를 확인해 이 테스트를 마무리(재활성화).")
     @Test
-    void pollAndProcessOne_withExtractionSucceeding_completesComparison()
+    void pollAndProcessOne_withExtractionSucceeding_delegatesComparison()
             throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         when(jobPostingProvider.search(anyString(), anyInt())).thenReturn(List.of(
@@ -147,19 +144,15 @@ class JobAnalysisWorkerIntegrationTest {
                 "SELECT analysis_status, current_step, failure_code FROM job_analysis WHERE id = ?",
                 jobAnalysisId
         );
-        assertThat(row.get("analysis_status")).isEqualTo("COMPLETED");
-        assertThat(row.get("current_step")).isEqualTo("FINISHED");
+        assertThat(row.get("analysis_status")).isEqualTo("RUNNING");
+        assertThat(row.get("current_step")).isEqualTo("COMPARING_EVIDENCE");
         assertThat(row.get("failure_code")).isNull();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM job_analysis_posting WHERE job_analysis_id = ?",
                 Integer.class,
                 jobAnalysisId
         )).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT comparison FROM job_analysis_posting WHERE job_analysis_id = ?",
-                String.class,
-                jobAnalysisId
-        )).isNotNull();
+        verify(jobEvidenceComparisonService).compare(any());
     }
 
     @Test

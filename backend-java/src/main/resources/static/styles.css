@@ -900,6 +900,104 @@ select:focus {
     gap: 16px;
 }
 
+.responsibility-review-list,
+.comparison-results {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.responsibility-review-card,
+.comparison-posting {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.responsibility-review-card.is-decided {
+    border-color: rgba(113, 232, 154, 0.3);
+}
+
+.review-extracted-text {
+    margin: 8px 0;
+    line-height: 1.55;
+}
+
+.review-evidence,
+.comparison-model,
+.comparison-posting-heading p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.45;
+}
+
+.review-confirmed-text {
+    width: 100%;
+    margin-top: 12px;
+    padding: 10px 12px;
+    resize: vertical;
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    font: inherit;
+    line-height: 1.5;
+}
+
+.review-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.review-actions .primary-button,
+.review-actions .secondary-button {
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 9px;
+    font-size: 0.76rem;
+}
+
+.review-decision-label {
+    color: var(--success);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.review-error,
+.comparison-unavailable {
+    margin: 10px 0 0;
+    color: var(--danger);
+    font-size: 0.76rem;
+}
+
+.comparison-posting-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.comparison-posting-heading a {
+    flex: 0 0 auto;
+    color: var(--accent);
+    font-size: 0.74rem;
+    text-decoration: none;
+}
+
+.comparison-posting-heading a:hover {
+    text-decoration: underline;
+}
+
+.comparison-model {
+    margin-top: 12px;
+    text-align: right;
+}
+
 .similarity-label {
     display: flex;
     justify-content: space-between;
@@ -909,16 +1007,36 @@ select:focus {
 }
 
 .similarity-track {
-    height: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    height: 12px;
+    padding: 2px;
     overflow: hidden;
     border-radius: 999px;
     background: #101216;
 }
 
 .similarity-fill {
-    height: 100%;
+    width: 100%;
+    min-width: 4px;
     border-radius: 999px;
     background: var(--accent);
+}
+
+.similarity-fill.is-related {
+    grid-column: 2;
+    background: var(--success);
+}
+
+.similarity-fill.is-not-related {
+    grid-column: 1;
+    background: var(--danger);
+}
+
+.similarity-fill.is-unavailable {
+    grid-column: 1 / -1;
+    background: var(--subtle);
 }
 
 .skill-tags {
