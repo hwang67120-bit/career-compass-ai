@@ -22,7 +22,8 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
-import com.careercompass.jobanalysis.service.JobAnalysisService;
+import com.careercompass.jobanalysis.service.JobAnalysisJsonCodec;
+import com.careercompass.jobanalysis.service.JobAnalysisExecutionService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
 import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionService;
@@ -38,6 +39,7 @@ import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
 import com.careercompass.userprofile.domain.UserProfileVersion;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -51,7 +53,7 @@ class JobAnalysisWorkerTest {
     private static final UUID JOB_ANALYSIS_ID = UUID.fromString(
             "10000000-0000-0000-0000-000000000001");
 
-    private JobAnalysisService jobAnalysisService;
+    private JobAnalysisExecutionService jobAnalysisExecutionService;
     private JobEvidenceComparisonService jobEvidenceComparisonService;
     private JobPostingProvider jobPostingProvider;
     private ObjectProvider<JobPostingProvider> jobPostingProviderObjectProvider;
@@ -64,7 +66,7 @@ class JobAnalysisWorkerTest {
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
-        jobAnalysisService = org.mockito.Mockito.mock(JobAnalysisService.class);
+        jobAnalysisExecutionService = org.mockito.Mockito.mock(JobAnalysisExecutionService.class);
         jobEvidenceComparisonService =
                 org.mockito.Mockito.mock(JobEvidenceComparisonService.class);
         jobPostingProvider = org.mockito.Mockito.mock(JobPostingProvider.class);
@@ -78,11 +80,12 @@ class JobAnalysisWorkerTest {
         Clock clock = Clock.fixed(Instant.parse("2026-08-04T00:00:00Z"), ZoneOffset.UTC);
 
         worker = new JobAnalysisWorker(
-                jobAnalysisService,
+                jobAnalysisExecutionService,
                 jobEvidenceComparisonService,
                 jobPostingProviderObjectProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,
+                new JobAnalysisJsonCodec(new ObjectMapper()),
                 clock,
                 5
         );
@@ -97,7 +100,7 @@ class JobAnalysisWorkerTest {
         );
         profileVersion = org.mockito.Mockito.mock(UserProfileVersion.class);
         when(profileVersion.getTargetJobTitle()).thenReturn("백엔드 개발자");
-        when(jobAnalysisService.loadFixedProfileVersion(jobAnalysis))
+        when(jobAnalysisExecutionService.loadFixedProfileVersion(jobAnalysis))
                 .thenReturn(profileVersion);
         when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
                 .thenReturn(new ProjectResponsibilityExtractionOutcome(false, false));
@@ -105,50 +108,50 @@ class JobAnalysisWorkerTest {
 
     @Test
     void pollAndProcessOne_withNoQueuedAnalysis_doesNothing() {
-        when(jobAnalysisService.claimNextQueuedAnalysis()).thenReturn(Optional.empty());
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis()).thenReturn(Optional.empty());
 
         worker.pollAndProcessOne();
 
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
-        verify(jobAnalysisService, never())
+        verify(jobAnalysisExecutionService, never())
                 .recordExtractionReadyForComparison(any(), any());
-        verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
+        verify(jobAnalysisExecutionService, never()).markAnalysisFailed(any(), any());
     }
 
     @Test
     void pollAndProcessOne_withNoProviderConfigured_marksProviderNotConfigured() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(null);
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
-        verify(jobAnalysisService, never()).loadFixedProfileVersion(any());
-        verify(jobAnalysisService, never())
+        verify(jobAnalysisExecutionService, never()).loadFixedProfileVersion(any());
+        verify(jobAnalysisExecutionService, never())
                 .recordExtractionReadyForComparison(any(), any());
     }
 
     @Test
     void pollAndProcessOne_withEmptySearchResult_recordsCompletedNotFailed() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of());
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).recordEmptySearchResult(JOB_ANALYSIS_ID);
-        verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
-        verify(jobAnalysisService, never())
+        verify(jobAnalysisExecutionService).recordEmptySearchResult(JOB_ANALYSIS_ID);
+        verify(jobAnalysisExecutionService, never()).markAnalysisFailed(any(), any());
+        verify(jobAnalysisExecutionService, never())
                 .recordExtractionReadyForComparison(any(), any());
         verify(jobPostingProvider, never()).fetchSourceText(any());
     }
 
     @Test
     void pollAndProcessOne_withAllCandidatesSucceeding_recordsExtractionOnlyFailure() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of(
@@ -164,12 +167,12 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionReadyForComparison(
+        verify(jobAnalysisExecutionService).recordExtractionReadyForComparison(
                 eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
         assertThat(captor.getValue()).allSatisfy(
                 posting -> assertThat(posting.getProvider()).isEqualTo("PUBLIC_EMPLOYMENT"));
-        verify(jobAnalysisService, never()).markAnalysisFailed(any(), any());
+        verify(jobAnalysisExecutionService, never()).markAnalysisFailed(any(), any());
 
         ArgumentCaptor<String> jobPostingIdCaptor = ArgumentCaptor.forClass(String.class);
         verify(pythonJobPostingExtractionClient, times(2))
@@ -184,7 +187,7 @@ class JobAnalysisWorkerTest {
 
     @Test
     void pollAndProcessOne_withOneCandidateFailingExtraction_recordsOnlySuccessfulOnes() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         JobPostingCandidate failingCandidate = candidate("posting-1");
         JobPostingCandidate succeedingCandidate = candidate("posting-2");
@@ -202,7 +205,7 @@ class JobAnalysisWorkerTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
-        verify(jobAnalysisService).recordExtractionReadyForComparison(
+        verify(jobAnalysisExecutionService).recordExtractionReadyForComparison(
                 eq(JOB_ANALYSIS_ID), captor.capture());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).getProviderPostingId()).isEqualTo("posting-2");
@@ -210,7 +213,7 @@ class JobAnalysisWorkerTest {
 
     @Test
     void pollAndProcessOne_withAllCandidatesFailingExtraction_marksAllExtractionsFailed() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of(candidate("posting-1")));
@@ -221,15 +224,15 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
-        verify(jobAnalysisService, never())
+        verify(jobAnalysisExecutionService, never())
                 .recordExtractionReadyForComparison(any(), any());
     }
 
     @Test
     void pollAndProcessOne_withSearchUnavailable_marksDependencyUnavailable() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenThrow(new PublicEmploymentAccessException(
@@ -237,7 +240,7 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE);
         verify(pythonJobPostingExtractionClient, never())
                 .extract(anyString(), anyString(), anyString());
@@ -245,7 +248,7 @@ class JobAnalysisWorkerTest {
 
     @Test
     void pollAndProcessOne_withSearchInvalidResponse_marksDependencyInvalidResponse() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenThrow(new PublicEmploymentAccessException(
@@ -253,13 +256,13 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE);
     }
 
     @Test
     void pollAndProcessOne_withTruncatedRepositoryTree_marksRepositoryTreeTruncated() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
                 .thenThrow(new RepositorySnapshotException(
@@ -267,14 +270,14 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED);
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
     }
 
     @Test
     void pollAndProcessOne_withResponsibilityModelUnavailable_marksModelUnavailable() {
-        when(jobAnalysisService.claimNextQueuedAnalysis())
+        when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
                 .thenThrow(new PythonProjectResponsibilityExtractionException(
@@ -282,7 +285,7 @@ class JobAnalysisWorkerTest {
 
         worker.pollAndProcessOne();
 
-        verify(jobAnalysisService).markAnalysisFailed(
+        verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID,
                 JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE);
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));

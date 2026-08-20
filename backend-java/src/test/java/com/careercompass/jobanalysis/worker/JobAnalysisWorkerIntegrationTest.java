@@ -20,7 +20,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
-import com.careercompass.jobanalysis.service.JobAnalysisService;
+import com.careercompass.jobanalysis.service.JobAnalysisJsonCodec;
+import com.careercompass.jobanalysis.service.JobAnalysisExecutionService;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.provider.JobPostingProvider;
 import com.careercompass.projectresponsibility.service.ProjectResponsibilityExtractionOutcome;
@@ -29,6 +30,7 @@ import com.careercompass.pythonworker.client.PythonJobPostingExtractionClient;
 import com.careercompass.pythonworker.dto.PythonJobPostingExtractionEnvelope;
 import com.careercompass.pythonworker.exception.PythonExtractionException;
 import com.careercompass.pythonworker.exception.PythonExtractionFailure;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,7 +50,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * JobAnalysisWorker의 상태 전이를 실제 PostgreSQL로 검증한다(PR #48 코덱스 확인 사항).
  * JobAnalysisWorker는 test 프로필에서 스프링 빈으로 만들어지지 않으므로(스케줄러가
- * Testcontainers 종료 뒤에도 폴링하는 문제 방지), 여기서는 실제 JobAnalysisService
+ * Testcontainers 종료 뒤에도 폴링하는 문제 방지), 여기서는 실제 JobAnalysisExecutionService
  * 빈을 그대로 쓰고 JobPostingProvider·PythonJobPostingExtractionClient만 목으로 준비해
  * 워커를 직접 생성한다.
  */
@@ -81,7 +83,7 @@ class JobAnalysisWorkerIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private JobAnalysisService jobAnalysisService;
+    private JobAnalysisExecutionService jobAnalysisExecutionService;
 
     private JobEvidenceComparisonService jobEvidenceComparisonService;
     private JobPostingProvider jobPostingProvider;
@@ -110,11 +112,12 @@ class JobAnalysisWorkerIntegrationTest {
         when(objectProvider.getIfAvailable()).thenReturn(jobPostingProvider);
 
         worker = new JobAnalysisWorker(
-                jobAnalysisService,
+                jobAnalysisExecutionService,
                 jobEvidenceComparisonService,
                 objectProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,
+                new JobAnalysisJsonCodec(new ObjectMapper()),
                 Clock.fixed(Instant.parse("2026-08-09T00:00:00Z"), ZoneOffset.UTC),
                 5
         );
@@ -199,11 +202,12 @@ class JobAnalysisWorkerIntegrationTest {
         ObjectProvider<JobPostingProvider> emptyProvider = mock(ObjectProvider.class);
         when(emptyProvider.getIfAvailable()).thenReturn(null);
         JobAnalysisWorker workerWithoutProvider = new JobAnalysisWorker(
-                jobAnalysisService,
+                jobAnalysisExecutionService,
                 jobEvidenceComparisonService,
                 emptyProvider,
                 pythonJobPostingExtractionClient,
                 projectResponsibilityExtractionService,
+                new JobAnalysisJsonCodec(new ObjectMapper()),
                 Clock.fixed(Instant.parse("2026-08-09T00:00:00Z"), ZoneOffset.UTC),
                 5
         );
