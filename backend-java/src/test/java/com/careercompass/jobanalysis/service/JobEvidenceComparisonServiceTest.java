@@ -20,6 +20,7 @@ import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
 import com.careercompass.pythonworker.exception.PythonEvidenceSimilarityException;
 import com.careercompass.pythonworker.exception.PythonEvidenceSimilarityFailure;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,19 +34,23 @@ class JobEvidenceComparisonServiceTest {
     private static final UUID USER_EVIDENCE_ID =
             UUID.fromString("30000000-0000-0000-0000-000000000001");
 
-    private JobAnalysisService jobAnalysisService;
+    private JobAnalysisExecutionService jobAnalysisExecutionService;
     private PythonEvidenceSimilarityClient client;
     private JobEvidenceComparisonService service;
     private JobAnalysis analysis;
 
     @BeforeEach
     void setUp() {
-        jobAnalysisService = mock(JobAnalysisService.class);
+        jobAnalysisExecutionService = mock(JobAnalysisExecutionService.class);
         client = mock(PythonEvidenceSimilarityClient.class);
-        service = new JobEvidenceComparisonService(jobAnalysisService, client);
+        service = new JobEvidenceComparisonService(
+                jobAnalysisExecutionService,
+                client,
+                new JobAnalysisJsonCodec(new ObjectMapper())
+        );
         analysis = mock(JobAnalysis.class);
         when(analysis.getId()).thenReturn(ANALYSIS_ID);
-        when(jobAnalysisService.listConfirmedResponsibilities(analysis))
+        when(jobAnalysisExecutionService.listConfirmedResponsibilities(analysis))
                 .thenReturn(List.of(new ConfirmedProjectResponsibility(
                         USER_EVIDENCE_ID,
                         PROJECT_SOURCE_ID,
@@ -56,7 +61,7 @@ class JobEvidenceComparisonServiceTest {
     @Test
     void compare_withLinkedEvidence_callsJudgeAndStoresCalculatedResult() {
         JobAnalysisPosting posting = posting("posting-1", extractionWithResponsibility());
-        when(jobAnalysisService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
+        when(jobAnalysisExecutionService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
         when(client.compare(any())).thenAnswer(invocation -> {
             PythonEvidenceSimilarityRequest request = invocation.getArgument(0);
             return calculatedResponse(request);
@@ -84,12 +89,12 @@ class JobEvidenceComparisonServiceTest {
                 });
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jobAnalysisService).recordPostingComparison(
+        verify(jobAnalysisExecutionService).recordPostingComparison(
                 eq(ANALYSIS_ID), eq(posting.getId()), jsonCaptor.capture());
         assertThat(jsonCaptor.getValue())
                 .contains("\"status\":\"CALCULATED\"")
                 .contains("\"judgment\":\"RELATED\"");
-        verify(jobAnalysisService).finishEvidenceComparison(
+        verify(jobAnalysisExecutionService).finishEvidenceComparison(
                 ANALYSIS_ID, 1, 1, 1, null);
     }
 
@@ -99,19 +104,19 @@ class JobEvidenceComparisonServiceTest {
                 "posting-1",
                 "{\"responsibilities\":[],\"evidence\":[]}"
         );
-        when(jobAnalysisService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
+        when(jobAnalysisExecutionService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
 
         service.compare(analysis);
 
         verify(client, never()).compare(any());
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jobAnalysisService).recordPostingComparison(
+        verify(jobAnalysisExecutionService).recordPostingComparison(
                 eq(ANALYSIS_ID), eq(posting.getId()), jsonCaptor.capture());
         assertThat(jsonCaptor.getValue())
                 .contains("\"status\":\"NOT_CALCULABLE\"")
                 .contains("JOB_EVIDENCE_EMPTY_AFTER_SANITIZATION")
                 .contains("\"method\":null");
-        verify(jobAnalysisService).finishEvidenceComparison(
+        verify(jobAnalysisExecutionService).finishEvidenceComparison(
                 ANALYSIS_ID, 1, 1, 0, null);
     }
 
@@ -119,7 +124,7 @@ class JobEvidenceComparisonServiceTest {
     void compare_withOneSuccessfulCallAndOneFailure_finishesPartiallyCompleted() {
         JobAnalysisPosting first = posting("posting-1", extractionWithResponsibility());
         JobAnalysisPosting second = posting("posting-2", extractionWithResponsibility());
-        when(jobAnalysisService.listPostings(ANALYSIS_ID))
+        when(jobAnalysisExecutionService.listPostings(ANALYSIS_ID))
                 .thenReturn(List.of(first, second));
         when(client.compare(any()))
                 .thenAnswer(invocation -> calculatedResponse(invocation.getArgument(0)))
@@ -128,7 +133,7 @@ class JobEvidenceComparisonServiceTest {
 
         service.compare(analysis);
 
-        verify(jobAnalysisService).finishEvidenceComparison(
+        verify(jobAnalysisExecutionService).finishEvidenceComparison(
                 ANALYSIS_ID,
                 1,
                 2,
