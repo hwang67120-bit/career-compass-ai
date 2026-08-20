@@ -24,8 +24,10 @@ import com.careercompass.projectsource.exception.RepositorySnapshotException;
 import com.careercompass.projectsource.exception.RepositorySnapshotFailure;
 import com.careercompass.pythonworker.config.ProjectResponsibilityExtractionPolicyProperties;
 import com.careercompass.pythonworker.dto.PythonProjectResponsibilityExtractionRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+@RequiredArgsConstructor
 @Service
 public class RepositorySnapshotService {
 
@@ -37,18 +39,6 @@ public class RepositorySnapshotService {
     private final RepositorySnapshotPolicyProperties snapshotPolicy;
     private final ProjectResponsibilityExtractionPolicyProperties extractionPolicy;
     private final Clock clock;
-
-    public RepositorySnapshotService(
-            GitHubRepositoryGateway repositoryGateway,
-            RepositorySnapshotPolicyProperties snapshotPolicy,
-            ProjectResponsibilityExtractionPolicyProperties extractionPolicy,
-            Clock clock
-    ) {
-        this.repositoryGateway = repositoryGateway;
-        this.snapshotPolicy = snapshotPolicy;
-        this.extractionPolicy = extractionPolicy;
-        this.clock = clock;
-    }
 
     /**
      * 기능: 등록된 고정 커밋에서 허용된 최소 텍스트 파일만 읽어 Python 요청 스냅숏을 만든다.

@@ -12,7 +12,8 @@ import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.service.JobEvidenceComparisonService;
-import com.careercompass.jobanalysis.service.JobAnalysisService;
+import com.careercompass.jobanalysis.service.JobAnalysisExecutionService;
+import com.careercompass.jobanalysis.service.JobAnalysisJsonCodec;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.careercompass.jobsearch.exception.JobPostingProviderNotConfiguredException;
 import com.careercompass.jobsearch.exception.PublicEmploymentAccessException;
@@ -29,7 +30,6 @@ import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtra
 import com.careercompass.pythonworker.exception.PythonProjectResponsibilityExtractionFailure;
 import com.careercompass.userprofile.domain.UserProfileVersion;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,37 +53,33 @@ public class JobAnalysisWorker {
 
     private static final Logger log = LoggerFactory.getLogger(JobAnalysisWorker.class);
 
-    private final JobAnalysisService jobAnalysisService;
+    private final JobAnalysisExecutionService jobAnalysisExecutionService;
     private final JobEvidenceComparisonService jobEvidenceComparisonService;
     private final ObjectProvider<JobPostingProvider> jobPostingProvider;
     private final PythonJobPostingExtractionClient pythonJobPostingExtractionClient;
     private final ProjectResponsibilityExtractionService
             projectResponsibilityExtractionService;
+    private final JobAnalysisJsonCodec jobAnalysisJsonCodec;
     private final Clock clock;
     private final int searchResultLimit;
 
-    /**
-     * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
-     * 만든다 — 이 클라이언트가 쓰는 com.fasterxml.jackson(2.x)과 다른 라이브러리라
-     * 빈 주입으로는 타입이 안 맞는다(확인 필요, 계획 파일 참고).
-     */
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     public JobAnalysisWorker(
-            JobAnalysisService jobAnalysisService,
+            JobAnalysisExecutionService jobAnalysisExecutionService,
             JobEvidenceComparisonService jobEvidenceComparisonService,
             ObjectProvider<JobPostingProvider> jobPostingProvider,
             PythonJobPostingExtractionClient pythonJobPostingExtractionClient,
             ProjectResponsibilityExtractionService projectResponsibilityExtractionService,
+            JobAnalysisJsonCodec jobAnalysisJsonCodec,
             Clock clock,
             @Value("${job-analysis.worker.search-result-limit}") int searchResultLimit
     ) {
-        this.jobAnalysisService = jobAnalysisService;
+        this.jobAnalysisExecutionService = jobAnalysisExecutionService;
         this.jobEvidenceComparisonService = jobEvidenceComparisonService;
         this.jobPostingProvider = jobPostingProvider;
         this.pythonJobPostingExtractionClient = pythonJobPostingExtractionClient;
         this.projectResponsibilityExtractionService =
                 projectResponsibilityExtractionService;
+        this.jobAnalysisJsonCodec = jobAnalysisJsonCodec;
         this.clock = clock;
         this.searchResultLimit = searchResultLimit;
     }
@@ -94,7 +90,7 @@ public class JobAnalysisWorker {
      */
     @Scheduled(fixedDelayString = "${job-analysis.worker.fixed-delay-ms}")
     public void pollAndProcessOne() {
-        Optional<JobAnalysis> claimed = jobAnalysisService.claimNextQueuedAnalysis();
+        Optional<JobAnalysis> claimed = jobAnalysisExecutionService.claimNextQueuedAnalysis();
         if (claimed.isEmpty()) {
             return;
         }
@@ -114,40 +110,40 @@ public class JobAnalysisWorker {
                 throw new JobPostingProviderNotConfiguredException();
             }
             UserProfileVersion profileVersion =
-                    jobAnalysisService.loadFixedProfileVersion(jobAnalysis);
-            jobAnalysisService.advanceStep(
+                    jobAnalysisExecutionService.loadFixedProfileVersion(jobAnalysis);
+            jobAnalysisExecutionService.advanceStep(
                     jobAnalysisId, JobAnalysisStep.ANALYZING_REPOSITORIES);
             ProjectResponsibilityExtractionOutcome responsibilityOutcome =
                     projectResponsibilityExtractionService.extract(
                             jobAnalysis, profileVersion);
             String keyword = profileVersion.getTargetJobTitle();
 
-            jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
+            jobAnalysisExecutionService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
             List<JobPostingCandidate> candidates = provider.search(keyword, searchResultLimit);
 
             if (candidates.isEmpty()) {
-                jobAnalysisService.recordEmptySearchResult(jobAnalysisId);
+                jobAnalysisExecutionService.recordEmptySearchResult(jobAnalysisId);
                 return;
             }
 
-            jobAnalysisService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
+            jobAnalysisExecutionService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
             List<JobAnalysisPosting> savedPostings =
                     extractCandidates(jobAnalysisId, provider, candidates);
 
             if (savedPostings.isEmpty()) {
-                jobAnalysisService.markAnalysisFailed(
+                jobAnalysisExecutionService.markAnalysisFailed(
                         jobAnalysisId, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
             } else if (responsibilityOutcome.requiresUserConfirmation()) {
-                jobAnalysisService.recordExtractionAwaitingUserConfirmation(
+                jobAnalysisExecutionService.recordExtractionAwaitingUserConfirmation(
                         jobAnalysisId, savedPostings);
             } else {
-                jobAnalysisService.recordExtractionReadyForComparison(
+                jobAnalysisExecutionService.recordExtractionReadyForComparison(
                         jobAnalysisId, savedPostings);
                 jobEvidenceComparisonService.compare(jobAnalysis);
             }
         } catch (JobPostingProviderNotConfiguredException exception) {
             logProcessingFailure(jobAnalysisId, exception);
-            jobAnalysisService.markAnalysisFailed(
+            jobAnalysisExecutionService.markAnalysisFailed(
                     jobAnalysisId, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
         } catch (RepositorySnapshotException exception) {
             logProcessingFailure(jobAnalysisId, exception);
@@ -155,7 +151,7 @@ public class JobAnalysisWorker {
                     exception.getFailure() == RepositorySnapshotFailure.TREE_TRUNCATED
                             ? JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED
                             : JobAnalysisFailureCode.PROJECT_REPOSITORY_SNAPSHOT_INVALID;
-            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
+            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (PythonProjectResponsibilityExtractionException exception) {
             logProcessingFailure(jobAnalysisId, exception);
             JobAnalysisFailureCode failureCode =
@@ -164,17 +160,17 @@ public class JobAnalysisWorker {
                             ? JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE
                             : JobAnalysisFailureCode
                                     .PROJECT_RESPONSIBILITY_EXTRACTION_INVALID_RESPONSE;
-            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
+            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (PublicEmploymentAccessException exception) {
             logProcessingFailure(jobAnalysisId, exception);
             JobAnalysisFailureCode failureCode =
                     exception.getFailure() == PublicEmploymentAccessFailure.INVALID_RESPONSE
                     ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
                     : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
-            jobAnalysisService.markAnalysisFailed(jobAnalysisId, failureCode);
+            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
         } catch (RuntimeException exception) {
             logProcessingFailure(jobAnalysisId, exception);
-            jobAnalysisService.markAnalysisFailed(
+            jobAnalysisExecutionService.markAnalysisFailed(
                     jobAnalysisId, JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE);
         }
     }
@@ -247,8 +243,8 @@ public class JobAnalysisWorker {
                 candidate.companyName(),
                 candidate.originalJobTitle(),
                 candidate.sourceUrl(),
-                objectMapper.writeValueAsString(data.extraction()),
-                objectMapper.writeValueAsString(data.modelExecutions()),
+                jobAnalysisJsonCodec.serialize(data.extraction()),
+                jobAnalysisJsonCodec.serialize(data.modelExecutions()),
                 now
         );
     }

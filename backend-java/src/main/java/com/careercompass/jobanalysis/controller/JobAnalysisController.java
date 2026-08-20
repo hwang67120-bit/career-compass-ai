@@ -8,6 +8,7 @@ import com.careercompass.common.web.ApiResponseFactory;
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.dto.CreateJobAnalysisRequest;
 import com.careercompass.jobanalysis.dto.JobAnalysisResponse;
+import com.careercompass.jobanalysis.service.JobAnalysisResultService;
 import com.careercompass.jobanalysis.service.JobAnalysisService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,13 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class JobAnalysisController {
 
     private final JobAnalysisService jobAnalysisService;
+    private final JobAnalysisResultService jobAnalysisResultService;
     private final ApiResponseFactory responseFactory;
 
     public JobAnalysisController(
             JobAnalysisService jobAnalysisService,
+            JobAnalysisResultService jobAnalysisResultService,
             ApiResponseFactory responseFactory
     ) {
         this.jobAnalysisService = jobAnalysisService;
+        this.jobAnalysisResultService = jobAnalysisResultService;
         this.responseFactory = responseFactory;
     }
 
@@ -64,7 +68,7 @@ public class JobAnalysisController {
                 jobAnalysis.getFailureCode() != null
                         ? jobAnalysis.getFailureCode().name()
                         : null,
-                jobAnalysisService.listPostingResults(jobAnalysis.getId())
+                jobAnalysisResultService.listPostingResults(jobAnalysis.getId())
         );
     }
 }

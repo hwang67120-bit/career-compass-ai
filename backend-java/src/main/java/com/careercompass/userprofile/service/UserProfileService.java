@@ -37,11 +37,13 @@ import com.careercompass.userprofile.exception.UserProfileNotFoundException;
 import com.careercompass.userprofile.exception.UserProfileVersionConflictException;
 import com.careercompass.userprofile.repository.UserProfileRepository;
 import com.careercompass.userprofile.repository.UserProfileVersionRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class UserProfileService {
 
@@ -52,24 +54,6 @@ public class UserProfileService {
     private final UserProfilePolicyProperties policyProperties;
     private final CurrentUserProvider currentUserProvider;
     private final Clock clock;
-
-    public UserProfileService(
-            UserProfileRepository userProfileRepository,
-            UserProfileVersionRepository userProfileVersionRepository,
-            TechnologyTagRepository technologyTagRepository,
-            TechnologyTagNameNormalizer technologyTagNameNormalizer,
-            UserProfilePolicyProperties policyProperties,
-            CurrentUserProvider currentUserProvider,
-            Clock clock
-    ) {
-        this.userProfileRepository = userProfileRepository;
-        this.userProfileVersionRepository = userProfileVersionRepository;
-        this.technologyTagRepository = technologyTagRepository;
-        this.technologyTagNameNormalizer = technologyTagNameNormalizer;
-        this.policyProperties = policyProperties;
-        this.currentUserProvider = currentUserProvider;
-        this.clock = clock;
-    }
 
     /**
      * 기능: 현재 사용자의 분석 프로필을 검증하고 내용 변경 시 새 불변 버전으로 저장한다.

@@ -26,8 +26,10 @@ import com.careercompass.technologytag.dto.TechnologyTagResolutionResult;
 import com.careercompass.technologytag.service.TechnologyTagResolutionService;
 import com.careercompass.userprofile.domain.UserProfileTechnologyTag;
 import com.careercompass.userprofile.domain.UserProfileVersion;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+@RequiredArgsConstructor
 @Service
 public class ProjectResponsibilityExtractionService {
 
@@ -36,20 +38,6 @@ public class ProjectResponsibilityExtractionService {
     private final TechnologyTagResolutionService technologyTagResolutionService;
     private final ProjectResponsibilityExtractionPersistenceService persistenceService;
     private final ProjectResponsibilityExtractionPolicyProperties extractionPolicy;
-
-    public ProjectResponsibilityExtractionService(
-            RepositorySnapshotService snapshotService,
-            PythonProjectResponsibilityExtractionClient extractionClient,
-            TechnologyTagResolutionService technologyTagResolutionService,
-            ProjectResponsibilityExtractionPersistenceService persistenceService,
-            ProjectResponsibilityExtractionPolicyProperties extractionPolicy
-    ) {
-        this.snapshotService = snapshotService;
-        this.extractionClient = extractionClient;
-        this.technologyTagResolutionService = technologyTagResolutionService;
-        this.persistenceService = persistenceService;
-        this.extractionPolicy = extractionPolicy;
-    }
 
     /**
      * 기능: 분석에 고정된 저장소별 최소 자료를 Python으로 추출하고 미확정 후보를 저장한다.

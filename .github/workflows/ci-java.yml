@@ -46,5 +46,5 @@ jobs:
         with:
           gradle-version: "8.14"
 
-      - name: Run tests
-        run: gradle test --no-daemon
+      - name: Run checks
+        run: gradle check --no-daemon

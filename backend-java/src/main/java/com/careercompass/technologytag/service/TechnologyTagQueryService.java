@@ -9,26 +9,18 @@ import com.careercompass.technologytag.dto.TechnologyTagResponse;
 import com.careercompass.technologytag.dto.TechnologyTagSearchResponse;
 import com.careercompass.technologytag.normalization.TechnologyTagNameNormalizer;
 import com.careercompass.technologytag.repository.TechnologyTagRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class TechnologyTagQueryService {
 
     private final TechnologyTagRepository repository;
     private final TechnologyTagNameNormalizer normalizer;
     private final TechnologyTagPolicyProperties policyProperties;
-
-    public TechnologyTagQueryService(
-            TechnologyTagRepository repository,
-            TechnologyTagNameNormalizer normalizer,
-            TechnologyTagPolicyProperties policyProperties
-    ) {
-        this.repository = repository;
-        this.normalizer = normalizer;
-        this.policyProperties = policyProperties;
-    }
 
     /**
      * 기능: 표준 기술 태그의 이름, key와 별칭을 정규화된 검색어로 조회한다.

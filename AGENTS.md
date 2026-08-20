@@ -190,6 +190,13 @@ MVP에서는 검증된 근거 없이 0.5점 같은 중간 점수를 추가하지
 - 외부 API와 Python 호출 객체를 도메인 객체로 직접 사용하지 않는다.
 - 설정값은 `ConfigurationProperties` 같은 명시적인 설정 객체로 관리한다.
 
+## 의존성 주입
+
+- 단순 대입 생성자만 필요한 Spring Service는 `@RequiredArgsConstructor`를 사용한다.
+- 주입받는 의존성은 `private final`로 선언하고 필드 주입을 사용하지 않는다.
+- 다중 생성자, 생성자 매개변수 어노테이션 또는 별도 초기화가 필요하면 명시적 생성자를 유지한다.
+- 명시적 생성자를 유지할 때는 생성자가 필요한 기술적 이유를 Service 블록 주석으로 남긴다.
+
 ## 이름 규칙
 
 - Java 클래스는 UpperCamelCase, 메서드와 변수는 lowerCamelCase를 사용한다.

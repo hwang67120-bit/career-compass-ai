@@ -1,9 +1,24 @@
 package com.careercompass.projectresponsibility.controller;
 
-import com.careercompass.common.web.*;
-import com.careercompass.projectresponsibility.exception.*;
+import com.careercompass.common.web.ApiError;
+import com.careercompass.common.web.ApiResponse;
+import com.careercompass.common.web.ApiResponseFactory;
+
+import com.careercompass.projectresponsibility.exception.InvalidProjectResponsibilityDecisionException;
+import com.careercompass.projectresponsibility.exception.InvalidProjectTechnologySuggestionDecisionException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityExpiredException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityNotFoundException;
+import com.careercompass.projectresponsibility.exception.ProjectResponsibilityStateConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionConflictException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionExpiredException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionNotFoundException;
+import com.careercompass.projectresponsibility.exception.ProjectTechnologySuggestionStateConflictException;
+
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = ProjectResponsibilityController.class)
 public class ProjectResponsibilityExceptionHandler {
