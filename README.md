@@ -141,21 +141,60 @@ Java가 외부 접근과 개인정보 제거를 담당하고 필요한 텍스트
 ## 기술 스택과 구조
 
 - Backend: Java 21, Spring Boot, Spring Security, Spring Data JPA
-- AI: Python, FastAPI, Pydantic, Ollama, Gemini
+- AI: Python, FastAPI, Pydantic, Ollama, Gemini 폴백
 - Data: PostgreSQL, Flyway
 - Integration: 공공취업정보 API, 합성 공고 공급자, GitHub OAuth·REST API
 - Test: JUnit, Testcontainers, pytest, Postman
 - Deployment: Docker Compose
 
+처음 코드를 볼 때는 아래 세 경로를 따라가면 됩니다.
+
+1. 채용공고 추출
+   - Python: `job_posting_extraction.py`가 직무·기술·담당 업무와 원문 근거를 추출
+   - Java: `PythonJobPostingExtractionClient`가 식별자·근거 참조·모델 실행 정보를 검증
+2. 프로젝트 추출
+   - Python: `repository_evidence.py`가 기술을 규칙으로 감지
+   - Python: `project_responsibility_extraction.py`가 담당 업무 후보를 추출
+   - Java: `PythonProjectResponsibilityExtractionClient`가 선택 기술·근거 참조·응답 개수를 검증
+3. 담당 업무 비교
+   - Python: `job_evidence_similarity.py`가 Ollama로 `RELATED / NOT_RELATED`를 판단
+   - Java: `PythonEvidenceSimilarityClient`가 상태·식별자·판단값을 검증
+   - Java: `JobEvidenceComparisonService`가 검증된 결과를 저장
+
+공고 추출은 Ollama를 먼저 사용하고 실패한 단계만 Gemini로 다시 시도합니다.
+프로젝트 기술 감지는 LLM을 사용하지 않으며, 프로젝트 담당 업무 추출과 최종 의미 비교는 Ollama가 담당합니다.
+Python의 판단 결과는 바로 사용자에게 전달하지 않고 Java가 계약값과 원문 근거 참조를 확인한 뒤 저장합니다.
+
 ```text
 career-compass-ai/
-├─ backend-java/   인증, 외부 API, 분석 작업과 결과 저장
-├─ ai-python/      근거 추출과 의미 비교
-├─ contracts/      Java–Python 요청·응답 기준
-├─ docs/           정책, API, 아키텍처와 검증 기록
-├─ deploy/         Docker 배포 설정
-└─ postman/        연결 테스트 자료
+├─ backend-java/src/main/java/com/careercompass/
+│  ├─ jobanalysis/
+│  │  ├─ controller/JobAnalysisController.java      분석 생성·조회 API
+│  │  ├─ worker/JobAnalysisWorker.java              공고 검색→추출→확인→비교 순서 제어
+│  │  └─ service/JobEvidenceComparisonService.java  확정 근거 조립·비교 결과 저장
+│  ├─ projectsource/                                 GitHub 저장소 확인·스냅숏 생성
+│  ├─ projectresponsibility/                         후보 저장·사용자 확정·분석 재개
+│  ├─ jobsearch/                                     공공 API·합성 공고 공급자
+│  └─ pythonworker/client/
+│     ├─ PythonJobPostingExtractionClient.java       공고 추출 호출·응답 검증
+│     ├─ PythonProjectResponsibilityExtractionClient.java
+│     └─ PythonEvidenceSimilarityClient.java         의미 비교 호출·응답 검증
+├─ ai-python/app/
+│  ├─ job_postings/router.py                         내부 분석 API 세 개
+│  ├─ services/job_posting_extraction.py             공고 근거 추출
+│  ├─ services/repository_evidence.py                매니페스트 기반 기술 감지
+│  ├─ services/project_responsibility_extraction.py  프로젝트 담당 업무 후보 추출
+│  ├─ services/job_evidence_similarity.py            공고↔프로젝트 업무 의미 비교
+│  ├─ providers/                                     Ollama·Gemini 호출
+│  └─ guardrails/                                    외부 모델 전송 전 연락처 제거
+├─ contracts/                                        Java–Python 요청·응답 기준
+├─ docs/                                             정책, API, 아키텍처와 검증 기록
+├─ deploy/                                           Docker 배포 설정
+└─ postman/                                          연결 테스트 자료
 ```
+
+Python 내부 API는 `/job-postings/extract`, `/project-responsibility-extractions`,
+`/job-evidence-similarities`이며 모두 `/internal/v1` 아래에서 Java만 호출합니다.
 
 ## 실행과 검증
 
