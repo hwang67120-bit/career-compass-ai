@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.health.router import liveness_router, router as health_router
 from app.job_postings.router import router as job_postings_router
+from app.observability.router import router as observability_router
 from app.providers.ollama_process import ensure_ollama_running
 from app.schemas.envelope import FieldError, error_envelope, resolve_request_id
 
@@ -51,6 +52,7 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(liveness_router)
 app.include_router(job_postings_router)
+app.include_router(observability_router)
 
 
 @app.exception_handler(RequestValidationError)
