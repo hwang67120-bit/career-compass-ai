@@ -7,11 +7,13 @@ import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.projectsource.dto.CreateGitHubProjectSourceResponse;
 import com.careercompass.projectsource.repository.ProjectSourceRepository;
 import com.careercompass.security.currentuser.CurrentUserProvider;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class ProjectSourceRegistrationService {
 
@@ -20,14 +22,6 @@ public class ProjectSourceRegistrationService {
 
     private final ProjectSourceRepository repository;
     private final CurrentUserProvider currentUserProvider;
-
-    public ProjectSourceRegistrationService(
-            ProjectSourceRepository repository,
-            CurrentUserProvider currentUserProvider
-    ) {
-        this.repository = repository;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     /**
      * 기능: 검증된 GitHub 저장소의 현재 버전을 현재 사용자 자료로 저장한다.

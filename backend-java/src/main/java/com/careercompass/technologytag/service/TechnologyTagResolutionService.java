@@ -17,25 +17,17 @@ import com.careercompass.technologytag.dto.TechnologyTagResolutionResult;
 import com.careercompass.technologytag.exception.InvalidTechnologyTagResolutionRequestException;
 import com.careercompass.technologytag.normalization.TechnologyTagNameNormalizer;
 import com.careercompass.technologytag.repository.TechnologyTagRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class TechnologyTagResolutionService {
 
     private final TechnologyTagRepository repository;
     private final TechnologyTagNameNormalizer normalizer;
     private final TechnologyTagResolutionPolicyProperties policyProperties;
-
-    public TechnologyTagResolutionService(
-            TechnologyTagRepository repository,
-            TechnologyTagNameNormalizer normalizer,
-            TechnologyTagResolutionPolicyProperties policyProperties
-    ) {
-        this.repository = repository;
-        this.normalizer = normalizer;
-        this.policyProperties = policyProperties;
-    }
 
     /**
      * 기능: 기술명 원문을 활성 표준 태그의 대표 이름 또는 확인된 별칭과 정확히 연결한다.

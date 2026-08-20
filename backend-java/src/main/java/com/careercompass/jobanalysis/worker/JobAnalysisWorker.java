@@ -62,11 +62,6 @@ public class JobAnalysisWorker {
     private final Clock clock;
     private final int searchResultLimit;
 
-    /**
-     * 스프링이 자동 구성하는 Jackson(tools.jackson, 3.x)에 의존하지 않고 직접
-     * 만든다 — 이 클라이언트가 쓰는 com.fasterxml.jackson(2.x)과 다른 라이브러리라
-     * 빈 주입으로는 타입이 안 맞는다(확인 필요, 계획 파일 참고).
-     */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public JobAnalysisWorker(

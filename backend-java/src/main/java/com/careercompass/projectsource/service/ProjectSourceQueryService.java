@@ -8,22 +8,16 @@ import com.careercompass.projectsource.domain.ProjectSourceType;
 import com.careercompass.projectsource.dto.ListProjectSourceResponse;
 import com.careercompass.projectsource.repository.ProjectSourceQueryRepository;
 import com.careercompass.security.currentuser.CurrentUserProvider;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class ProjectSourceQueryService {
 
     private final ProjectSourceQueryRepository repository;
     private final CurrentUserProvider currentUserProvider;
-
-    public ProjectSourceQueryService(
-            ProjectSourceQueryRepository repository,
-            CurrentUserProvider currentUserProvider
-    ) {
-        this.repository = repository;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     /**
      * 기능: 현재 사용자가 등록한 공개 GitHub 프로젝트 출처를 최신 검증 순서로 조회한다.

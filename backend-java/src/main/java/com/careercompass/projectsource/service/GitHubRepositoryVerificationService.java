@@ -7,10 +7,12 @@ import com.careercompass.projectsource.client.GitHubRepositoryMetadata;
 import com.careercompass.projectsource.domain.GitHubRepositoryCoordinates;
 import com.careercompass.projectsource.exception.GitHubAccessException;
 import com.careercompass.projectsource.exception.GitHubAccessFailure;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+@RequiredArgsConstructor
 @Service
 public class GitHubRepositoryVerificationService {
 
@@ -18,10 +20,6 @@ public class GitHubRepositoryVerificationService {
             LoggerFactory.getLogger(GitHubRepositoryVerificationService.class);
 
     private final GitHubRepositoryGateway repositoryGateway;
-
-    public GitHubRepositoryVerificationService(GitHubRepositoryGateway repositoryGateway) {
-        this.repositoryGateway = repositoryGateway;
-    }
 
     /**
      * 기능: 사용자 GitHub URL의 경계를 검증하고 실제 공개 저장소와 현재 버전을 확인한다.

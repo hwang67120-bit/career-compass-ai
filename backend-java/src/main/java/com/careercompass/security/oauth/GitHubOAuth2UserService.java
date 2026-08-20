@@ -37,6 +37,10 @@ public class GitHubOAuth2UserService
     private final Clock clock;
     private final OAuth2UserService<OAuth2UserRequest, OAuth2User> delegate;
 
+    /**
+     * 다중 생성자 중 Spring이 사용할 경로를 지정하고 기본 GitHub OAuth delegate를 구성한다.
+     * 테스트에서는 package-private 생성자로 delegate를 대체한다.
+     */
     @Autowired
     public GitHubOAuth2UserService(
             UserAccountRepository userAccountRepository,

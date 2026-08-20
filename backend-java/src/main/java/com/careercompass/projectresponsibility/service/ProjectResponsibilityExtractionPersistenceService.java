@@ -9,17 +9,32 @@ import java.util.UUID;
 
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.projectresponsibility.config.ProjectResponsibilityReviewPolicyProperties;
-import com.careercompass.projectresponsibility.domain.*;
-import com.careercompass.projectresponsibility.repository.*;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityCandidate;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityEvidence;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilityExtractionTask;
+import com.careercompass.projectresponsibility.domain.ProjectResponsibilitySnapshotExclusion;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologyFinding;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologyFindingEvidence;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologySuggestion;
+import com.careercompass.projectresponsibility.domain.ProjectTechnologySuggestionEvidence;
+
+import com.careercompass.projectresponsibility.repository.ProjectResponsibilityCandidateRepository;
+import com.careercompass.projectresponsibility.repository.ProjectResponsibilityExtractionTaskRepository;
+import com.careercompass.projectresponsibility.repository.ProjectResponsibilitySnapshotExclusionRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologyFindingRepository;
+import com.careercompass.projectresponsibility.repository.ProjectTechnologySuggestionRepository;
+
 import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.projectsource.service.PreparedRepositorySnapshot;
 import com.careercompass.pythonworker.dto.PythonProjectResponsibilityExtractionEnvelope;
 import com.careercompass.technologytag.domain.TechnologyTag;
 import com.careercompass.technologytag.repository.TechnologyTagRepository;
 import com.careercompass.userprofile.domain.UserProfileVersion;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@RequiredArgsConstructor
 @Service
 public class ProjectResponsibilityExtractionPersistenceService {
 
@@ -31,26 +46,6 @@ public class ProjectResponsibilityExtractionPersistenceService {
     private final TechnologyTagRepository technologyTagRepository;
     private final ProjectResponsibilityReviewPolicyProperties reviewPolicy;
     private final Clock clock;
-
-    public ProjectResponsibilityExtractionPersistenceService(
-            ProjectResponsibilityExtractionTaskRepository taskRepository,
-            ProjectResponsibilityCandidateRepository candidateRepository,
-            ProjectTechnologyFindingRepository findingRepository,
-            ProjectTechnologySuggestionRepository suggestionRepository,
-            ProjectResponsibilitySnapshotExclusionRepository exclusionRepository,
-            TechnologyTagRepository technologyTagRepository,
-            ProjectResponsibilityReviewPolicyProperties reviewPolicy,
-            Clock clock
-    ) {
-        this.taskRepository = taskRepository;
-        this.candidateRepository = candidateRepository;
-        this.findingRepository = findingRepository;
-        this.suggestionRepository = suggestionRepository;
-        this.exclusionRepository = exclusionRepository;
-        this.technologyTagRepository = technologyTagRepository;
-        this.reviewPolicy = reviewPolicy;
-        this.clock = clock;
-    }
 
     /**
      * 기능: 채용 분석에 연결된 프로젝트 추출 작업을 외부 호출 전에 저장한다.
