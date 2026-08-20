@@ -16,7 +16,9 @@ public record GitHubApiProperties(
         @NotBlank String apiVersion,
         @NotBlank String userAgent,
         @NotNull Duration connectTimeout,
-        @NotNull Duration readTimeout
+        @NotNull Duration readTimeout,
+        // 선택. 있으면 인증 요청(레이트 리밋 60→5000/시간), 없거나 비면 비인증(공개 저장소만).
+        String token
 ) {
 
     private static final String ALLOWED_SCHEME = "https";

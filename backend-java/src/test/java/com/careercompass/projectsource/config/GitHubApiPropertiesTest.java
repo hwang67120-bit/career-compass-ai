@@ -41,7 +41,8 @@ class GitHubApiPropertiesTest {
                 "2022-11-28",
                 "test-client",
                 Duration.ZERO,
-                READ_TIMEOUT
+                READ_TIMEOUT,
+                null
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -51,7 +52,8 @@ class GitHubApiPropertiesTest {
                 "2022-11-28",
                 "test-client",
                 CONNECT_TIMEOUT,
-                READ_TIMEOUT
+                READ_TIMEOUT,
+                null
         );
     }
 

@@ -8,7 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("!dev & !test")
+@Profile({"dev", "prod"})
 public class SecurityCurrentUserProvider implements CurrentUserProvider {
 
     @Override

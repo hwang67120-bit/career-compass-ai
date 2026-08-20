@@ -36,14 +36,18 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	// 회원가입·로그인·권한 검사
 	implementation 'org.springframework.boot:spring-boot-starter-security'
-	// JWT 검증
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	// GitHub OAuth 로그인과 세션 인증
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 	// DB 스키마 변경 이력 관리
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// Flyway의 PostgreSQL 지원
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	// 서버 상태와 헬스 체크
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// 인사혁신처 공공취업정보 API의 XML 응답 역직렬화(Spring Boot Jackson BOM이 버전 관리)
+	implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+	// 공공취업정보 상세 응답의 HTML 본문에서 분석 대상 텍스트만 추출
+	implementation 'org.jsoup:jsoup:1.21.1'
 	// 개발 시 PostgreSQL 컨테이너 자동 연결
 	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 
@@ -51,6 +55,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	// Spring Boot 4의 RestClient 테스트 슬라이스
 	testImplementation 'org.springframework.boot:spring-boot-restclient-test'
+	// Spring Boot 4의 MockMvc 테스트 슬라이스
+	testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
 	// 로그인·권한 테스트
 	testImplementation 'org.springframework.security:spring-security-test'
 	// Spring과 테스트 컨테이너 연결

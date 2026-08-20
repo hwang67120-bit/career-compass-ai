@@ -3,66 +3,70 @@ package com.careercompass.projectsource.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
-import com.careercompass.projectsource.domain.ProjectSource;
 import com.careercompass.projectsource.domain.ProjectSourceStatus;
 import com.careercompass.projectsource.dto.CreateGitHubProjectSourceRequest;
 import com.careercompass.projectsource.dto.CreateGitHubProjectSourceResponse;
 import com.careercompass.projectsource.exception.InvalidGitHubRepositoryUrlException;
-import com.careercompass.projectsource.repository.ProjectSourceRepository;
-import com.careercompass.security.currentuser.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.transaction.annotation.Transactional;
 
 class ProjectSourceServiceTest {
 
-    private static final UUID USER_ID =
-            UUID.fromString("30000000-0000-0000-0000-000000000001");
+    private static final UUID PROJECT_SOURCE_ID =
+            UUID.fromString("40000000-0000-0000-0000-000000000001");
     private static final Instant NOW = Instant.parse("2026-07-27T01:00:00Z");
     private static final String COMMIT_SHA =
             "0123456789abcdef0123456789abcdef01234567";
 
     private GitHubRepositoryVerificationService verificationService;
-    private ProjectSourceRepository repository;
-    private CurrentUserProvider currentUserProvider;
+    private ProjectSourceRegistrationService registrationService;
     private ProjectSourceService projectSourceService;
 
     @BeforeEach
     void setUp() {
         verificationService = Mockito.mock(GitHubRepositoryVerificationService.class);
-        repository = Mockito.mock(ProjectSourceRepository.class);
-        currentUserProvider = Mockito.mock(CurrentUserProvider.class);
-        when(currentUserProvider.getCurrentUserId()).thenReturn(USER_ID);
-        when(repository.save(any(ProjectSource.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        registrationService = Mockito.mock(ProjectSourceRegistrationService.class);
         projectSourceService = new ProjectSourceService(
                 verificationService,
-                repository,
-                currentUserProvider,
+                registrationService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
 
     @Test
-    void createGitHubProjectSource_withVerifiedRepository_savesCurrentUsersSource() {
+    void createGitHubProjectSource_withVerifiedRepository_registersVerifiedRepository() {
+        VerifiedGitHubRepository verifiedRepository = new VerifiedGitHubRepository(
+                "octocat",
+                "Hello-World",
+                URI.create("https://github.com/octocat/Hello-World"),
+                "master",
+                COMMIT_SHA
+        );
         when(verificationService.verifyRepository("https://github.com/octocat/Hello-World"))
-                .thenReturn(new VerifiedGitHubRepository(
-                        "octocat",
-                        "Hello-World",
-                        URI.create("https://github.com/octocat/Hello-World"),
+                .thenReturn(verifiedRepository);
+        when(registrationService.createGitHubProjectSource(
+                any(UUID.class), eq(verifiedRepository), eq(NOW)))
+                .thenReturn(new CreateGitHubProjectSourceResponse(
+                        PROJECT_SOURCE_ID,
+                        "https://github.com/octocat/Hello-World",
+                        "octocat/Hello-World",
                         "master",
-                        COMMIT_SHA
+                        COMMIT_SHA,
+                        ProjectSourceStatus.REGISTERED
                 ));
 
         CreateGitHubProjectSourceResponse response =
@@ -72,22 +76,9 @@ class ProjectSourceServiceTest {
                         )
                 );
 
-        ArgumentCaptor<ProjectSource> captor =
-                ArgumentCaptor.forClass(ProjectSource.class);
-        verify(repository).save(captor.capture());
-        ProjectSource savedProjectSource = captor.getValue();
-        assertThat(savedProjectSource.getUserId()).isEqualTo(USER_ID);
-        assertThat(savedProjectSource.getRepositoryUrl())
-                .isEqualTo("https://github.com/octocat/Hello-World");
-        assertThat(savedProjectSource.getRepositoryFullName())
-                .isEqualTo("octocat/Hello-World");
-        assertThat(savedProjectSource.getDefaultBranch()).isEqualTo("master");
-        assertThat(savedProjectSource.getCommitSha()).isEqualTo(COMMIT_SHA);
-        assertThat(savedProjectSource.getProjectSourceStatus())
-                .isEqualTo(ProjectSourceStatus.REGISTERED);
-        assertThat(savedProjectSource.getCreatedAt()).isEqualTo(NOW);
-        assertThat(response.projectSourceId()).isEqualTo(savedProjectSource.getId());
-        assertThat(response.status()).isEqualTo(ProjectSourceStatus.REGISTERED);
+        verify(registrationService)
+                .createGitHubProjectSource(any(UUID.class), eq(verifiedRepository), eq(NOW));
+        assertThat(response.projectSourceId()).isEqualTo(PROJECT_SOURCE_ID);
     }
 
     @Test
@@ -99,6 +90,17 @@ class ProjectSourceServiceTest {
                 new CreateGitHubProjectSourceRequest("https://example.com/repository")
         )).isInstanceOf(InvalidGitHubRepositoryUrlException.class);
 
-        verifyNoInteractions(repository, currentUserProvider);
+        verifyNoInteractions(registrationService);
+    }
+
+    @Test
+    void createGitHubProjectSource_methodDeclaration_hasNoTransactionalAnnotation()
+            throws NoSuchMethodException {
+        Method method = ProjectSourceService.class.getMethod(
+                "createGitHubProjectSource",
+                CreateGitHubProjectSourceRequest.class
+        );
+
+        assertThat(method.isAnnotationPresent(Transactional.class)).isFalse();
     }
 }

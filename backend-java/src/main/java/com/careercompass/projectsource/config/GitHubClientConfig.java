@@ -23,12 +23,17 @@ public class GitHubClientConfig {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(properties.readTimeout());
 
-        return builder.clone()
+        RestClient.Builder configured = builder.clone()
                 .requestFactory(requestFactory)
                 .baseUrl(properties.baseUrl().toString())
                 .defaultHeader(HttpHeaders.ACCEPT, "application/vnd.github+json")
                 .defaultHeader("X-GitHub-Api-Version", properties.apiVersion())
-                .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
-                .build();
+                .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent());
+        // 토큰이 있으면 인증 요청으로 레이트 리밋을 60→5000/시간으로 올린다. 없으면 비인증.
+        if (properties.token() != null && !properties.token().isBlank()) {
+            configured = configured.defaultHeader(
+                    HttpHeaders.AUTHORIZATION, "Bearer " + properties.token().trim());
+        }
+        return configured.build();
     }
 }

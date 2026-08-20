@@ -1,3 +1,7 @@
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] requestId=%X{requestId:-none} %logger{36} - %msg%n"
+
 spring:
   application:
     name: career-compass-backend
@@ -25,10 +29,6 @@ management:
       exposure:
         include: health
 
-document:
-  policy:
-    max-text-length: ${DOCUMENT_MAX_TEXT_LENGTH}
-
 github:
   api:
     base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
@@ -36,7 +36,123 @@ github:
     user-agent: ${GITHUB_API_USER_AGENT:career-compass-ai}
     connect-timeout: ${GITHUB_API_CONNECT_TIMEOUT}
     read-timeout: ${GITHUB_API_READ_TIMEOUT}
+    # 선택. GitHub PAT를 넣으면 저장소 조회가 인증 요청이 되어 레이트 리밋이
+    # 60→5000/시간으로 올라간다. 없으면 비인증(공개 저장소만, 60/시간).
+    token: ${GITHUB_API_TOKEN:}
+  snapshot:
+    max-remote-file-bytes: ${REPOSITORY_SNAPSHOT_MAX_REMOTE_FILE_BYTES:102400}
+    max-source-and-test-files-per-technology: ${REPOSITORY_SNAPSHOT_MAX_SOURCE_TEST_FILES_PER_TECHNOLOGY:3}
+    excluded-path-segments:
+      - .git
+      - .gradle
+      - .idea
+      - .venv
+      - __pycache__
+      - build
+      - coverage
+      - dist
+      - node_modules
+      - out
+      - target
+      - venv
+    excluded-file-name-fragments:
+      - .env
+      - credentials.
+      - id_ed25519
+      - id_rsa
+      - .pem
+      - .p12
+      - .pfx
+    manifest-file-names:
+      - Cargo.lock
+      - Cargo.toml
+      - build.gradle
+      - build.gradle.kts
+      - go.mod
+      - go.sum
+      - package-lock.json
+      - package.json
+      - pnpm-lock.yaml
+      - poetry.lock
+      - pom.xml
+      - pyproject.toml
+      - requirements.txt
+      - settings.gradle
+      - settings.gradle.kts
+      - yarn.lock
+    configuration-file-names:
+      - Dockerfile
+      - application.properties
+      - application.yaml
+      - application.yml
+      - compose.yaml
+      - compose.yml
+    source-extensions:
+      - .go
+      - .java
+      - .js
+      - .jsx
+      - .kt
+      - .kts
+      - .py
+      - .rs
+      - .ts
+      - .tsx
+
 
 python:
   worker:
     base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
+    internal-token: ${INTERNAL_SERVICE_TOKEN}
+    # 확인 필요: 실제 로컬 LLM(Ollama) 표본 기준 재조정. 두 단계(core+responsibility)를
+    # 순차 호출하고 Gemini 폴백까지 있을 수 있어 넉넉하게 잡는다.
+    extract-connect-timeout: ${PYTHON_WORKER_EXTRACT_CONNECT_TIMEOUT:3s}
+    extract-read-timeout: ${PYTHON_WORKER_EXTRACT_READ_TIMEOUT:60s}
+    project-responsibility:
+      max-selected-technology-tags: ${PROJECT_RESPONSIBILITY_MAX_SELECTED_TECHNOLOGY_TAGS:10}
+      max-detected-technologies: ${PROJECT_RESPONSIBILITY_MAX_DETECTED_TECHNOLOGIES:30}
+      max-readmes: ${PROJECT_RESPONSIBILITY_MAX_READMES:3}
+      max-manifests: ${PROJECT_RESPONSIBILITY_MAX_MANIFESTS:20}
+      max-configurations: ${PROJECT_RESPONSIBILITY_MAX_CONFIGURATIONS:10}
+      max-evidence-items: ${PROJECT_RESPONSIBILITY_MAX_EVIDENCE_ITEMS:30}
+      max-evidence-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_EVIDENCE_TEXT_CODE_POINTS:2000}
+      max-total-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_TOTAL_TEXT_CODE_POINTS:20000}
+      max-responsibility-text-code-points: ${PROJECT_RESPONSIBILITY_MAX_RESPONSIBILITY_TEXT_CODE_POINTS:500}
+
+public-employment:
+  api:
+    base-url: ${PUBLIC_EMPLOYMENT_API_BASE_URL:https://apis.data.go.kr/1760000/PblJobService}
+    service-key: ${PUBLIC_EMPLOYMENT_API_SERVICE_KEY:}
+    connect-timeout: ${PUBLIC_EMPLOYMENT_API_CONNECT_TIMEOUT:3s}
+    read-timeout: ${PUBLIC_EMPLOYMENT_API_READ_TIMEOUT:10s}
+    max-source-text-length: ${JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH:8000}
+    sort-order: ${PUBLIC_EMPLOYMENT_API_SORT_ORDER:1}
+
+# 승인된 인사혁신처 공공취업 API를 기본 Provider로 사용한다.
+# dev-sample은 dev 프로필에서 JOB_SEARCH_PROVIDER를 명시했을 때만 선택한다.
+# PUBLIC_EMPLOYMENT_API_SERVICE_KEY에는 공공데이터포털의 Decoding 인증키를 설정한다.
+job-search:
+  provider: ${JOB_SEARCH_PROVIDER:public-employment}
+
+job-analysis:
+  worker:
+    fixed-delay-ms: ${JOB_ANALYSIS_WORKER_FIXED_DELAY_MS:5000}
+    search-result-limit: ${JOB_ANALYSIS_WORKER_SEARCH_RESULT_LIMIT:5}
+
+technology-tag:
+  policy:
+    max-query-length: ${TECHNOLOGY_TAG_MAX_QUERY_LENGTH:50}
+    max-search-results: ${TECHNOLOGY_TAG_MAX_SEARCH_RESULTS:30}
+  resolution:
+    max-names: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAMES:30}
+    max-name-length: ${TECHNOLOGY_TAG_RESOLUTION_MAX_NAME_LENGTH:100}
+
+user:
+  profile:
+    max-target-job-title-length: ${USER_PROFILE_MAX_TARGET_JOB_TITLE_LENGTH:100}
+    max-technology-tag-count: ${USER_PROFILE_MAX_TECHNOLOGY_TAG_COUNT:30}
+    max-custom-tag-name-length: ${USER_PROFILE_MAX_CUSTOM_TAG_NAME_LENGTH:100}
+
+project-responsibility:
+  review:
+    candidate-retention-days: ${PROJECT_RESPONSIBILITY_CANDIDATE_RETENTION_DAYS:30}

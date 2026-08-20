@@ -7,11 +7,11 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@Profile({"dev", "test"})
+@Profile("test")
 public class DevelopmentSecurityConfig {
 
     /**
-     * 기능: 개발·테스트 환경에서 설정된 테스트 사용자로 API를 호출할 수 있게 한다.
+     * 기능: 자동 테스트 환경에서 설정된 테스트 사용자로 API를 호출할 수 있게 한다.
      */
     @Bean
     SecurityFilterChain developmentSecurityFilterChain(HttpSecurity http) throws Exception {

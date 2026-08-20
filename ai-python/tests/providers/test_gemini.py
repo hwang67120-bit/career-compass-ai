@@ -16,6 +16,12 @@ def provider(settings: GeminiSettings) -> GeminiProvider:
     return GeminiProvider(client=client, model_name=settings.gemini_model)
 
 
+def test_provider_name_is_gemini() -> None:
+    """라우터가 modelProvider 응답 필드를 여기서 가져온다 — 리터럴로 박아두지 않는다."""
+    assert GeminiProvider.provider_name == "gemini"
+
+
+@pytest.mark.real_gemini
 @pytest.mark.asyncio
 async def test_extract_job_posting_returns_evidence_linked_result(
     provider: GeminiProvider,
@@ -27,3 +33,16 @@ async def test_extract_job_posting_returns_evidence_linked_result(
 
     assert result.job_title
     assert result.evidence
+
+
+@pytest.mark.real_gemini
+@pytest.mark.asyncio
+async def test_generate_job_search_keyword_suggestions_returns_list(
+    provider: GeminiProvider,
+) -> None:
+    # 실제 사용자 값이 아닌 직접 만든 가상의 희망 직무·기술만 사용한다(Gemini 무료 등급 데이터 정책).
+    result = await provider.generate_job_search_keyword_suggestions(
+        "백엔드 개발자", ["Spring Boot", "Java"]
+    )
+
+    assert isinstance(result.keywords, list)

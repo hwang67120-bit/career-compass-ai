@@ -1,0 +1,62 @@
+name: CI (Python)
+
+on:
+  pull_request:
+    paths:
+      - "ai-python/**"
+      - "contracts/**"
+      - ".github/workflows/ci-python.yml"
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - "ai-python/**"
+      - "contracts/**"
+      - ".github/workflows/ci-python.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ai-python
+
+    # 더미 값 — 설정 인스턴스화용. 실제 외부 모델을 호출하는 테스트는 real_gemini/real_ollama
+    # 마커로 제외되므로 진짜 키·토큰이 아니어도 단위 테스트가 통과한다.
+    env:
+      INTERNAL_SERVICE_TOKEN: ci-dummy-token
+      OLLAMA_MODEL: dummy
+      OLLAMA_JOB_POSTING_RESPONSIBILITY_MODEL: dummy
+      OLLAMA_EMBEDDING_MODEL: dummy
+      GEMINI_API_KEY: dummy
+      GEMINI_MODEL: dummy
+      GEMINI_EMBEDDING_MODEL: dummy
+      JOB_POSTING_EXTRACTION_MAX_TEXT_LENGTH: "2000"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          working-directory: ai-python
+          python-version: "3.10"
+          enable-cache: true
+          cache-dependency-glob: "ai-python/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run unit tests
+        run: uv run --locked pytest -m "not real_gemini and not real_ollama"
