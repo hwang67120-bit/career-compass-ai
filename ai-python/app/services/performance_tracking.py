@@ -33,6 +33,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import Enum
 
+from app.observability.metrics import record_stage
+
 _logger = logging.getLogger("app.performance")
 
 # 요청 단위 식별자와 직전 모델 호출의 토큰 사용량을 계측에 연결한다. provider 함수
@@ -116,5 +118,12 @@ def measure_stage(component: str, operation: StageOperation) -> Iterator[None]:
             _request_id_var.get() or "none",
             prompt_tokens if prompt_tokens is not None else "none",
             completion_tokens if completion_tokens is not None else "none",
+        )
+        record_stage(
+            f"{component}.{operation.value}",
+            duration_ms,
+            outcome == "error",
+            prompt_tokens,
+            completion_tokens,
         )
         _usage_var.set(None)
