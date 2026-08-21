@@ -85,12 +85,18 @@ X-Request-Id: {uuid}
 }
 ```
 
-- `status`: `CALCULATED`, `PARTIALLY_CALCULATED`, `NOT_CALCULABLE`
+- `status`: `CALCULATED`, `NOT_CALCULABLE`
 - `method`: `LLM_JUDGE`
 - `LLM_JUDGE`는 `RELATED` 또는 `NOT_RELATED`인 `judgment`만 반환한다.
 - LLM 판정은 별도 보정 전 숫자 점수와 confidence를 반환하지 않는다.
-- provider는 실제 분석을 실행한 `OLLAMA` 또는 `GEMINI`, model은 실제 모델 이름이다.
-- Ollama가 기본이며 Gemini는 폴백과 제한적인 교차검증에 사용한다.
+- 한 요청의 공고 근거는 모두 `CALCULATED`이거나 모두 `NOT_CALCULABLE`이다.
+  Python 한 요청 안에서는 `PARTIALLY_CALCULATED`를 만들지 않는다.
+- 여러 공고 중 일부 Python 호출만 실패한 경우는 Java가 공고별 결과를 모아 분석 상태를
+  `PARTIALLY_COMPLETED`(부분 완료)로 저장한다.
+- 현재 이 엔드포인트의 provider는 실제 분석을 실행하는 `OLLAMA`, model은 실제 모델
+  이름이다. 이 내용은 Gemini를 프로젝트 전체에서 제거한다는 뜻이 아니다.
+- 이 엔드포인트에 Gemini 폴백을 추가할 때는 실제 실행 제공자를 응답하는 추상화와
+  계약 테스트를 먼저 추가한 뒤 허용 provider를 확장한다.
 
 ## 계산 불가
 
@@ -105,8 +111,13 @@ X-Request-Id: {uuid}
 }
 ```
 
-근거 부족은 0점이나 모델 장애가 아니다. 안전 처리 후 근거가 빈 경우도
-`JOB_EVIDENCE_EMPTY_AFTER_SANITIZATION` 또는 `USER_EVIDENCE_EMPTY_AFTER_SANITIZATION`으로 구분한다.
+근거 부족은 0점이나 모델 장애가 아니다. 계산 불가 사유의 생성 책임은 다음과 같다.
+
+| 사유 | 생성 위치 | 처리 |
+|---|---|---|
+| `COMPATIBLE_USER_EVIDENCE_MISSING` | Python | 요청의 `userEvidence`가 비었을 때 항목별 `NOT_CALCULABLE`로 반환 |
+| `JOB_EVIDENCE_EMPTY_AFTER_SANITIZATION` | Java | 정제 후 공고 근거가 비면 Python을 호출하지 않고 공고 비교 결과에 저장 |
+| `USER_EVIDENCE_EMPTY_AFTER_SANITIZATION` | Java | 정제 후 확정 사용자 근거가 비면 Python을 호출하지 않고 공고 비교 결과에 저장 |
 
 ## 품질 게이트
 

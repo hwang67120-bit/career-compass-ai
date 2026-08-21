@@ -57,6 +57,26 @@ class PythonEvidenceSimilarityClientTest {
     }
 
     @Test
+    void compare_unconfiguredGeminiProvider_throwsResponseInvalid() {
+        String geminiEnvelope = calculatedEnvelope("user-1")
+                .replace("\"provider\":\"OLLAMA\"", "\"provider\":\"GEMINI\"");
+        server.expect(requestTo(BASE_URL + "/internal/v1/job-evidence-similarities"))
+                .andRespond(withSuccess(geminiEnvelope, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.compare(requestWithUserEvidence()))
+                .isInstanceOf(PythonEvidenceSimilarityException.class)
+                .satisfies(exception -> {
+                    PythonEvidenceSimilarityException similarityException =
+                            (PythonEvidenceSimilarityException) exception;
+                    assertThat(similarityException.getFailure())
+                            .isEqualTo(PythonEvidenceSimilarityFailure.RESPONSE_INVALID);
+                    assertThat(similarityException.getResponseViolation())
+                            .isEqualTo(PythonEvidenceSimilarityResponseViolation
+                                    .MODEL_EXECUTION_INVALID);
+                });
+    }
+
+    @Test
     void compare_emptyUserEvidenceAndNotCalculableResponse_returnsNormalResult() {
         server.expect(requestTo(BASE_URL + "/internal/v1/job-evidence-similarities"))
                 .andRespond(withSuccess(notCalculableEnvelope(), MediaType.APPLICATION_JSON));
@@ -70,6 +90,51 @@ class PythonEvidenceSimilarityClientTest {
         assertThat(data.results()).singleElement()
                 .extracting(PythonEvidenceSimilarityEnvelope.Result::unavailableReason)
                 .isEqualTo("COMPATIBLE_USER_EVIDENCE_MISSING");
+    }
+
+    @Test
+    void compare_mixedResultStatuses_throwsResponseInvalid() {
+        String mixedEnvelope = successEnvelope("""
+                "status":"NOT_CALCULABLE",
+                "method":"LLM_JUDGE",
+                "results":[
+                  {
+                    "jobEvidenceId":"job-1",
+                    "status":"CALCULATED",
+                    "bestMatchUserEvidenceId":"user-1",
+                    "score":null,
+                    "judgment":"RELATED",
+                    "unavailableReason":null
+                  },
+                  {
+                    "jobEvidenceId":"job-2",
+                    "status":"NOT_CALCULABLE",
+                    "bestMatchUserEvidenceId":null,
+                    "score":null,
+                    "judgment":null,
+                    "unavailableReason":"COMPATIBLE_USER_EVIDENCE_MISSING"
+                  }
+                ]
+                """);
+        server.expect(requestTo(BASE_URL + "/internal/v1/job-evidence-similarities"))
+                .andRespond(withSuccess(mixedEnvelope, MediaType.APPLICATION_JSON));
+        PythonEvidenceSimilarityRequest request = new PythonEvidenceSimilarityRequest(
+                COMPARISON_TASK_ID,
+                JOB_ANALYSIS_ID,
+                JOB_POSTING_ID,
+                List.of(
+                        new PythonEvidenceSimilarityRequest.JobEvidence(
+                                "job-1", "RESPONSIBILITY", "백엔드 API 설계와 운영"),
+                        new PythonEvidenceSimilarityRequest.JobEvidence(
+                                "job-2", "RESPONSIBILITY", "배포 자동화와 운영")),
+                requestWithUserEvidence().userEvidence());
+
+        assertThatThrownBy(() -> client.compare(request))
+                .isInstanceOf(PythonEvidenceSimilarityException.class)
+                .satisfies(exception -> assertThat(
+                        ((PythonEvidenceSimilarityException) exception)
+                                .getResponseViolation())
+                        .isEqualTo(PythonEvidenceSimilarityResponseViolation.STATUS_INVALID));
     }
 
     @Test

@@ -30,15 +30,6 @@ def _not_calculable(job_evidence_id: str, reason: str) -> dict:
     }
 
 
-def _overall_status(results: list[dict]) -> str:
-    statuses = {result["status"] for result in results}
-    if statuses == {"CALCULATED"}:
-        return "CALCULATED"
-    if statuses == {"NOT_CALCULABLE"}:
-        return "NOT_CALCULABLE"
-    return "PARTIALLY_CALCULATED"
-
-
 async def compare_evidence(
     request: SimilarityRequest, provider: OllamaProvider
 ) -> tuple[list[dict], str]:
@@ -50,12 +41,15 @@ async def compare_evidence(
     user_items = [(user.evidence_id, user.text) for user in request.user_evidence]
     valid_ids = {evidence_id for evidence_id, _ in user_items}
 
+    if not user_items:
+        results = [
+            _not_calculable(job.evidence_id, "COMPATIBLE_USER_EVIDENCE_MISSING")
+            for job in request.job_evidence
+        ]
+        return results, "NOT_CALCULABLE"
+
     results: list[dict] = []
     for job in request.job_evidence:
-        if not user_items:
-            results.append(_not_calculable(job.evidence_id, "COMPATIBLE_USER_EVIDENCE_MISSING"))
-            continue
-
         verdict = await provider.judge_evidence_relation(job.text, user_items)
         best_match_id = (
             verdict.best_match_user_evidence_id if verdict.judgment == "RELATED" else None
@@ -65,4 +59,4 @@ async def compare_evidence(
             best_match_id = None
         results.append(_calculated(job.evidence_id, best_match_id, verdict.judgment))
 
-    return results, _overall_status(results)
+    return results, "CALCULATED"
