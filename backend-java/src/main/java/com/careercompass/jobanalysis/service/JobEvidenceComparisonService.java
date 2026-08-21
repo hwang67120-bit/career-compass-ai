@@ -31,7 +31,25 @@ public class JobEvidenceComparisonService {
     private final JobAnalysisJsonCodec jobAnalysisJsonCodec;
 
     /**
-     * 기능: 저장된 공고 담당 업무와 확정된 사용자 프로젝트 담당 업무를 공고별로 비교하고 저장한다.
+     * 기능: 분석 작업에 연결된 공고 담당 업무와 사용자가 확정한 프로젝트 담당 업무를
+     * 공고별로 비교하고 최종 분석 상태를 결정한다.
+     *
+     * 입력:
+     * - jobAnalysis: 현재 비교할 분석 작업이다. 식별자와 분석에 고정된 프로필 버전을 가진다.
+     *
+     * 조회하는 데이터:
+     * - postings: 공고 기본 정보와 Python이 추출한 담당 업무 JSON이 저장된 공고 목록이다.
+     * - userEvidence: 근거 식별자, 프로젝트 저장소 식별자와 사용자가 확정한 담당 업무 문장이다.
+     *
+     * 외부 전달:
+     * - 공고 담당 업무와 사용자 프로젝트 담당 업무가 모두 있을 때만 공고별로 Python 의미 비교를
+     * 요청한다. 어느 한쪽 근거가 없으면 Python을 호출하지 않고 비교 불가 이유를 기록한다.
+     *
+     * 저장·상태 변경:
+     * - 각 공고에는 비교 결과 또는 비교 불가·실패 이유를 JSON으로 저장한다.
+     * - 모든 공고 처리 후 성공 건수와 최초 실패 원인을 합산해 분석을 완료, 부분 완료 또는 실패로
+     * 확정한다.
+     *
      * 반환 값: 없음.
      */
     public void compare(JobAnalysis jobAnalysis) {
