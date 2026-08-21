@@ -39,92 +39,180 @@ public class JobEvidenceComparisonService {
                 jobAnalysisExecutionService.listPostings(jobAnalysisId);
         List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence =
                 toUserEvidence(jobAnalysisExecutionService.listConfirmedResponsibilities(jobAnalysis));
-        int successfulCallCount = 0;
-        int failedCount = 0;
-        JobAnalysisFailureCode firstFailureCode = null;
-
-        for (JobAnalysisPosting posting : postings) {
-            UUID comparisonTaskId = UUID.randomUUID();
-            JobPostingComparisonSnapshot snapshot;
-            try {
-                List<PythonEvidenceSimilarityRequest.JobEvidence> jobEvidence =
-                        jobAnalysisJsonCodec.parseJobEvidence(
-                                posting.getExtractionJson());
-                if (jobEvidence.isEmpty()) {
-                    snapshot = JobPostingComparisonSnapshot.jobEvidenceUnavailable(
-                            comparisonTaskId.toString(),
-                            jobAnalysisId.toString(),
-                            posting.getJobPostingId().toString()
-                    );
-                } else if (userEvidence.isEmpty()) {
-                    snapshot = JobPostingComparisonSnapshot.userEvidenceUnavailable(
-                            comparisonTaskId.toString(),
-                            jobAnalysisId.toString(),
-                            posting.getJobPostingId().toString(),
-                            jobEvidence
-                    );
-                } else {
-                    PythonEvidenceSimilarityRequest request =
-                            new PythonEvidenceSimilarityRequest(
-                                    comparisonTaskId.toString(),
-                                    jobAnalysisId.toString(),
-                                    posting.getJobPostingId().toString(),
-                                    jobEvidence,
-                                    userEvidence
-                            );
-                    PythonEvidenceSimilarityEnvelope.Data response =
-                            pythonEvidenceSimilarityClient.compare(request);
-                    snapshot = JobPostingComparisonSnapshot.fromPython(response);
-                    successfulCallCount++;
-                }
-            } catch (PythonEvidenceSimilarityException exception) {
-                JobAnalysisFailureCode failureCode = mapFailure(exception.getFailure());
-                firstFailureCode = firstFailureCode == null ? failureCode : firstFailureCode;
-                failedCount++;
-                snapshot = JobPostingComparisonSnapshot.failed(
-                        comparisonTaskId.toString(),
-                        jobAnalysisId.toString(),
-                        posting.getJobPostingId().toString(),
-                        failureCode.name()
-                );
-                log.warn(
-                        "job_evidence_comparison_failed jobAnalysisId={} jobPostingId={} failure={}",
-                        jobAnalysisId,
-                        posting.getJobPostingId(),
-                        exception.getFailure(),
-                        exception
-                );
-            } catch (JsonProcessingException exception) {
-                JobAnalysisFailureCode failureCode =
-                        JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE;
-                firstFailureCode = firstFailureCode == null ? failureCode : firstFailureCode;
-                failedCount++;
-                snapshot = JobPostingComparisonSnapshot.failed(
-                        comparisonTaskId.toString(),
-                        jobAnalysisId.toString(),
-                        posting.getJobPostingId().toString(),
-                        failureCode.name()
-                );
-                log.warn(
-                        "job_evidence_input_invalid jobAnalysisId={} jobPostingId={}",
-                        jobAnalysisId,
-                        posting.getJobPostingId(),
-                        exception
-                );
-            }
-            jobAnalysisExecutionService.recordPostingComparison(
-                    jobAnalysisId,
-                    posting.getId(),
-                    serialize(snapshot)
-            );
-        }
+        ComparisonProgress progress = comparePostings(
+                jobAnalysisId,
+                postings,
+                userEvidence);
 
         jobAnalysisExecutionService.finishEvidenceComparison(
                 jobAnalysisId,
-                postings.size() - failedCount,
+                progress.completedPostingCount(),
                 postings.size(),
-                successfulCallCount,
-                firstFailureCode
+                progress.successfulPythonCallCount(),
+                progress.firstFailureCode()
+        );
+    }
+
+    private ComparisonProgress comparePostings(
+            UUID jobAnalysisId,
+            List<JobAnalysisPosting> postings,
+            List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence
+    ) {
+        int completedPostingCount = 0;
+        int successfulPythonCallCount = 0;
+        JobAnalysisFailureCode firstFailureCode = null;
+
+        for (JobAnalysisPosting posting : postings) {
+            PostingComparisonOutcome outcome = compareAndRecordPosting(
+                    jobAnalysisId,
+                    posting,
+                    userEvidence);
+            if (outcome.failureCode() == null) {
+                completedPostingCount++;
+            } else if (firstFailureCode == null) {
+                firstFailureCode = outcome.failureCode();
+            }
+            if (outcome.pythonCallSucceeded()) {
+                successfulPythonCallCount++;
+            }
+        }
+
+        return new ComparisonProgress(
+                completedPostingCount,
+                successfulPythonCallCount,
+                firstFailureCode);
+    }
+
+    private PostingComparisonOutcome compareAndRecordPosting(
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence
+    ) {
+        UUID comparisonTaskId = UUID.randomUUID();
+        PostingComparisonOutcome outcome;
+        try {
+            outcome = createPostingComparison(
+                    comparisonTaskId,
+                    jobAnalysisId,
+                    posting,
+                    userEvidence);
+        } catch (PythonEvidenceSimilarityException exception) {
+            JobAnalysisFailureCode failureCode = mapFailure(exception.getFailure());
+            logPythonComparisonFailure(jobAnalysisId, posting, exception);
+            outcome = createFailedComparison(
+                    comparisonTaskId,
+                    jobAnalysisId,
+                    posting,
+                    failureCode);
+        } catch (JsonProcessingException exception) {
+            JobAnalysisFailureCode failureCode =
+                    JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE;
+            logInvalidJobEvidence(jobAnalysisId, posting, exception);
+            outcome = createFailedComparison(
+                    comparisonTaskId,
+                    jobAnalysisId,
+                    posting,
+                    failureCode);
+        }
+
+        recordComparisonSnapshot(
+                jobAnalysisId,
+                posting,
+                outcome.snapshot());
+        return outcome;
+    }
+
+    private PostingComparisonOutcome createPostingComparison(
+            UUID comparisonTaskId,
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence
+    ) throws JsonProcessingException {
+        List<PythonEvidenceSimilarityRequest.JobEvidence> jobEvidence =
+                jobAnalysisJsonCodec.parseJobEvidence(posting.getExtractionJson());
+        if (jobEvidence.isEmpty()) {
+            return PostingComparisonOutcome.completed(
+                    JobPostingComparisonSnapshot.jobEvidenceUnavailable(
+                            comparisonTaskId.toString(),
+                            jobAnalysisId.toString(),
+                            posting.getJobPostingId().toString()),
+                    false);
+        }
+        if (userEvidence.isEmpty()) {
+            return PostingComparisonOutcome.completed(
+                    JobPostingComparisonSnapshot.userEvidenceUnavailable(
+                            comparisonTaskId.toString(),
+                            jobAnalysisId.toString(),
+                            posting.getJobPostingId().toString(),
+                            jobEvidence),
+                    false);
+        }
+
+        PythonEvidenceSimilarityRequest request = new PythonEvidenceSimilarityRequest(
+                comparisonTaskId.toString(),
+                jobAnalysisId.toString(),
+                posting.getJobPostingId().toString(),
+                jobEvidence,
+                userEvidence
+        );
+        PythonEvidenceSimilarityEnvelope.Data response =
+                pythonEvidenceSimilarityClient.compare(request);
+        return PostingComparisonOutcome.completed(
+                JobPostingComparisonSnapshot.fromPython(response),
+                true);
+    }
+
+    private PostingComparisonOutcome createFailedComparison(
+            UUID comparisonTaskId,
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            JobAnalysisFailureCode failureCode
+    ) {
+        return PostingComparisonOutcome.failed(
+                JobPostingComparisonSnapshot.failed(
+                        comparisonTaskId.toString(),
+                        jobAnalysisId.toString(),
+                        posting.getJobPostingId().toString(),
+                        failureCode.name()),
+                failureCode);
+    }
+
+    private void recordComparisonSnapshot(
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            JobPostingComparisonSnapshot snapshot
+    ) {
+        jobAnalysisExecutionService.recordPostingComparison(
+                jobAnalysisId,
+                posting.getId(),
+                serialize(snapshot)
+        );
+    }
+
+    private void logPythonComparisonFailure(
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            PythonEvidenceSimilarityException exception
+    ) {
+        log.warn(
+                "job_evidence_comparison_failed jobAnalysisId={} jobPostingId={} failure={}",
+                jobAnalysisId,
+                posting.getJobPostingId(),
+                exception.getFailure(),
+                exception
+        );
+    }
+
+    private void logInvalidJobEvidence(
+            UUID jobAnalysisId,
+            JobAnalysisPosting posting,
+            JsonProcessingException exception
+    ) {
+        log.warn(
+                "job_evidence_input_invalid jobAnalysisId={} jobPostingId={}",
+                jobAnalysisId,
+                posting.getJobPostingId(),
+                exception
         );
     }
 
@@ -155,5 +243,35 @@ public class JobEvidenceComparisonService {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("COMPARISON_SERIALIZATION_FAILED", exception);
         }
+    }
+
+    private record PostingComparisonOutcome(
+            JobPostingComparisonSnapshot snapshot,
+            boolean pythonCallSucceeded,
+            JobAnalysisFailureCode failureCode
+    ) {
+        private static PostingComparisonOutcome completed(
+                JobPostingComparisonSnapshot snapshot,
+                boolean pythonCallSucceeded
+        ) {
+            return new PostingComparisonOutcome(
+                    snapshot,
+                    pythonCallSucceeded,
+                    null);
+        }
+
+        private static PostingComparisonOutcome failed(
+                JobPostingComparisonSnapshot snapshot,
+                JobAnalysisFailureCode failureCode
+        ) {
+            return new PostingComparisonOutcome(snapshot, false, failureCode);
+        }
+    }
+
+    private record ComparisonProgress(
+            int completedPostingCount,
+            int successfulPythonCallCount,
+            JobAnalysisFailureCode firstFailureCode
+    ) {
     }
 }
