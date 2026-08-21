@@ -31,15 +31,18 @@ public class JobEvidenceComparisonService {
     private final JobAnalysisJsonCodec jobAnalysisJsonCodec;
 
     /**
-     * 기능: 분석 시작 때 고정한 프로필의 확정 프로젝트 근거와 공고 담당 업무를 공고별로 비교한다.
-     * 어느 한쪽 근거가 없으면 Python을 호출하지 않고 비교 불가로 저장한다. 공고별 결과를 저장한
-     * 뒤 집계 결과에 따라 분석을 완료, 부분 완료 또는 실패로 확정한다.
+     * 기능: 확정된 프로젝트 근거와 공고 담당 업무를 공고별로 비교하고 최종 분석 상태를 결정한다.
      * 반환 값: 없음.
      */
     public void compare(JobAnalysis jobAnalysis) {
         UUID jobAnalysisId = jobAnalysis.getId();
         List<JobAnalysisPosting> postings =
                 jobAnalysisExecutionService.listPostings(jobAnalysisId);
+
+        /*
+         * 분석 중 프로필이 변경돼도 결과가 달라지지 않도록, 분석 시작 때 고정한 프로필 버전에서
+         * 사용자가 확정한 프로젝트 담당 업무만 불러온다.
+         */
         List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence =
                 toUserEvidence(jobAnalysisExecutionService.listConfirmedResponsibilities(jobAnalysis));
         ComparisonSummary comparisonSummary = compareAndRecordPostings(
@@ -47,6 +50,9 @@ public class JobEvidenceComparisonService {
                 postings,
                 userEvidence);
 
+        /*
+         * 공고별 비교 성공과 실패를 집계해 전체 분석을 완료, 부분 완료 또는 실패로 확정한다.
+         */
         jobAnalysisExecutionService.finishEvidenceComparison(
                 jobAnalysisId,
                 comparisonSummary.completedPostingCount(),
@@ -133,6 +139,11 @@ public class JobEvidenceComparisonService {
     ) throws JsonProcessingException {
         List<PythonEvidenceSimilarityRequest.JobEvidence> jobEvidence =
                 jobAnalysisJsonCodec.parseJobEvidence(posting.getExtractionJson());
+
+        /*
+         * 어느 한쪽 근거가 없는 것은 시스템 실패나 불일치가 아니다. Python을 호출하지 않고
+         * 비교 불가 이유를 결과로 남긴다.
+         */
         if (jobEvidence.isEmpty()) {
             return PostingComparisonOutcome.completed(
                     JobPostingComparisonSnapshot.jobEvidenceUnavailable(
