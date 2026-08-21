@@ -121,6 +121,50 @@ class JobEvidenceComparisonServiceTest {
     }
 
     @Test
+    void compare_withoutUserEvidence_skipsJudgeAndStoresNotCalculable() {
+        JobAnalysisPosting posting = posting("posting-1", extractionWithResponsibility());
+        when(jobAnalysisExecutionService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
+        when(jobAnalysisExecutionService.listConfirmedResponsibilities(analysis))
+                .thenReturn(List.of());
+
+        service.compare(analysis);
+
+        verify(client, never()).compare(any());
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jobAnalysisExecutionService).recordPostingComparison(
+                eq(ANALYSIS_ID), eq(posting.getId()), jsonCaptor.capture());
+        assertThat(jsonCaptor.getValue())
+                .contains("\"status\":\"NOT_CALCULABLE\"")
+                .contains("USER_EVIDENCE_EMPTY_AFTER_SANITIZATION")
+                .contains("\"method\":null");
+        verify(jobAnalysisExecutionService).finishEvidenceComparison(
+                ANALYSIS_ID, 1, 1, 0, null);
+    }
+
+    @Test
+    void compare_withInvalidExtractionJson_storesFailureAndFailsAnalysis() {
+        JobAnalysisPosting posting = posting("posting-1", "{invalid-json");
+        when(jobAnalysisExecutionService.listPostings(ANALYSIS_ID)).thenReturn(List.of(posting));
+
+        service.compare(analysis);
+
+        verify(client, never()).compare(any());
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jobAnalysisExecutionService).recordPostingComparison(
+                eq(ANALYSIS_ID), eq(posting.getId()), jsonCaptor.capture());
+        assertThat(jsonCaptor.getValue())
+                .contains("\"status\":\"FAILED\"")
+                .contains("EVIDENCE_COMPARISON_INVALID_RESPONSE");
+        verify(jobAnalysisExecutionService).finishEvidenceComparison(
+                ANALYSIS_ID,
+                0,
+                1,
+                0,
+                JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE
+        );
+    }
+
+    @Test
     void compare_withOneSuccessfulCallAndOneFailure_finishesPartiallyCompleted() {
         JobAnalysisPosting first = posting("posting-1", extractionWithResponsibility());
         JobAnalysisPosting second = posting("posting-2", extractionWithResponsibility());
