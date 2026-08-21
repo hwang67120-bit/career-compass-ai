@@ -107,10 +107,10 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withNoQueuedAnalysis_doesNothing() {
+    void pollAndExecuteOneAnalysis_withNoQueuedAnalysis_doesNothing() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis()).thenReturn(Optional.empty());
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobPostingProvider, never()).search(anyString(), any(Integer.class));
         verify(jobAnalysisExecutionService, never())
@@ -119,12 +119,12 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withNoProviderConfigured_marksProviderNotConfigured() {
+    void pollAndExecuteOneAnalysis_withNoProviderConfigured_marksProviderNotConfigured() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProviderObjectProvider.getIfAvailable()).thenReturn(null);
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
@@ -134,13 +134,13 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withEmptySearchResult_recordsCompletedNotFailed() {
+    void pollAndExecuteOneAnalysis_withEmptySearchResult_recordsCompletedNotFailed() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenReturn(List.of());
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).recordEmptySearchResult(JOB_ANALYSIS_ID);
         verify(jobAnalysisExecutionService, never()).markAnalysisFailed(any(), any());
@@ -150,7 +150,7 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withAllCandidatesSucceeding_recordsExtractionOnlyFailure() {
+    void pollAndExecuteOneAnalysis_withAllCandidatesSucceeding_recordsExtractionOnlyFailure() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
@@ -163,7 +163,7 @@ class JobAnalysisWorkerTest {
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenReturn(extractionData());
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
@@ -186,7 +186,7 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withOneCandidateFailingExtraction_recordsOnlySuccessfulOnes() {
+    void pollAndExecuteOneAnalysis_withOneCandidateFailingExtraction_recordsOnlySuccessfulOnes() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         JobPostingCandidate failingCandidate = candidate("posting-1");
@@ -201,7 +201,7 @@ class JobAnalysisWorkerTest {
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenReturn(extractionData());
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<JobAnalysisPosting>> captor = ArgumentCaptor.forClass(List.class);
@@ -212,7 +212,7 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withAllCandidatesFailingExtraction_marksAllExtractionsFailed() {
+    void pollAndExecuteOneAnalysis_withAllCandidatesFailingExtraction_marksAllExtractionsFailed() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
@@ -222,7 +222,7 @@ class JobAnalysisWorkerTest {
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenThrow(new PythonExtractionException(PythonExtractionFailure.UNAVAILABLE));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
@@ -231,14 +231,14 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withSearchUnavailable_marksDependencyUnavailable() {
+    void pollAndExecuteOneAnalysis_withSearchUnavailable_marksDependencyUnavailable() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenThrow(new PublicEmploymentAccessException(
                         PublicEmploymentAccessFailure.SERVICE_UNAVAILABLE));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE);
@@ -247,28 +247,28 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withSearchInvalidResponse_marksDependencyInvalidResponse() {
+    void pollAndExecuteOneAnalysis_withSearchInvalidResponse_marksDependencyInvalidResponse() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(jobPostingProvider.search(eq("백엔드 개발자"), any(Integer.class)))
                 .thenThrow(new PublicEmploymentAccessException(
                         PublicEmploymentAccessFailure.INVALID_RESPONSE));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE);
     }
 
     @Test
-    void pollAndProcessOne_withTruncatedRepositoryTree_marksRepositoryTreeTruncated() {
+    void pollAndExecuteOneAnalysis_withTruncatedRepositoryTree_marksRepositoryTreeTruncated() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
                 .thenThrow(new RepositorySnapshotException(
                         RepositorySnapshotFailure.TREE_TRUNCATED));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID, JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED);
@@ -276,14 +276,14 @@ class JobAnalysisWorkerTest {
     }
 
     @Test
-    void pollAndProcessOne_withResponsibilityModelUnavailable_marksModelUnavailable() {
+    void pollAndExecuteOneAnalysis_withResponsibilityModelUnavailable_marksModelUnavailable() {
         when(jobAnalysisExecutionService.claimNextQueuedAnalysis())
                 .thenReturn(Optional.of(jobAnalysis));
         when(projectResponsibilityExtractionService.extract(jobAnalysis, profileVersion))
                 .thenThrow(new PythonProjectResponsibilityExtractionException(
                         PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         verify(jobAnalysisExecutionService).markAnalysisFailed(
                 JOB_ANALYSIS_ID,

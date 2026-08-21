@@ -89,93 +89,171 @@ public class JobAnalysisWorker {
      * 선점 트랜잭션이 끝난 뒤 트랜잭션 밖에서 실행한다(backend-job-processing-and-sse.md 확정 사항).
      */
     @Scheduled(fixedDelayString = "${job-analysis.worker.fixed-delay-ms}")
-    public void pollAndProcessOne() {
+    public void pollAndExecuteOneAnalysis() {
         Optional<JobAnalysis> claimed = jobAnalysisExecutionService.claimNextQueuedAnalysis();
         if (claimed.isEmpty()) {
             return;
         }
-        processClaimedAnalysis(claimed.get());
+        executeClaimedAnalysis(claimed.get());
     }
 
-    private void processClaimedAnalysis(JobAnalysis jobAnalysis) {
+    private void executeClaimedAnalysis(JobAnalysis jobAnalysis) {
         UUID jobAnalysisId = jobAnalysis.getId();
         try {
-            if (jobAnalysis.getCurrentStep() == JobAnalysisStep.COMPARING_EVIDENCE) {
-                jobEvidenceComparisonService.compare(jobAnalysis);
-                return;
-            }
-
-            JobPostingProvider provider = jobPostingProvider.getIfAvailable();
-            if (provider == null) {
-                throw new JobPostingProviderNotConfiguredException();
-            }
-            UserProfileVersion profileVersion =
-                    jobAnalysisExecutionService.loadFixedProfileVersion(jobAnalysis);
-            jobAnalysisExecutionService.advanceStep(
-                    jobAnalysisId, JobAnalysisStep.ANALYZING_REPOSITORIES);
-            ProjectResponsibilityExtractionOutcome responsibilityOutcome =
-                    projectResponsibilityExtractionService.extract(
-                            jobAnalysis, profileVersion);
-            String keyword = profileVersion.getTargetJobTitle();
-
-            jobAnalysisExecutionService.advanceStep(jobAnalysisId, JobAnalysisStep.SEARCHING_JOB_POSTINGS);
-            List<JobPostingCandidate> candidates = provider.search(keyword, searchResultLimit);
-
-            if (candidates.isEmpty()) {
-                jobAnalysisExecutionService.recordEmptySearchResult(jobAnalysisId);
-                return;
-            }
-
-            jobAnalysisExecutionService.advanceStep(jobAnalysisId, JobAnalysisStep.EXTRACTING_JOB_POSTINGS);
-            List<JobAnalysisPosting> savedPostings =
-                    extractCandidates(jobAnalysisId, provider, candidates);
-
-            if (savedPostings.isEmpty()) {
-                jobAnalysisExecutionService.markAnalysisFailed(
-                        jobAnalysisId, JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
-            } else if (responsibilityOutcome.requiresUserConfirmation()) {
-                jobAnalysisExecutionService.recordExtractionAwaitingUserConfirmation(
-                        jobAnalysisId, savedPostings);
-            } else {
-                jobAnalysisExecutionService.recordExtractionReadyForComparison(
-                        jobAnalysisId, savedPostings);
-                jobEvidenceComparisonService.compare(jobAnalysis);
-            }
+            executeCurrentAnalysisStep(jobAnalysis);
         } catch (JobPostingProviderNotConfiguredException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            jobAnalysisExecutionService.markAnalysisFailed(
-                    jobAnalysisId, JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED);
+            recordAnalysisFailure(
+                    jobAnalysisId,
+                    JobAnalysisFailureCode.JOB_POSTING_PROVIDER_NOT_CONFIGURED,
+                    exception);
         } catch (RepositorySnapshotException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            JobAnalysisFailureCode failureCode =
-                    exception.getFailure() == RepositorySnapshotFailure.TREE_TRUNCATED
-                            ? JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED
-                            : JobAnalysisFailureCode.PROJECT_REPOSITORY_SNAPSHOT_INVALID;
-            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
+            recordAnalysisFailure(
+                    jobAnalysisId,
+                    mapRepositorySnapshotFailure(exception),
+                    exception);
         } catch (PythonProjectResponsibilityExtractionException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            JobAnalysisFailureCode failureCode =
-                    exception.getFailure()
-                            == PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE
-                            ? JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE
-                            : JobAnalysisFailureCode
-                                    .PROJECT_RESPONSIBILITY_EXTRACTION_INVALID_RESPONSE;
-            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
+            recordAnalysisFailure(
+                    jobAnalysisId,
+                    mapProjectResponsibilityExtractionFailure(exception),
+                    exception);
         } catch (PublicEmploymentAccessException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            JobAnalysisFailureCode failureCode =
-                    exception.getFailure() == PublicEmploymentAccessFailure.INVALID_RESPONSE
-                    ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
-                    : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
-            jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
+            recordAnalysisFailure(
+                    jobAnalysisId,
+                    mapPublicEmploymentAccessFailure(exception),
+                    exception);
         } catch (RuntimeException exception) {
-            logProcessingFailure(jobAnalysisId, exception);
-            jobAnalysisExecutionService.markAnalysisFailed(
-                    jobAnalysisId, JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE);
+            recordAnalysisFailure(
+                    jobAnalysisId,
+                    JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE,
+                    exception);
         }
     }
 
-    private void logProcessingFailure(UUID jobAnalysisId, RuntimeException exception) {
+    private void executeCurrentAnalysisStep(JobAnalysis jobAnalysis) {
+        if (jobAnalysis.getCurrentStep() == JobAnalysisStep.COMPARING_EVIDENCE) {
+            jobEvidenceComparisonService.compare(jobAnalysis);
+            return;
+        }
+        extractProjectAndJobPostingEvidence(jobAnalysis);
+    }
+
+    private void extractProjectAndJobPostingEvidence(JobAnalysis jobAnalysis) {
+        UUID jobAnalysisId = jobAnalysis.getId();
+        JobPostingProvider provider = requireJobPostingProvider();
+        UserProfileVersion profileVersion =
+                jobAnalysisExecutionService.loadFixedProfileVersion(jobAnalysis);
+
+        ProjectResponsibilityExtractionOutcome responsibilityOutcome =
+                extractProjectResponsibilities(jobAnalysis, profileVersion);
+        List<JobPostingCandidate> candidates =
+                searchJobPostings(
+                        jobAnalysisId,
+                        provider,
+                        profileVersion.getTargetJobTitle());
+        if (candidates.isEmpty()) {
+            jobAnalysisExecutionService.recordEmptySearchResult(jobAnalysisId);
+            return;
+        }
+
+        List<JobAnalysisPosting> savedPostings =
+                extractJobPostings(jobAnalysisId, provider, candidates);
+        continueAfterEvidenceExtraction(
+                jobAnalysis,
+                responsibilityOutcome,
+                savedPostings);
+    }
+
+    private JobPostingProvider requireJobPostingProvider() {
+        JobPostingProvider provider = jobPostingProvider.getIfAvailable();
+        if (provider == null) {
+            throw new JobPostingProviderNotConfiguredException();
+        }
+        return provider;
+    }
+
+    private ProjectResponsibilityExtractionOutcome extractProjectResponsibilities(
+            JobAnalysis jobAnalysis,
+            UserProfileVersion profileVersion
+    ) {
+        jobAnalysisExecutionService.advanceStep(
+                jobAnalysis.getId(),
+                JobAnalysisStep.ANALYZING_REPOSITORIES);
+        return projectResponsibilityExtractionService.extract(
+                jobAnalysis,
+                profileVersion);
+    }
+
+    private List<JobPostingCandidate> searchJobPostings(
+            UUID jobAnalysisId,
+            JobPostingProvider provider,
+            String targetJobTitle
+    ) {
+        jobAnalysisExecutionService.advanceStep(
+                jobAnalysisId,
+                JobAnalysisStep.SEARCHING_JOB_POSTINGS);
+        return provider.search(targetJobTitle, searchResultLimit);
+    }
+
+    private void continueAfterEvidenceExtraction(
+            JobAnalysis jobAnalysis,
+            ProjectResponsibilityExtractionOutcome responsibilityOutcome,
+            List<JobAnalysisPosting> savedPostings
+    ) {
+        UUID jobAnalysisId = jobAnalysis.getId();
+        if (savedPostings.isEmpty()) {
+            jobAnalysisExecutionService.markAnalysisFailed(
+                    jobAnalysisId,
+                    JobAnalysisFailureCode.ALL_EXTRACTIONS_FAILED);
+            return;
+        }
+        if (responsibilityOutcome.requiresUserConfirmation()) {
+            jobAnalysisExecutionService.recordExtractionAwaitingUserConfirmation(
+                    jobAnalysisId,
+                    savedPostings);
+            return;
+        }
+
+        jobAnalysisExecutionService.recordExtractionReadyForComparison(
+                jobAnalysisId,
+                savedPostings);
+        jobEvidenceComparisonService.compare(jobAnalysis);
+    }
+
+    private JobAnalysisFailureCode mapRepositorySnapshotFailure(
+            RepositorySnapshotException exception
+    ) {
+        return exception.getFailure() == RepositorySnapshotFailure.TREE_TRUNCATED
+                ? JobAnalysisFailureCode.PROJECT_REPOSITORY_TREE_TRUNCATED
+                : JobAnalysisFailureCode.PROJECT_REPOSITORY_SNAPSHOT_INVALID;
+    }
+
+    private JobAnalysisFailureCode mapProjectResponsibilityExtractionFailure(
+            PythonProjectResponsibilityExtractionException exception
+    ) {
+        return exception.getFailure()
+                == PythonProjectResponsibilityExtractionFailure.MODEL_UNAVAILABLE
+                ? JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_MODEL_UNAVAILABLE
+                : JobAnalysisFailureCode.PROJECT_RESPONSIBILITY_EXTRACTION_INVALID_RESPONSE;
+    }
+
+    private JobAnalysisFailureCode mapPublicEmploymentAccessFailure(
+            PublicEmploymentAccessException exception
+    ) {
+        return exception.getFailure() == PublicEmploymentAccessFailure.INVALID_RESPONSE
+                ? JobAnalysisFailureCode.DEPENDENCY_INVALID_RESPONSE
+                : JobAnalysisFailureCode.DEPENDENCY_UNAVAILABLE;
+    }
+
+    private void recordAnalysisFailure(
+            UUID jobAnalysisId,
+            JobAnalysisFailureCode failureCode,
+            RuntimeException exception
+    ) {
+        logAnalysisFailure(jobAnalysisId, exception);
+        jobAnalysisExecutionService.markAnalysisFailed(jobAnalysisId, failureCode);
+    }
+
+    private void logAnalysisFailure(UUID jobAnalysisId, RuntimeException exception) {
         log.warn(
                 "job_analysis_processing_failed jobAnalysisId={} failure={}",
                 jobAnalysisId,
@@ -184,7 +262,7 @@ public class JobAnalysisWorker {
         );
     }
 
-    private List<JobAnalysisPosting> extractCandidates(
+    private List<JobAnalysisPosting> extractJobPostings(
             UUID jobAnalysisId,
             JobPostingProvider provider,
             List<JobPostingCandidate> candidates
@@ -194,7 +272,7 @@ public class JobAnalysisWorker {
         for (JobPostingCandidate candidate : candidates) {
             try {
                 savedPostings.add(
-                        extractOneCandidate(jobAnalysisId, provider, candidate, now));
+                        extractJobPosting(jobAnalysisId, provider, candidate, now));
             } catch (PythonExtractionException exception) {
                 log.warn(
                         "job_analysis_posting_extraction_failed jobAnalysisId={} "
@@ -219,7 +297,7 @@ public class JobAnalysisWorker {
         return savedPostings;
     }
 
-    private JobAnalysisPosting extractOneCandidate(
+    private JobAnalysisPosting extractJobPosting(
             UUID jobAnalysisId,
             JobPostingProvider provider,
             JobPostingCandidate candidate,

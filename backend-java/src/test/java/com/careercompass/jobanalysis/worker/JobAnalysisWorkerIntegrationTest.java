@@ -124,7 +124,7 @@ class JobAnalysisWorkerIntegrationTest {
     }
 
     @Test
-    void pollAndProcessOne_withExtractionSucceeding_delegatesComparison()
+    void pollAndExecuteOneAnalysis_withExtractionSucceeding_delegatesComparison()
             throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         when(jobPostingProvider.search(anyString(), anyInt())).thenReturn(List.of(
@@ -141,7 +141,7 @@ class JobAnalysisWorkerIntegrationTest {
                         List.of()
                 ));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT analysis_status, current_step, failure_code FROM job_analysis WHERE id = ?",
@@ -159,11 +159,11 @@ class JobAnalysisWorkerIntegrationTest {
     }
 
     @Test
-    void pollAndProcessOne_withEmptySearchResult_marksCompletedAndFinished() throws Exception {
+    void pollAndExecuteOneAnalysis_withEmptySearchResult_marksCompletedAndFinished() throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         when(jobPostingProvider.search(anyString(), anyInt())).thenReturn(List.of());
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT analysis_status, current_step, failure_code FROM job_analysis WHERE id = ?",
@@ -175,7 +175,7 @@ class JobAnalysisWorkerIntegrationTest {
     }
 
     @Test
-    void pollAndProcessOne_withAllExtractionsFailing_marksAllExtractionsFailed() throws Exception {
+    void pollAndExecuteOneAnalysis_withAllExtractionsFailing_marksAllExtractionsFailed() throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         when(jobPostingProvider.search(anyString(), anyInt())).thenReturn(List.of(
                 new JobPostingCandidate(
@@ -185,7 +185,7 @@ class JobAnalysisWorkerIntegrationTest {
         when(pythonJobPostingExtractionClient.extract(anyString(), anyString(), anyString()))
                 .thenThrow(new PythonExtractionException(PythonExtractionFailure.UNAVAILABLE));
 
-        worker.pollAndProcessOne();
+        worker.pollAndExecuteOneAnalysis();
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT analysis_status, failure_code FROM job_analysis WHERE id = ?",
@@ -197,7 +197,7 @@ class JobAnalysisWorkerIntegrationTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void pollAndProcessOne_withoutConfiguredProvider_marksProviderNotConfigured() throws Exception {
+    void pollAndExecuteOneAnalysis_withoutConfiguredProvider_marksProviderNotConfigured() throws Exception {
         UUID jobAnalysisId = queueAnalysis();
         ObjectProvider<JobPostingProvider> emptyProvider = mock(ObjectProvider.class);
         when(emptyProvider.getIfAvailable()).thenReturn(null);
@@ -212,7 +212,7 @@ class JobAnalysisWorkerIntegrationTest {
                 5
         );
 
-        workerWithoutProvider.pollAndProcessOne();
+        workerWithoutProvider.pollAndExecuteOneAnalysis();
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT analysis_status, failure_code FROM job_analysis WHERE id = ?",
