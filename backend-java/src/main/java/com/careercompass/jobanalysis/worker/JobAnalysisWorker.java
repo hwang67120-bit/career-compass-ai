@@ -306,7 +306,8 @@ public class JobAnalysisWorker {
         String sourceText = provider.fetchSourceText(candidate);
         UUID jobPostingId = UUID.randomUUID();
         UUID extractionTaskId = UUID.randomUUID();
-        PythonJobPostingExtractionEnvelope.Data data = pythonJobPostingExtractionClient.extract(
+        PythonJobPostingExtractionEnvelope.Data extractionResponse =
+                pythonJobPostingExtractionClient.extract(
                 jobPostingId.toString(),
                 extractionTaskId.toString(),
                 sourceText
@@ -321,8 +322,8 @@ public class JobAnalysisWorker {
                 candidate.companyName(),
                 candidate.originalJobTitle(),
                 candidate.sourceUrl(),
-                jobAnalysisJsonCodec.serialize(data.extraction()),
-                jobAnalysisJsonCodec.serialize(data.modelExecutions()),
+                jobAnalysisJsonCodec.serialize(extractionResponse.extraction()),
+                jobAnalysisJsonCodec.serialize(extractionResponse.modelExecutions()),
                 now
         );
     }

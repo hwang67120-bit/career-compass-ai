@@ -15,6 +15,7 @@ import java.util.UUID;
 import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
+import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
 import com.careercompass.pythonworker.client.PythonEvidenceSimilarityClient;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
@@ -51,7 +52,7 @@ class JobEvidenceComparisonServiceTest {
         analysis = mock(JobAnalysis.class);
         when(analysis.getId()).thenReturn(ANALYSIS_ID);
         when(jobAnalysisExecutionService.listConfirmedResponsibilities(analysis))
-                .thenReturn(List.of(new ConfirmedProjectResponsibility(
+                .thenReturn(List.of(new ConfirmedProjectResponsibilityEvidence(
                         USER_EVIDENCE_ID,
                         PROJECT_SOURCE_ID,
                         "Redis 캐시를 적용해 API 부하를 줄였습니다."

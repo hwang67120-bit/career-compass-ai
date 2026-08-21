@@ -16,8 +16,8 @@ public class ApiResponseFactory {
         this.clock = clock;
     }
 
-    public <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(requestId(), data, null, OffsetDateTime.now(clock));
+    public <T> ApiResponse<T> success(T responseBody) {
+        return new ApiResponse<>(requestId(), responseBody, null, OffsetDateTime.now(clock));
     }
 
     public ApiResponse<Void> failure(ApiError error) {
