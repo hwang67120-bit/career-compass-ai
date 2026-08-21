@@ -146,22 +146,24 @@ public class PythonProjectResponsibilityExtractionClient {
 
     private void validateData(
             PythonProjectResponsibilityExtractionRequest request,
-            PythonProjectResponsibilityExtractionEnvelope.Data data
+            PythonProjectResponsibilityExtractionEnvelope.Data extractionResponse
     ) {
-        if (!request.extractionTaskId().equals(data.extractionTaskId())
-                || !request.projectSourceId().equals(data.projectSourceId())) {
+        if (!request.extractionTaskId().equals(extractionResponse.extractionTaskId())
+                || !request.projectSourceId().equals(extractionResponse.projectSourceId())) {
             throw responseInvalid(
                     PythonProjectResponsibilityExtractionResponseViolation.IDENTIFIER_MISMATCH);
         }
-        if (!request.repositorySnapshot().repositoryVersion().equals(data.repositoryVersion())) {
+        if (!request.repositorySnapshot().repositoryVersion()
+                .equals(extractionResponse.repositoryVersion())) {
             throw responseInvalid(PythonProjectResponsibilityExtractionResponseViolation
                     .REPOSITORY_VERSION_MISMATCH);
         }
         Set<String> requestEvidenceIds = requestEvidenceIds(request.repositorySnapshot());
-        validateDetectedTechnologies(data.detectedTechnologies(), requestEvidenceIds);
+        validateDetectedTechnologies(
+                extractionResponse.detectedTechnologies(), requestEvidenceIds);
         validateResponsibilityCandidates(
-                data.responsibilityEvidenceCandidates(), requestEvidenceIds);
-        validateModelExecution(data.modelExecution());
+                extractionResponse.responsibilityEvidenceCandidates(), requestEvidenceIds);
+        validateModelExecution(extractionResponse.modelExecution());
     }
 
     private void validateDetectedTechnologies(

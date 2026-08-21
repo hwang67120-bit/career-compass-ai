@@ -17,15 +17,15 @@ public record JobPostingComparisonSnapshot(
         String failureCode
 ) {
     public static JobPostingComparisonSnapshot fromPython(
-            PythonEvidenceSimilarityEnvelope.Data data
+            PythonEvidenceSimilarityEnvelope.Data similarityResponse
     ) {
         return new JobPostingComparisonSnapshot(
-                data.comparisonTaskId(),
-                data.jobAnalysisId(),
-                data.jobPostingId(),
-                data.status(),
-                data.method(),
-                data.results().stream().map(result -> new Result(
+                similarityResponse.comparisonTaskId(),
+                similarityResponse.jobAnalysisId(),
+                similarityResponse.jobPostingId(),
+                similarityResponse.status(),
+                similarityResponse.method(),
+                similarityResponse.results().stream().map(result -> new Result(
                         result.jobEvidenceId(),
                         result.status(),
                         result.bestMatchUserEvidenceId(),
@@ -34,9 +34,9 @@ public record JobPostingComparisonSnapshot(
                         result.unavailableReason()
                 )).toList(),
                 new ModelExecution(
-                        data.modelExecution().stage(),
-                        data.modelExecution().provider(),
-                        data.modelExecution().model()
+                        similarityResponse.modelExecution().stage(),
+                        similarityResponse.modelExecution().provider(),
+                        similarityResponse.modelExecution().model()
                 ),
                 null,
                 null

@@ -131,8 +131,8 @@ public class GitHubOAuth2UserService
     }
 
     private static String extractGitHubUserId(Map<String, Object> attributes) {
-        Object value = attributes.get(GITHUB_USER_ID_ATTRIBUTE);
-        if (!(value instanceof Number number) || number.longValue() <= 0) {
+        Object githubUserIdAttribute = attributes.get(GITHUB_USER_ID_ATTRIBUTE);
+        if (!(githubUserIdAttribute instanceof Number number) || number.longValue() <= 0) {
             throw oauthFailure(
                     "github_user_id_missing",
                     "GitHub 사용자 식별자를 확인할 수 없습니다."

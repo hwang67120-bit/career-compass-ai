@@ -79,21 +79,21 @@ public class PythonJobPostingExtractionClient {
     private void validateData(
             String requestedJobPostingId,
             String requestedExtractionTaskId,
-            PythonJobPostingExtractionEnvelope.Data data
+            PythonJobPostingExtractionEnvelope.Data extractionResponse
     ) {
-        if (!requestedJobPostingId.equals(data.jobPostingId())) {
+        if (!requestedJobPostingId.equals(extractionResponse.jobPostingId())) {
             throw responseInvalid(PythonExtractionResponseViolation.JOB_POSTING_ID_MISMATCH);
         }
-        if (!requestedExtractionTaskId.equals(data.extractionTaskId())) {
+        if (!requestedExtractionTaskId.equals(extractionResponse.extractionTaskId())) {
             throw responseInvalid(PythonExtractionResponseViolation.EXTRACTION_TASK_ID_MISMATCH);
         }
-        if (!EXTRACTED_STATUS.equals(data.status())) {
+        if (!EXTRACTED_STATUS.equals(extractionResponse.status())) {
             throw responseInvalid(PythonExtractionResponseViolation.STATUS_INVALID);
         }
-        if (data.extraction() == null) {
+        if (extractionResponse.extraction() == null) {
             throw responseInvalid(PythonExtractionResponseViolation.EXTRACTION_MISSING);
         }
-        if (!hasExpectedModelExecutions(data.modelExecutions())) {
+        if (!hasExpectedModelExecutions(extractionResponse.modelExecutions())) {
             throw responseInvalid(PythonExtractionResponseViolation.MODEL_EXECUTIONS_INVALID);
         }
     }
