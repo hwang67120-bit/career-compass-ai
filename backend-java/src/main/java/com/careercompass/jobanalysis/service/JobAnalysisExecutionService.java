@@ -59,13 +59,7 @@ public class JobAnalysisExecutionService {
      */
     @Transactional(readOnly = true)
     public UserProfileVersion loadFixedProfileVersion(JobAnalysis jobAnalysis) {
-        return userProfileVersionRepository
-                .findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
-                        jobAnalysis.getUserProfileId(),
-                        jobAnalysis.getUserProfileVersion(),
-                        jobAnalysis.getUserId()
-                )
-                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        return findFixedProfileVersion(jobAnalysis);
     }
 
     /**
@@ -103,8 +97,7 @@ public class JobAnalysisExecutionService {
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings
     ) {
-        JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
-                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        JobAnalysis jobAnalysis = requireJobAnalysis(jobAnalysisId);
         postings.forEach(jobAnalysisPostingRepository::save);
         jobAnalysis.awaitUserConfirmation(Instant.now(clock));
         jobAnalysisRepository.save(jobAnalysis);
@@ -125,8 +118,7 @@ public class JobAnalysisExecutionService {
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings
     ) {
-        JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
-                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        JobAnalysis jobAnalysis = requireJobAnalysis(jobAnalysisId);
         postings.forEach(jobAnalysisPostingRepository::save);
         jobAnalysis.advanceStep(JobAnalysisStep.COMPARING_EVIDENCE, Instant.now(clock));
         jobAnalysisRepository.save(jobAnalysis);
@@ -146,13 +138,7 @@ public class JobAnalysisExecutionService {
     public List<ConfirmedProjectResponsibility> listConfirmedResponsibilities(
             JobAnalysis jobAnalysis
     ) {
-        UserProfileVersion profileVersion = userProfileVersionRepository
-                .findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
-                        jobAnalysis.getUserProfileId(),
-                        jobAnalysis.getUserProfileVersion(),
-                        jobAnalysis.getUserId()
-                )
-                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        UserProfileVersion profileVersion = findFixedProfileVersion(jobAnalysis);
         List<UserProfileProjectResponsibility> responsibilities =
                 userProfileProjectResponsibilityRepository
                         .findAllByUserProfileVersion_IdOrderByDisplayOrderAsc(
@@ -190,31 +176,29 @@ public class JobAnalysisExecutionService {
     @Transactional
     public void finishEvidenceComparison(
             UUID jobAnalysisId,
-            int completedUnits,
-            int totalUnits,
-            int successfulCallCount,
+            int completedPostingCount,
+            int totalPostingCount,
+            int successfulPythonCallCount,
             JobAnalysisFailureCode failureCode
     ) {
-        JobAnalysis jobAnalysis = jobAnalysisRepository.findById(jobAnalysisId)
-                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        JobAnalysis jobAnalysis = requireJobAnalysis(jobAnalysisId);
         Instant now = Instant.now(clock);
         jobAnalysis.advanceStep(JobAnalysisStep.FINALIZING_RESULT, now);
-        if (failureCode == null) {
-            jobAnalysis.markComparisonCompleted(completedUnits, totalUnits, now);
-        } else if (successfulCallCount > 0) {
-            jobAnalysis.markComparisonPartiallyCompleted(
-                    completedUnits, totalUnits, failureCode, now);
-        } else {
-            jobAnalysis.markFailed(now, failureCode);
-        }
+        updateAnalysisFromComparisonOutcome(
+                jobAnalysis,
+                completedPostingCount,
+                totalPostingCount,
+                successfulPythonCallCount,
+                failureCode,
+                now);
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
                 "job_analysis_comparison_finished jobAnalysisId={} status={} "
                         + "completedUnits={} totalUnits={}",
                 jobAnalysisId,
                 jobAnalysis.getAnalysisStatus(),
-                completedUnits,
-                totalUnits
+                completedPostingCount,
+                totalPostingCount
         );
     }
 
@@ -242,5 +226,58 @@ public class JobAnalysisExecutionService {
     @Transactional(readOnly = true)
     public List<JobAnalysisPosting> listPostings(UUID jobAnalysisId) {
         return jobAnalysisPostingRepository.findByJobAnalysisIdOrderByCreatedAtAsc(jobAnalysisId);
+    }
+
+    /**
+     * 기능: 분석에 고정된 사용자 프로필 버전을 소유자 조건과 함께 조회한다.
+     * 반환 값: 고정된 사용자 프로필 버전을 반환한다.
+     */
+    private UserProfileVersion findFixedProfileVersion(JobAnalysis jobAnalysis) {
+        return userProfileVersionRepository
+                .findByUserProfile_IdAndProfileVersionAndUserProfile_UserId(
+                        jobAnalysis.getUserProfileId(),
+                        jobAnalysis.getUserProfileVersion(),
+                        jobAnalysis.getUserId()
+                )
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+    }
+
+    /**
+     * 기능: 상태를 변경할 분석 작업을 식별자로 조회하고 없으면 중단한다.
+     * 반환 값: 조회한 분석 작업을 반환한다.
+     */
+    private JobAnalysis requireJobAnalysis(UUID jobAnalysisId) {
+        return jobAnalysisRepository.findById(jobAnalysisId)
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+    }
+
+    /**
+     * 기능: 비교 처리 수와 실패 여부에 따라 분석을 완료, 부분 완료 또는 실패 상태로 변경한다.
+     * 반환 값: 없음.
+     */
+    private void updateAnalysisFromComparisonOutcome(
+            JobAnalysis jobAnalysis,
+            int completedPostingCount,
+            int totalPostingCount,
+            int successfulPythonCallCount,
+            JobAnalysisFailureCode failureCode,
+            Instant now
+    ) {
+        if (failureCode == null) {
+            jobAnalysis.markComparisonCompleted(
+                    completedPostingCount,
+                    totalPostingCount,
+                    now);
+            return;
+        }
+        if (successfulPythonCallCount > 0) {
+            jobAnalysis.markComparisonPartiallyCompleted(
+                    completedPostingCount,
+                    totalPostingCount,
+                    failureCode,
+                    now);
+            return;
+        }
+        jobAnalysis.markFailed(now, failureCode);
     }
 }
