@@ -39,20 +39,23 @@ public class JobEvidenceComparisonService {
         List<JobAnalysisPosting> postings =
                 jobAnalysisExecutionService.listPostings(jobAnalysisId);
 
-        /*
-         * 분석 중 프로필이 변경돼도 결과가 달라지지 않도록, 분석 시작 때 고정한 프로필 버전에서
-         * 사용자가 확정한 프로젝트 담당 업무만 불러온다.
-         */
         List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence =
                 toUserEvidence(jobAnalysisExecutionService.listConfirmedResponsibilities(jobAnalysis));
+
+        /*
+         * ComparisonSummary(공고 비교 집계)
+         * - 포함하는 값: 실패 없이 처리된 공고 수(비교 불가 포함), 성공한 Python 호출 수,
+         *   처음 발생한 실패 코드.
+         * - 생성 과정: compareAndRecordPostings가 공고별 근거를 비교하고 결과를 저장한 뒤 집계한다.
+         * - 비교 방식: 양쪽 근거가 있으면 Python에 의미 비교를 요청하고, 어느 한쪽이 없으면
+         *   Python을 호출하지 않고 비교 불가로 처리한다.
+         * - 저장 여부: 이 객체 자체는 저장하지 않고, 포함된 값을 최종 분석 상태 결정에 사용한다.
+         */
         ComparisonSummary comparisonSummary = compareAndRecordPostings(
                 jobAnalysisId,
                 postings,
                 userEvidence);
 
-        /*
-         * 공고별 비교 성공과 실패를 집계해 전체 분석을 완료, 부분 완료 또는 실패로 확정한다.
-         */
         jobAnalysisExecutionService.finishEvidenceComparison(
                 jobAnalysisId,
                 comparisonSummary.completedPostingCount(),
@@ -140,10 +143,6 @@ public class JobEvidenceComparisonService {
         List<PythonEvidenceSimilarityRequest.JobEvidence> jobEvidence =
                 jobAnalysisJsonCodec.parseJobEvidence(posting.getExtractionJson());
 
-        /*
-         * 어느 한쪽 근거가 없는 것은 시스템 실패나 불일치가 아니다. Python을 호출하지 않고
-         * 비교 불가 이유를 결과로 남긴다.
-         */
         if (jobEvidence.isEmpty()) {
             return PostingComparisonOutcome.completed(
                     JobPostingComparisonSnapshot.jobEvidenceUnavailable(
