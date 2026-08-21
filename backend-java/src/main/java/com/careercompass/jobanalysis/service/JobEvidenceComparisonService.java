@@ -7,6 +7,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.dto.JobPostingComparisonSnapshot;
+import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
 import com.careercompass.pythonworker.client.PythonEvidenceSimilarityClient;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
@@ -217,7 +218,7 @@ public class JobEvidenceComparisonService {
     }
 
     private List<PythonEvidenceSimilarityRequest.UserEvidence> toUserEvidence(
-            List<ConfirmedProjectResponsibility> responsibilities
+            List<ConfirmedProjectResponsibilityEvidence> responsibilities
     ) {
         return responsibilities.stream()
                 .filter(responsibility -> responsibility.text() != null

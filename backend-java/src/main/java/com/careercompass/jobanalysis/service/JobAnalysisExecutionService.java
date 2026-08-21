@@ -13,6 +13,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.exception.JobAnalysisInputNotFoundException;
 import com.careercompass.jobanalysis.repository.JobAnalysisPostingRepository;
 import com.careercompass.jobanalysis.repository.JobAnalysisRepository;
+import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
 import com.careercompass.projectresponsibility.domain.UserProfileProjectResponsibility;
 import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
 import com.careercompass.userprofile.domain.UserProfileVersion;
@@ -135,7 +136,7 @@ public class JobAnalysisExecutionService {
      * 반환 값: 비교에 사용할 후보 식별자, 저장소 식별자와 확정 문장을 반환한다.
      */
     @Transactional(readOnly = true)
-    public List<ConfirmedProjectResponsibility> listConfirmedResponsibilities(
+    public List<ConfirmedProjectResponsibilityEvidence> listConfirmedResponsibilities(
             JobAnalysis jobAnalysis
     ) {
         UserProfileVersion profileVersion = findFixedProfileVersion(jobAnalysis);
@@ -144,7 +145,7 @@ public class JobAnalysisExecutionService {
                         .findAllByUserProfileVersion_IdOrderByDisplayOrderAsc(
                                 profileVersion.getId());
         return responsibilities.stream()
-                .map(responsibility -> new ConfirmedProjectResponsibility(
+                .map(responsibility -> new ConfirmedProjectResponsibilityEvidence(
                         responsibility.getSourceCandidateId(),
                         responsibility.getProjectSource().getId(),
                         responsibility.getConfirmedText()
