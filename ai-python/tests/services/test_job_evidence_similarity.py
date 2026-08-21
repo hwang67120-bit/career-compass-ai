@@ -72,12 +72,25 @@ async def test_not_related_has_null_best_match() -> None:
 
 @pytest.mark.asyncio
 async def test_no_user_evidence_is_not_calculable() -> None:
+    second_job = {
+        "evidenceId": "job-2",
+        "category": "RESPONSIBILITY",
+        "text": "배포 자동화와 운영",
+    }
     provider = FakeJudgeProvider([])  # 호출되면 안 됨
-    results, status = await compare_evidence(_request([_JOB], []), provider)
+    results, status = await compare_evidence(
+        _request([_JOB, second_job], []),
+        provider,
+    )
 
     assert status == "NOT_CALCULABLE"
-    assert results[0]["status"] == "NOT_CALCULABLE"
-    assert results[0]["unavailableReason"] == "COMPATIBLE_USER_EVIDENCE_MISSING"
+    assert [result["status"] for result in results] == [
+        "NOT_CALCULABLE",
+        "NOT_CALCULABLE",
+    ]
+    assert {result["unavailableReason"] for result in results} == {
+        "COMPATIBLE_USER_EVIDENCE_MISSING"
+    }
     assert provider.calls == []  # 사용자 근거 없으면 모델 호출하지 않는다
 
 

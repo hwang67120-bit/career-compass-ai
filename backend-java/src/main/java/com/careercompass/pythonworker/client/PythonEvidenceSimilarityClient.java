@@ -23,8 +23,8 @@ public class PythonEvidenceSimilarityClient {
     private static final int MAX_USER_EVIDENCE_COUNT = 30;
     private static final int MAX_TEXT_CODE_POINTS = 500;
     private static final Set<String> ALLOWED_OVERALL_STATUSES =
-            Set.of("CALCULATED", "PARTIALLY_CALCULATED", "NOT_CALCULABLE");
-    private static final Set<String> ALLOWED_PROVIDERS = Set.of("OLLAMA", "GEMINI");
+            Set.of("CALCULATED", "NOT_CALCULABLE");
+    private static final Set<String> ALLOWED_PROVIDERS = Set.of("OLLAMA");
 
     private final RestClient restClient;
     private final String internalServiceToken;
@@ -171,9 +171,12 @@ public class PythonEvidenceSimilarityClient {
     }
 
     private void validateOverallStatus(String status, int calculatedCount, int totalCount) {
+        if (calculatedCount > 0 && calculatedCount < totalCount) {
+            throw responseInvalid(PythonEvidenceSimilarityResponseViolation.STATUS_INVALID);
+        }
         String expected = calculatedCount == totalCount
                 ? "CALCULATED"
-                : calculatedCount == 0 ? "NOT_CALCULABLE" : "PARTIALLY_CALCULATED";
+                : "NOT_CALCULABLE";
         if (!expected.equals(status)) {
             throw responseInvalid(PythonEvidenceSimilarityResponseViolation.STATUS_INVALID);
         }
