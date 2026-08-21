@@ -1,6 +1,6 @@
 # Java-Python 연결 방식
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. 개별 API의 요청·응답 스키마는 여기가 아니라 `contracts`에 둔다.
+개별 API의 요청·응답 스키마는 이 문서가 아니라 `contracts`에 둔다.
 
 로컬 실행 순서, Ollama 연결, 비밀정보를 제외한 로그 기준과 장애 분류는 [실행 환경 연결 운영 규칙](../operations/runtime-connectivity-runbook.md)을 따른다.
 

@@ -4,7 +4,7 @@
 
 2026-08-03 MVP에서 문서 입력을 제거했으므로 UserDocument·ExtractionTask·ProfileCandidate 흐름은 구현 기준이 아니다. Flyway 이력과 이전 결정 확인을 위해 문서만 보존한다.
 
-이 문서는 `AGENTS.md`의 `docs/architecture` 정의에 따라 삭제되지 않고 유지되는 아키텍처 설명이다. 실제 Java 엔티티·enum 구현 전에 상태 소유권과 전이를 먼저 확정하기 위한 문서다.
+실제 Java 엔티티·enum 구현 전에 상태 소유권과 전이를 먼저 확정하기 위한 문서다.
 
 ## 배경
 
