@@ -1054,14 +1054,17 @@
 
         const container = document.createElement("div");
         container.className = "comparison-results";
+        const evidenceList = jobAnalysis.evidence || [];
         postings.forEach((posting) => {
-            container.appendChild(createComparisonPosting(posting));
+            container.appendChild(
+                createComparisonPosting(posting, evidenceList)
+            );
         });
         bubble.appendChild(container);
         markLogEntryDone(entry);
     }
 
-    function createComparisonPosting(posting) {
+    function createComparisonPosting(posting, evidenceList) {
         const section = document.createElement("section");
         section.className = "comparison-posting";
         const heading = document.createElement("div");
@@ -1075,7 +1078,12 @@
         heading.appendChild(titleGroup);
 
         const sourceUrl = safeHttpUrl(posting.sourceUrl);
-        if (sourceUrl) {
+        if (posting.provider === "DEV_SAMPLE") {
+            const syntheticLabel = document.createElement("span");
+            syntheticLabel.className = "synthetic-posting-label";
+            syntheticLabel.textContent = "합성 공고";
+            heading.appendChild(syntheticLabel);
+        } else if (sourceUrl) {
             const link = document.createElement("a");
             link.href = sourceUrl;
             link.target = "_blank";
@@ -1098,8 +1106,12 @@
         if (comparison.results?.length) {
             const bars = document.createElement("div");
             bars.className = "similarity-bars";
-            comparison.results.forEach((result, index) => {
-                bars.appendChild(createJudgmentBar(result, index));
+            comparison.results.forEach((result) => {
+                bars.appendChild(createJudgmentBar(
+                    result,
+                    posting.jobPostingId,
+                    evidenceList
+                ));
             });
             section.appendChild(bars);
         }
@@ -1114,29 +1126,68 @@
         return section;
     }
 
-    function createJudgmentBar(result, index) {
+    function createJudgmentBar(result, jobPostingId, evidenceList) {
         const row = document.createElement("div");
+        row.className = "similarity-result";
+
         const label = document.createElement("div");
         label.className = "similarity-label";
-        const evidence = document.createElement("span");
-        evidence.textContent = `공고 담당업무 ${index + 1}`;
-        evidence.title = result.jobEvidenceId;
+        const jobEvidence = document.createElement("span");
+        jobEvidence.className = "similarity-evidence-text";
+        jobEvidence.textContent = findEvidenceExcerpt(
+            evidenceList,
+            result.jobEvidenceId,
+            "JOB_POSTING",
+            jobPostingId
+        ) || "공고 담당업무 근거를 찾을 수 없습니다.";
         const judgment = document.createElement("strong");
         judgment.textContent = judgmentLabel(result);
-        label.append(evidence, judgment);
+        label.append(jobEvidence, judgment);
+        row.appendChild(label);
 
-        const track = document.createElement("div");
-        track.className = "similarity-track";
-        track.setAttribute("role", "img");
-        track.setAttribute(
-            "aria-label",
-            `공고 담당업무 ${index + 1}: ${judgment.textContent}`
+        const userEvidenceText = findEvidenceExcerpt(
+            evidenceList,
+            result.bestMatchUserEvidenceId,
+            "USER_PROJECT",
+            null
         );
-        const fill = document.createElement("div");
-        fill.className = `similarity-fill ${judgmentClass(result)}`;
-        track.appendChild(fill);
-        row.append(label, track);
+        if (userEvidenceText) {
+            const userEvidence = document.createElement("p");
+            userEvidence.className = "similarity-user-evidence";
+            userEvidence.textContent = `프로젝트 근거: ${userEvidenceText}`;
+            row.appendChild(userEvidence);
+        }
+
+        if (result.status === "CALCULATED") {
+            const track = document.createElement("div");
+            track.className = "similarity-track";
+            track.setAttribute("role", "img");
+            track.setAttribute(
+                "aria-label",
+                `${jobEvidence.textContent}: ${judgment.textContent}`
+            );
+            const fill = document.createElement("div");
+            fill.className = `similarity-fill ${judgmentClass(result)}`;
+            track.appendChild(fill);
+            row.appendChild(track);
+        }
         return row;
+    }
+
+    function findEvidenceExcerpt(
+        evidenceList,
+        evidenceId,
+        sourceType,
+        jobPostingId
+    ) {
+        if (!evidenceId) {
+            return null;
+        }
+        return evidenceList.find((evidence) =>
+            evidence.evidenceId === evidenceId
+            && evidence.sourceType === sourceType
+            && (!jobPostingId || evidence.sourceId === jobPostingId)
+        )?.excerpt || null;
     }
 
     function judgmentLabel(result) {

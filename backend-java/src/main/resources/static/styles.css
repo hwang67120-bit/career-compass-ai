@@ -982,11 +982,18 @@ select:focus {
     margin-bottom: 14px;
 }
 
-.comparison-posting-heading a {
+.comparison-posting-heading a,
+.synthetic-posting-label {
     flex: 0 0 auto;
     color: var(--accent);
     font-size: 0.74rem;
     text-decoration: none;
+}
+
+.synthetic-posting-label {
+    padding: 4px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
 }
 
 .comparison-posting-heading a:hover {
@@ -1000,10 +1007,24 @@ select:focus {
 
 .similarity-label {
     display: flex;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 16px;
     margin-bottom: 6px;
     color: var(--muted);
     font-size: 0.78rem;
+}
+
+.similarity-evidence-text {
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.similarity-user-evidence {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 0.74rem;
+    line-height: 1.5;
 }
 
 .similarity-track {

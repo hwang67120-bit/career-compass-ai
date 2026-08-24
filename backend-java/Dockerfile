@@ -6,8 +6,9 @@
 
 # --- builder: Gradle 8.14 + JDK 21로 bootJar 생성 ---
 FROM gradle:8.14-jdk21 AS builder
-WORKDIR /app
-COPY --chown=gradle:gradle . .
+WORKDIR /workspace/backend-java
+COPY --chown=gradle:gradle backend-java/ ./
+COPY --chown=gradle:gradle contracts/fixtures/ ../contracts/fixtures/
 RUN gradle bootJar --no-daemon
 
 # --- runtime: JRE 21 + 비-root ---
@@ -17,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 10001 appuser
 WORKDIR /app
-COPY --from=builder /app/build/libs/*.jar app.jar
+COPY --from=builder /workspace/backend-java/build/libs/*.jar app.jar
 USER appuser
 EXPOSE 8080
 

@@ -1,0 +1,6 @@
+**
+!backend-java/
+!backend-java/**
+!contracts/
+!contracts/fixtures/
+!contracts/fixtures/**
