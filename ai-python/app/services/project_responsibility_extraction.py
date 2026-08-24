@@ -35,58 +35,9 @@ _MAX_RESPONSIBILITY_TEXT_LENGTH = 500
 
 _logger = logging.getLogger("app.project_responsibility_extraction")
 
-# 한국어 조사와 서술형 어미 때문에 같은 핵심어가 다른 단어로 계산되는 것을 막는다.
-# 예: "작업을" -> "작업", "구현했습니다" -> "구현".
-# 두 글자 미만의 어간은 만들지 않아 짧은 음절의 우연한 일치를 줄인다.
-_KOREAN_SUFFIXES = tuple(
-    sorted(
-        {
-            "하였습니다",
-            "했습니다",
-            "합니다",
-            "하도록",
-            "하면서",
-            "하며",
-            "하고",
-            "되는",
-            "에서",
-            "으로",
-            "에게",
-            "한다",
-            "했다",
-            "하는",
-            "되어",
-            "의",
-            "은",
-            "는",
-            "이",
-            "가",
-            "을",
-            "를",
-            "와",
-            "과",
-            "로",
-            "도",
-            "만",
-        },
-        key=len,
-        reverse=True,
-    )
-)
-
 
 def _tokens(text: str) -> list[str]:
-    tokens = "".join(c if c.isalnum() else " " for c in text.lower()).split()
-    return [_normalize_korean_token(token) for token in tokens]
-
-
-def _normalize_korean_token(token: str) -> str:
-    if not token or not all("가" <= character <= "힣" for character in token):
-        return token
-    for suffix in _KOREAN_SUFFIXES:
-        if token.endswith(suffix) and len(token) - len(suffix) >= 2:
-            return token[: -len(suffix)]
-    return token
+    return "".join(c if c.isalnum() else " " for c in text.lower()).split()
 
 
 def grounding_score(source_text: str, candidate_text: str) -> float:

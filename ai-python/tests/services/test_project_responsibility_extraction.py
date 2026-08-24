@@ -66,11 +66,11 @@ def test_grounding_score_accepts_exact_overlap() -> None:
     assert grounding_score("React 대시보드 구현", "React 대시보드") == 1.0
 
 
-def test_grounding_score_accepts_korean_particles_and_endings() -> None:
+def test_grounding_score_accepts_verbatim_readme_fragment() -> None:
     source = "Java 서버는 외부 데이터 수집, 분석 작업을 제어하고 결과를 저장했습니다."
-    candidate = "외부 데이터 수집, 분석 작업 제어와 결과 저장"
+    candidate = "외부 데이터 수집, 분석 작업을 제어하고 결과를 저장했습니다"
 
-    assert grounding_score(source, candidate) >= 0.3
+    assert grounding_score(source, candidate) == 1.0
 
 
 def test_grounding_score_rejects_unrelated_responsibility() -> None:
