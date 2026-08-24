@@ -14,6 +14,7 @@ import com.careercompass.jobanalysis.exception.JobAnalysisInputNotFoundException
 import com.careercompass.jobanalysis.repository.JobAnalysisPostingRepository;
 import com.careercompass.jobanalysis.repository.JobAnalysisRepository;
 import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
+import com.careercompass.jobanalysis.service.model.EvidenceComparisonSummary;
 import com.careercompass.projectresponsibility.domain.UserProfileProjectResponsibility;
 import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
 import com.careercompass.userprofile.domain.UserProfileVersion;
@@ -44,14 +45,18 @@ public class JobAnalysisExecutionService {
      */
     @Transactional
     public Optional<JobAnalysis> claimNextQueuedAnalysis() {
-        Optional<JobAnalysis> claimed =
+        Optional<JobAnalysis> queuedAnalysis =
                 jobAnalysisRepository.findNextQueuedForUpdateSkipLocked();
-        claimed.ifPresent(analysis -> {
-            analysis.markRunning(Instant.now(clock));
-            analysis.getProjectSources();
-            jobAnalysisRepository.save(analysis);
-        });
-        return claimed;
+        if (queuedAnalysis.isEmpty()) {
+            return Optional.empty();
+        }
+
+        JobAnalysis claimedAnalysis = jobAnalysisRepository
+                .findByIdWithProjectSources(queuedAnalysis.get().getId())
+                .orElseThrow(JobAnalysisInputNotFoundException::new);
+        claimedAnalysis.markRunning(Instant.now(clock));
+        jobAnalysisRepository.save(claimedAnalysis);
+        return Optional.of(claimedAnalysis);
     }
 
     /**
@@ -177,29 +182,20 @@ public class JobAnalysisExecutionService {
     @Transactional
     public void finishEvidenceComparison(
             UUID jobAnalysisId,
-            int completedPostingCount,
-            int totalPostingCount,
-            int successfulPythonCallCount,
-            JobAnalysisFailureCode failureCode
+            EvidenceComparisonSummary comparisonSummary
     ) {
         JobAnalysis jobAnalysis = requireJobAnalysis(jobAnalysisId);
         Instant now = Instant.now(clock);
         jobAnalysis.advanceStep(JobAnalysisStep.FINALIZING_RESULT, now);
-        updateAnalysisFromComparisonOutcome(
-                jobAnalysis,
-                completedPostingCount,
-                totalPostingCount,
-                successfulPythonCallCount,
-                failureCode,
-                now);
+        updateAnalysisFromComparisonOutcome(jobAnalysis, comparisonSummary, now);
         jobAnalysisRepository.save(jobAnalysis);
         log.info(
                 "job_analysis_comparison_finished jobAnalysisId={} status={} "
                         + "completedUnits={} totalUnits={}",
                 jobAnalysisId,
                 jobAnalysis.getAnalysisStatus(),
-                completedPostingCount,
-                totalPostingCount
+                comparisonSummary.completedPostingCount(),
+                comparisonSummary.totalPostingCount()
         );
     }
 
@@ -258,27 +254,24 @@ public class JobAnalysisExecutionService {
      */
     private void updateAnalysisFromComparisonOutcome(
             JobAnalysis jobAnalysis,
-            int completedPostingCount,
-            int totalPostingCount,
-            int successfulPythonCallCount,
-            JobAnalysisFailureCode failureCode,
+            EvidenceComparisonSummary comparisonSummary,
             Instant now
     ) {
-        if (failureCode == null) {
+        if (comparisonSummary.firstFailureCode() == null) {
             jobAnalysis.markComparisonCompleted(
-                    completedPostingCount,
-                    totalPostingCount,
+                    comparisonSummary.completedPostingCount(),
+                    comparisonSummary.totalPostingCount(),
                     now);
             return;
         }
-        if (successfulPythonCallCount > 0) {
+        if (comparisonSummary.successfulPythonCallCount() > 0) {
             jobAnalysis.markComparisonPartiallyCompleted(
-                    completedPostingCount,
-                    totalPostingCount,
-                    failureCode,
+                    comparisonSummary.completedPostingCount(),
+                    comparisonSummary.totalPostingCount(),
+                    comparisonSummary.firstFailureCode(),
                     now);
             return;
         }
-        jobAnalysis.markFailed(now, failureCode);
+        jobAnalysis.markFailed(now, comparisonSummary.firstFailureCode());
     }
 }
