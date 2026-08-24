@@ -6,7 +6,10 @@ import httpx
 from pydantic import ValidationError
 
 from app.schemas.job_evidence_similarity import JudgeVerdict
-from app.schemas.job_posting import JobPostingCoreExtraction, JobPostingResponsibilityExtraction
+from app.schemas.job_posting import (
+    JobPostingCoreExtraction,
+    JobPostingResponsibilityExtraction,
+)
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
 from app.schemas.project_responsibility import ProjectResponsibilityExtraction
 from app.services.performance_tracking import set_last_usage
@@ -72,8 +75,9 @@ _PROJECT_RESPONSIBILITY_SYSTEM_PROMPT = (
     "실제로 '하는 일'(담당 업무·기능)을 추출한다. 사용자가 선택한 기술과 관련된 업무에 "
     "집중한다. 각 항목의 source_evidence_ids에는 그 업무의 근거가 되는 자료의 id를 "
     "제공된 목록에서 하나 이상 골라 담는다 — 목록에 없는 id를 만들지 않는다. 근거 자료에 "
-    "없는 내용을 지어내지 않는다. text는 근거로 확인 가능한 짧은 담당 업무 문장이며 새로운 "
-    "성과·역할을 만들지 않는다. 뽑을 수 없으면 빈 배열을 반환한다."
+    "없는 내용을 지어내지 않는다. text는 근거 자료에 실제로 이어져 있는 문장에서 담당 업무를 "
+    "확인할 수 있는 최소 구간을 그대로 복사한다. 표현을 요약하거나 바꾸지 않고, 새로운 성과·역할을 "
+    "만들지 않는다. 그대로 복사할 수 있는 업무 근거가 없으면 빈 배열을 반환한다."
 )
 
 
