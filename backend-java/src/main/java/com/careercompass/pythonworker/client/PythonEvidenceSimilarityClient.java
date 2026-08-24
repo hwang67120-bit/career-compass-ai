@@ -98,21 +98,21 @@ public class PythonEvidenceSimilarityClient {
 
     private void validateData(
             PythonEvidenceSimilarityRequest request,
-            PythonEvidenceSimilarityEnvelope.Data data
+            PythonEvidenceSimilarityEnvelope.Data similarityResponse
     ) {
-        if (!request.comparisonTaskId().equals(data.comparisonTaskId())
-                || !request.jobAnalysisId().equals(data.jobAnalysisId())
-                || !request.jobPostingId().equals(data.jobPostingId())) {
+        if (!request.comparisonTaskId().equals(similarityResponse.comparisonTaskId())
+                || !request.jobAnalysisId().equals(similarityResponse.jobAnalysisId())
+                || !request.jobPostingId().equals(similarityResponse.jobPostingId())) {
             throw responseInvalid(PythonEvidenceSimilarityResponseViolation.IDENTIFIER_MISMATCH);
         }
-        if (!ALLOWED_OVERALL_STATUSES.contains(data.status())) {
+        if (!ALLOWED_OVERALL_STATUSES.contains(similarityResponse.status())) {
             throw responseInvalid(PythonEvidenceSimilarityResponseViolation.STATUS_INVALID);
         }
-        if (!"LLM_JUDGE".equals(data.method())) {
+        if (!"LLM_JUDGE".equals(similarityResponse.method())) {
             throw responseInvalid(PythonEvidenceSimilarityResponseViolation.METHOD_INVALID);
         }
-        if (data.results() == null
-                || data.results().size() != request.jobEvidence().size()) {
+        if (similarityResponse.results() == null
+                || similarityResponse.results().size() != request.jobEvidence().size()) {
             throw responseInvalid(PythonEvidenceSimilarityResponseViolation.RESULT_COUNT_INVALID);
         }
         Set<String> expectedJobIds = request.jobEvidence().stream()
@@ -123,7 +123,7 @@ public class PythonEvidenceSimilarityClient {
                 .collect(java.util.stream.Collectors.toSet());
         Set<String> returnedJobIds = new HashSet<>();
         int calculatedCount = 0;
-        for (PythonEvidenceSimilarityEnvelope.Result result : data.results()) {
+        for (PythonEvidenceSimilarityEnvelope.Result result : similarityResponse.results()) {
             if (result == null || !expectedJobIds.contains(result.jobEvidenceId())
                     || !returnedJobIds.add(result.jobEvidenceId())) {
                 throw responseInvalid(
@@ -138,8 +138,9 @@ public class PythonEvidenceSimilarityClient {
                 throw responseInvalid(PythonEvidenceSimilarityResponseViolation.STATUS_INVALID);
             }
         }
-        validateOverallStatus(data.status(), calculatedCount, data.results().size());
-        validateModelExecution(data.modelExecution());
+        validateOverallStatus(
+                similarityResponse.status(), calculatedCount, similarityResponse.results().size());
+        validateModelExecution(similarityResponse.modelExecution());
     }
 
     private void validateCalculatedResult(

@@ -2,6 +2,7 @@ package com.careercompass.jobanalysis.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysisStatus;
 import com.careercompass.jobanalysis.domain.JobAnalysisStep;
 import com.careercompass.jobanalysis.repository.JobAnalysisPostingRepository;
 import com.careercompass.jobanalysis.repository.JobAnalysisRepository;
+import com.careercompass.jobanalysis.service.model.EvidenceComparisonSummary;
 import com.careercompass.projectresponsibility.repository.UserProfileProjectResponsibilityRepository;
 import com.careercompass.userprofile.repository.UserProfileVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,12 +51,43 @@ class JobAnalysisExecutionServiceTest {
     }
 
     @Test
+    void claimNextQueuedAnalysis_withQueuedAnalysis_loadsProjectSourcesAndMarksRunning() {
+        JobAnalysis jobAnalysis = queuedAnalysis();
+        when(jobAnalysisRepository.findNextQueuedForUpdateSkipLocked())
+                .thenReturn(Optional.of(jobAnalysis));
+        when(jobAnalysisRepository.findByIdWithProjectSources(ANALYSIS_ID))
+                .thenReturn(Optional.of(jobAnalysis));
+
+        Optional<JobAnalysis> claimedAnalysis = service.claimNextQueuedAnalysis();
+
+        assertThat(claimedAnalysis).contains(jobAnalysis);
+        assertThat(jobAnalysis.getAnalysisStatus()).isEqualTo(JobAnalysisStatus.RUNNING);
+        assertThat(jobAnalysis.getUpdatedAt()).isEqualTo(NOW);
+        verify(jobAnalysisRepository).findByIdWithProjectSources(ANALYSIS_ID);
+        verify(jobAnalysisRepository).save(jobAnalysis);
+    }
+
+    @Test
+    void claimNextQueuedAnalysis_withoutQueuedAnalysis_returnsEmpty() {
+        when(jobAnalysisRepository.findNextQueuedForUpdateSkipLocked())
+                .thenReturn(Optional.empty());
+
+        Optional<JobAnalysis> claimedAnalysis = service.claimNextQueuedAnalysis();
+
+        assertThat(claimedAnalysis).isEmpty();
+        verify(jobAnalysisRepository, never()).findByIdWithProjectSources(ANALYSIS_ID);
+    }
+
+    @Test
     void finishEvidenceComparison_withoutFailure_marksAnalysisCompleted() {
         JobAnalysis jobAnalysis = runningAnalysis();
         when(jobAnalysisRepository.findById(ANALYSIS_ID))
                 .thenReturn(Optional.of(jobAnalysis));
 
-        service.finishEvidenceComparison(ANALYSIS_ID, 3, 3, 3, null);
+        service.finishEvidenceComparison(
+                ANALYSIS_ID,
+                new EvidenceComparisonSummary(3, 3, 3, null)
+        );
 
         assertThat(jobAnalysis.getAnalysisStatus()).isEqualTo(JobAnalysisStatus.COMPLETED);
         assertThat(jobAnalysis.getCurrentStep()).isEqualTo(JobAnalysisStep.FINISHED);
@@ -73,10 +106,11 @@ class JobAnalysisExecutionServiceTest {
 
         service.finishEvidenceComparison(
                 ANALYSIS_ID,
-                2,
-                3,
-                1,
-                JobAnalysisFailureCode.EVIDENCE_COMPARISON_MODEL_UNAVAILABLE
+                new EvidenceComparisonSummary(
+                        2,
+                        3,
+                        1,
+                        JobAnalysisFailureCode.EVIDENCE_COMPARISON_MODEL_UNAVAILABLE)
         );
 
         assertThat(jobAnalysis.getAnalysisStatus())
@@ -98,10 +132,11 @@ class JobAnalysisExecutionServiceTest {
 
         service.finishEvidenceComparison(
                 ANALYSIS_ID,
-                0,
-                3,
-                0,
-                JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE
+                new EvidenceComparisonSummary(
+                        0,
+                        3,
+                        0,
+                        JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE)
         );
 
         assertThat(jobAnalysis.getAnalysisStatus()).isEqualTo(JobAnalysisStatus.FAILED);
@@ -111,6 +146,17 @@ class JobAnalysisExecutionServiceTest {
                 .isEqualTo(JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE);
         assertThat(jobAnalysis.getUpdatedAt()).isEqualTo(NOW);
         verify(jobAnalysisRepository).save(jobAnalysis);
+    }
+
+    private JobAnalysis queuedAnalysis() {
+        return JobAnalysis.createQueued(
+                ANALYSIS_ID,
+                USER_ID,
+                USER_PROFILE_ID,
+                1,
+                List.of(),
+                NOW.minusSeconds(60)
+        );
     }
 
     private JobAnalysis runningAnalysis() {

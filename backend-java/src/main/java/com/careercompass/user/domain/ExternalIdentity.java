@@ -75,11 +75,11 @@ public class ExternalIdentity {
         lastLoginAt = Objects.requireNonNull(loggedInAt);
     }
 
-    private static String requireProviderUserId(String value) {
-        if (value == null || value.isBlank()) {
+    private static String requireProviderUserId(String providerUserId) {
+        if (providerUserId == null || providerUserId.isBlank()) {
             throw new IllegalArgumentException("외부 제공자 사용자 식별자는 필수입니다.");
         }
-        return value.strip();
+        return providerUserId.strip();
     }
 
     public UUID getId() { return id; }

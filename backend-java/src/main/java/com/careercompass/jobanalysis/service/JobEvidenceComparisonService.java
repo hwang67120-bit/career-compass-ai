@@ -7,6 +7,8 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.dto.JobPostingComparisonSnapshot;
+import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
+import com.careercompass.jobanalysis.service.model.EvidenceComparisonSummary;
 import com.careercompass.pythonworker.client.PythonEvidenceSimilarityClient;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
@@ -30,30 +32,38 @@ public class JobEvidenceComparisonService {
     private final JobAnalysisJsonCodec jobAnalysisJsonCodec;
 
     /**
-     * 기능: 저장된 공고 담당 업무와 확정된 사용자 프로젝트 담당 업무를 공고별로 비교하고 저장한다.
+     * 기능: 확정된 프로젝트 근거와 공고 담당 업무를 공고별로 비교하고 최종 분석 상태를 결정한다.
      * 반환 값: 없음.
      */
     public void compare(JobAnalysis jobAnalysis) {
         UUID jobAnalysisId = jobAnalysis.getId();
         List<JobAnalysisPosting> postings =
                 jobAnalysisExecutionService.listPostings(jobAnalysisId);
+
         List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence =
                 toUserEvidence(jobAnalysisExecutionService.listConfirmedResponsibilities(jobAnalysis));
-        ComparisonProgress progress = comparePostings(
+
+        /*
+         * EvidenceComparisonSummary(근거 비교 집계)
+         * - 포함하는 값: 실패 없이 처리된 공고 수(비교 불가 포함), 전체 공고 수, 성공한 Python 호출 수,
+         *   처음 발생한 실패 코드.
+         * - 생성 과정: compareAndRecordPostings가 공고별 근거를 비교하고 결과를 저장한 뒤 집계한다.
+         * - 비교 방식: 양쪽 근거가 있으면 Python에 의미 비교를 요청하고, 어느 한쪽이 없으면
+         *   Python을 호출하지 않고 비교 불가로 처리한다.
+         * - 저장 여부: 이 객체 자체는 저장하지 않고, 포함된 값을 최종 분석 상태 결정에 사용한다.
+         */
+        EvidenceComparisonSummary comparisonSummary = compareAndRecordPostings(
                 jobAnalysisId,
                 postings,
                 userEvidence);
 
         jobAnalysisExecutionService.finishEvidenceComparison(
                 jobAnalysisId,
-                progress.completedPostingCount(),
-                postings.size(),
-                progress.successfulPythonCallCount(),
-                progress.firstFailureCode()
+                comparisonSummary
         );
     }
 
-    private ComparisonProgress comparePostings(
+    private EvidenceComparisonSummary compareAndRecordPostings(
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings,
             List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence
@@ -77,8 +87,9 @@ public class JobEvidenceComparisonService {
             }
         }
 
-        return new ComparisonProgress(
+        return new EvidenceComparisonSummary(
                 completedPostingCount,
+                postings.size(),
                 successfulPythonCallCount,
                 firstFailureCode);
     }
@@ -130,6 +141,7 @@ public class JobEvidenceComparisonService {
     ) throws JsonProcessingException {
         List<PythonEvidenceSimilarityRequest.JobEvidence> jobEvidence =
                 jobAnalysisJsonCodec.parseJobEvidence(posting.getExtractionJson());
+
         if (jobEvidence.isEmpty()) {
             return PostingComparisonOutcome.completed(
                     JobPostingComparisonSnapshot.jobEvidenceUnavailable(
@@ -217,7 +229,7 @@ public class JobEvidenceComparisonService {
     }
 
     private List<PythonEvidenceSimilarityRequest.UserEvidence> toUserEvidence(
-            List<ConfirmedProjectResponsibility> responsibilities
+            List<ConfirmedProjectResponsibilityEvidence> responsibilities
     ) {
         return responsibilities.stream()
                 .filter(responsibility -> responsibility.text() != null
@@ -266,12 +278,5 @@ public class JobEvidenceComparisonService {
         ) {
             return new PostingComparisonOutcome(snapshot, false, failureCode);
         }
-    }
-
-    private record ComparisonProgress(
-            int completedPostingCount,
-            int successfulPythonCallCount,
-            JobAnalysisFailureCode firstFailureCode
-    ) {
     }
 }
