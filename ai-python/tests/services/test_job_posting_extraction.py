@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 from app.providers.gemini import GeminiUnavailableError
+from app.providers.ollama import _numbered_source_lines, _remove_matching_line_id_prefix
 from app.schemas.job_posting import (
     JobPostingCoreExtraction,
     JobPostingEvidence,
@@ -48,6 +49,36 @@ _VALID_CORE = JobPostingCoreExtraction(
 )
 
 _EMPTY_RESPONSIBILITIES = JobPostingResponsibilityExtraction()
+
+
+def test_numbered_source_lines_uses_short_ids() -> None:
+    numbered = _numbered_source_lines("담당 업무\n- API 개발\n\n필수 요건")
+
+    assert numbered.splitlines() == [
+        "[J1] 담당 업무",
+        "[J2] - API 개발",
+        "[J4] 필수 요건",
+    ]
+
+
+def test_remove_matching_line_id_prefix_keeps_exact_source_line() -> None:
+    extraction = JobPostingResponsibilityExtraction(
+        evidence=[
+            JobPostingEvidence(
+                evidence_id="J2",
+                field_path="responsibilities[0].rawText",
+                value="API 개발",
+                source_text="[J2] - API 개발",
+            )
+        ],
+        responsibilities=[
+            JobPostingResponsibility(raw_text="API 개발", evidence_ids=["J2"])
+        ],
+    )
+
+    normalized = _remove_matching_line_id_prefix(extraction)
+
+    assert normalized.evidence[0].source_text == "- API 개발"
 
 _HALLUCINATED_RESPONSIBILITIES = JobPostingResponsibilityExtraction(
     evidence=[

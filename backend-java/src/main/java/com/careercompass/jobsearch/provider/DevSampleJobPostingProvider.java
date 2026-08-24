@@ -2,7 +2,9 @@ package com.careercompass.jobsearch.provider;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.Normalizer;
 import java.util.List;
+import java.util.Locale;
 
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -30,9 +32,10 @@ public class DevSampleJobPostingProvider implements JobPostingProvider {
         if (keyword == null || display <= 0) {
             return List.of();
         }
-        String targetJobTitle = keyword.strip();
+        String targetJobTitle = normalizeForComparison(keyword);
         return loadFixtureCatalog().postings().stream()
-                .filter(posting -> posting.title().equals(targetJobTitle))
+                .filter(posting -> normalizeForComparison(posting.title())
+                        .equals(targetJobTitle))
                 .limit(display)
                 .map(this::toCandidate)
                 .toList();
@@ -56,6 +59,12 @@ public class DevSampleJobPostingProvider implements JobPostingProvider {
     @Override
     public String providerName() {
         return PROVIDER_NAME;
+    }
+
+    private String normalizeForComparison(String jobTitle) {
+        return Normalizer.normalize(jobTitle, Normalizer.Form.NFKC)
+                .replaceAll("\\s+", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     private JobPostingCandidate toCandidate(
