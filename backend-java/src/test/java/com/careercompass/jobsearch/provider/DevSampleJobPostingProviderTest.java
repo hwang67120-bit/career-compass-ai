@@ -29,6 +29,15 @@ class DevSampleJobPostingProviderTest {
     }
 
     @Test
+    void search_withWhitespaceDifference_returnsMatchingSyntheticPosting() {
+        List<JobPostingCandidate> postings = provider.search("백엔드개발자", 10);
+
+        assertThat(postings).singleElement()
+                .extracting(JobPostingCandidate::providerPostingId)
+                .isEqualTo("synthetic-backend-001");
+    }
+
+    @Test
     void search_withMachineLearningTitle_returnsDifferentFixture() {
         List<JobPostingCandidate> postings =
                 provider.search("머신러닝 엔지니어", 10);

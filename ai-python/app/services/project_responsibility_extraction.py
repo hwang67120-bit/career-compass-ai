@@ -104,9 +104,16 @@ async def _responsibility_evidence(
         return []
 
     text_by_id = {evidence_id: text for evidence_id, text in evidence_items}
+    model_evidence_items: list[tuple[str, str]] = []
+    original_id_by_model_id: dict[str, str] = {}
+    for index, (original_id, text) in enumerate(evidence_items, start=1):
+        model_id = f"S{index}"
+        model_evidence_items.append((model_id, text))
+        original_id_by_model_id[model_id] = original_id
 
     extraction = await provider.extract_project_responsibilities(
-        evidence_items, [tag.canonical_name for tag in request.selected_technology_tags]
+        model_evidence_items,
+        [tag.canonical_name for tag in request.selected_technology_tags],
     )
 
     results: list[dict] = []
@@ -118,7 +125,11 @@ async def _responsibility_evidence(
         if len(candidate.text) > _MAX_RESPONSIBILITY_TEXT_LENGTH:
             oversized_count += 1
             continue  # 계약: 500자 초과 후보는 잘라내지 않고 버린다(Java DB 상한과 동일)
-        cited = [eid for eid in candidate.source_evidence_ids if eid in text_by_id]
+        cited = list(dict.fromkeys(
+            original_id_by_model_id[model_id]
+            for model_id in candidate.source_evidence_ids
+            if model_id in original_id_by_model_id
+        ))
         if not cited:
             invalid_citation_count += 1
             continue  # 근거 id가 없거나 입력에 없으면 버린다(지어내기 방지)

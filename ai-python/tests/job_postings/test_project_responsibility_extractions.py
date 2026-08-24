@@ -96,7 +96,7 @@ def test_rejects_empty_selected_tags() -> None:
 
 def test_succeeds_with_fake_provider() -> None:
     app.dependency_overrides[get_ollama_project_responsibility_provider] = _provider_override(
-        [ProjectResponsibilityCandidate(text="Spring Boot 기반 주문 API 구현", source_evidence_ids=["readme-1"])]
+        [ProjectResponsibilityCandidate(text="Spring Boot 기반 주문 API 구현", source_evidence_ids=["S1"])]
     )
     try:
         response = client.post(
