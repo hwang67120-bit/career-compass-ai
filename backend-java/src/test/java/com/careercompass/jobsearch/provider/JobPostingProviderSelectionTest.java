@@ -2,7 +2,6 @@ package com.careercompass.jobsearch.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -13,7 +12,6 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 class JobPostingProviderSelectionTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withBean(ObjectMapper.class, ObjectMapper::new)
             .withUserConfiguration(DevSampleJobPostingProvider.class);
 
     @Test

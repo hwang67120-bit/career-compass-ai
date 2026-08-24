@@ -7,13 +7,11 @@ import java.util.List;
 import com.careercompass.jobsearch.domain.JobPostingCandidate;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
 @Profile({"dev", "demo"})
 @ConditionalOnProperty(prefix = "job-search", name = "provider", havingValue = "dev-sample")
@@ -24,8 +22,8 @@ public class DevSampleJobPostingProvider implements JobPostingProvider {
             "fixtures/synthetic_job_postings_v1.json";
     private static final String SOURCE_URL_PREFIX =
             "https://example.invalid/synthetic-job-postings/";
-
-    private final ObjectMapper objectMapper;
+    private static final ObjectMapper FIXTURE_OBJECT_MAPPER =
+            new ObjectMapper();
 
     @Override
     public List<JobPostingCandidate> search(String keyword, int display) {
@@ -76,7 +74,7 @@ public class DevSampleJobPostingProvider implements JobPostingProvider {
     private SyntheticJobPostingFixtureCatalog loadFixtureCatalog() {
         ClassPathResource resource = new ClassPathResource(FIXTURE_RESOURCE);
         try (InputStream inputStream = resource.getInputStream()) {
-            return objectMapper.readValue(
+            return FIXTURE_OBJECT_MAPPER.readValue(
                     inputStream,
                     SyntheticJobPostingFixtureCatalog.class
             );
