@@ -1117,16 +1117,26 @@
         }
 
         if (comparison.results?.length) {
+            section.appendChild(
+                createComparisonSummary(comparison.results)
+            );
+
+            const details = document.createElement("details");
+            details.className = "comparison-details";
+            const detailsTitle = document.createElement("summary");
+            detailsTitle.textContent =
+                `담당 업무별 결과 보기 (${comparison.results.length}건)`;
             const bars = document.createElement("div");
             bars.className = "similarity-bars";
             comparison.results.forEach((result) => {
-                bars.appendChild(createJudgmentBar(
+                bars.appendChild(createJudgmentDetail(
                     result,
                     posting.jobPostingId,
                     evidenceList
                 ));
             });
-            section.appendChild(bars);
+            details.append(detailsTitle, bars);
+            section.appendChild(details);
         }
 
         if (comparison.modelExecution) {
@@ -1139,7 +1149,95 @@
         return section;
     }
 
-    function createJudgmentBar(result, jobPostingId, evidenceList) {
+    function createComparisonSummary(results) {
+        const summary = calculateComparisonSummary(results);
+        const container = document.createElement("div");
+        container.className = "comparison-summary";
+
+        const chart = document.createElement("div");
+        chart.className = "comparison-percentage-chart";
+        chart.classList.toggle(
+            "is-unavailable",
+            summary.relatedPercentage === null
+        );
+        chart.style.setProperty(
+            "--related-percentage",
+            `${summary.relatedPercentage || 0}%`
+        );
+        chart.setAttribute("role", "img");
+        chart.setAttribute(
+            "aria-label",
+            summary.relatedPercentage === null
+                ? "업무 근거 관련도 계산 불가"
+                : `업무 근거 관련도 ${summary.relatedPercentage}%`
+        );
+
+        const percentage = document.createElement("strong");
+        percentage.textContent = summary.relatedPercentage === null
+            ? "계산 불가"
+            : `${summary.relatedPercentage}%`;
+        chart.appendChild(percentage);
+
+        const explanation = document.createElement("div");
+        explanation.className = "comparison-summary-explanation";
+        const title = document.createElement("strong");
+        title.textContent = "업무 근거 관련도";
+        const description = document.createElement("p");
+        description.textContent =
+            "비교 가능한 공고 담당 업무 중 프로젝트 근거와 관련 있다고 판단된 비율입니다.";
+
+        const counts = document.createElement("ul");
+        counts.className = "comparison-summary-counts";
+        counts.append(
+            createComparisonCount(
+                "관련 있음",
+                summary.relatedCount,
+                "is-related"
+            ),
+            createComparisonCount(
+                "관련 없음",
+                summary.notRelatedCount,
+                "is-not-related"
+            ),
+            createComparisonCount(
+                "판단 불가",
+                summary.unavailableCount,
+                "is-unavailable"
+            )
+        );
+        explanation.append(title, description, counts);
+        container.append(chart, explanation);
+        return container;
+    }
+
+    function calculateComparisonSummary(results) {
+        const relatedCount = results.filter((result) =>
+            result.status === "CALCULATED"
+            && result.judgment === "RELATED"
+        ).length;
+        const notRelatedCount = results.filter((result) =>
+            result.status === "CALCULATED"
+            && result.judgment === "NOT_RELATED"
+        ).length;
+        const calculableCount = relatedCount + notRelatedCount;
+        return {
+            relatedCount,
+            notRelatedCount,
+            unavailableCount: results.length - calculableCount,
+            relatedPercentage: calculableCount === 0
+                ? null
+                : Math.round((relatedCount / calculableCount) * 100)
+        };
+    }
+
+    function createComparisonCount(label, count, statusClass) {
+        const item = document.createElement("li");
+        item.className = statusClass;
+        item.textContent = `${label} ${count}건`;
+        return item;
+    }
+
+    function createJudgmentDetail(result, jobPostingId, evidenceList) {
         const row = document.createElement("div");
         row.className = "similarity-result";
 
@@ -1171,19 +1269,6 @@
             row.appendChild(userEvidence);
         }
 
-        if (result.status === "CALCULATED") {
-            const track = document.createElement("div");
-            track.className = "similarity-track";
-            track.setAttribute("role", "img");
-            track.setAttribute(
-                "aria-label",
-                `${jobEvidence.textContent}: ${judgment.textContent}`
-            );
-            const fill = document.createElement("div");
-            fill.className = `similarity-fill ${judgmentClass(result)}`;
-            track.appendChild(fill);
-            row.appendChild(track);
-        }
         return row;
     }
 
@@ -1208,13 +1293,6 @@
             return "판단 불가";
         }
         return result.judgment === "RELATED" ? "관련 있음" : "관련 없음";
-    }
-
-    function judgmentClass(result) {
-        if (result.status !== "CALCULATED") {
-            return "is-unavailable";
-        }
-        return result.judgment === "RELATED" ? "is-related" : "is-not-related";
     }
 
     function comparisonFailureLabel(code) {
