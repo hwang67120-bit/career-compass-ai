@@ -8,6 +8,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.dto.JobPostingComparisonSnapshot;
 import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
+import com.careercompass.jobanalysis.service.model.EvidenceComparisonSummary;
 import com.careercompass.pythonworker.client.PythonEvidenceSimilarityClient;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
@@ -43,29 +44,26 @@ public class JobEvidenceComparisonService {
                 toUserEvidence(jobAnalysisExecutionService.listConfirmedResponsibilities(jobAnalysis));
 
         /*
-         * ComparisonSummary(공고 비교 집계)
-         * - 포함하는 값: 실패 없이 처리된 공고 수(비교 불가 포함), 성공한 Python 호출 수,
+         * EvidenceComparisonSummary(근거 비교 집계)
+         * - 포함하는 값: 실패 없이 처리된 공고 수(비교 불가 포함), 전체 공고 수, 성공한 Python 호출 수,
          *   처음 발생한 실패 코드.
          * - 생성 과정: compareAndRecordPostings가 공고별 근거를 비교하고 결과를 저장한 뒤 집계한다.
          * - 비교 방식: 양쪽 근거가 있으면 Python에 의미 비교를 요청하고, 어느 한쪽이 없으면
          *   Python을 호출하지 않고 비교 불가로 처리한다.
          * - 저장 여부: 이 객체 자체는 저장하지 않고, 포함된 값을 최종 분석 상태 결정에 사용한다.
          */
-        ComparisonSummary comparisonSummary = compareAndRecordPostings(
+        EvidenceComparisonSummary comparisonSummary = compareAndRecordPostings(
                 jobAnalysisId,
                 postings,
                 userEvidence);
 
         jobAnalysisExecutionService.finishEvidenceComparison(
                 jobAnalysisId,
-                comparisonSummary.completedPostingCount(),
-                postings.size(),
-                comparisonSummary.successfulPythonCallCount(),
-                comparisonSummary.firstFailureCode()
+                comparisonSummary
         );
     }
 
-    private ComparisonSummary compareAndRecordPostings(
+    private EvidenceComparisonSummary compareAndRecordPostings(
             UUID jobAnalysisId,
             List<JobAnalysisPosting> postings,
             List<PythonEvidenceSimilarityRequest.UserEvidence> userEvidence
@@ -89,8 +87,9 @@ public class JobEvidenceComparisonService {
             }
         }
 
-        return new ComparisonSummary(
+        return new EvidenceComparisonSummary(
                 completedPostingCount,
+                postings.size(),
                 successfulPythonCallCount,
                 firstFailureCode);
     }
@@ -279,12 +278,5 @@ public class JobEvidenceComparisonService {
         ) {
             return new PostingComparisonOutcome(snapshot, false, failureCode);
         }
-    }
-
-    private record ComparisonSummary(
-            int completedPostingCount,
-            int successfulPythonCallCount,
-            JobAnalysisFailureCode firstFailureCode
-    ) {
     }
 }

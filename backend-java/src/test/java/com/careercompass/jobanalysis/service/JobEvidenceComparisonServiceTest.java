@@ -16,6 +16,7 @@ import com.careercompass.jobanalysis.domain.JobAnalysis;
 import com.careercompass.jobanalysis.domain.JobAnalysisFailureCode;
 import com.careercompass.jobanalysis.domain.JobAnalysisPosting;
 import com.careercompass.jobanalysis.service.model.ConfirmedProjectResponsibilityEvidence;
+import com.careercompass.jobanalysis.service.model.EvidenceComparisonSummary;
 import com.careercompass.pythonworker.client.PythonEvidenceSimilarityClient;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityEnvelope;
 import com.careercompass.pythonworker.dto.PythonEvidenceSimilarityRequest;
@@ -96,7 +97,8 @@ class JobEvidenceComparisonServiceTest {
                 .contains("\"status\":\"CALCULATED\"")
                 .contains("\"judgment\":\"RELATED\"");
         verify(jobAnalysisExecutionService).finishEvidenceComparison(
-                ANALYSIS_ID, 1, 1, 1, null);
+                ANALYSIS_ID,
+                new EvidenceComparisonSummary(1, 1, 1, null));
     }
 
     @Test
@@ -118,7 +120,8 @@ class JobEvidenceComparisonServiceTest {
                 .contains("JOB_EVIDENCE_EMPTY_AFTER_SANITIZATION")
                 .contains("\"method\":null");
         verify(jobAnalysisExecutionService).finishEvidenceComparison(
-                ANALYSIS_ID, 1, 1, 0, null);
+                ANALYSIS_ID,
+                new EvidenceComparisonSummary(1, 1, 0, null));
     }
 
     @Test
@@ -139,7 +142,8 @@ class JobEvidenceComparisonServiceTest {
                 .contains("USER_EVIDENCE_EMPTY_AFTER_SANITIZATION")
                 .contains("\"method\":null");
         verify(jobAnalysisExecutionService).finishEvidenceComparison(
-                ANALYSIS_ID, 1, 1, 0, null);
+                ANALYSIS_ID,
+                new EvidenceComparisonSummary(1, 1, 0, null));
     }
 
     @Test
@@ -158,10 +162,11 @@ class JobEvidenceComparisonServiceTest {
                 .contains("EVIDENCE_COMPARISON_INVALID_RESPONSE");
         verify(jobAnalysisExecutionService).finishEvidenceComparison(
                 ANALYSIS_ID,
-                0,
-                1,
-                0,
-                JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE
+                new EvidenceComparisonSummary(
+                        0,
+                        1,
+                        0,
+                        JobAnalysisFailureCode.EVIDENCE_COMPARISON_INVALID_RESPONSE)
         );
     }
 
@@ -180,10 +185,11 @@ class JobEvidenceComparisonServiceTest {
 
         verify(jobAnalysisExecutionService).finishEvidenceComparison(
                 ANALYSIS_ID,
-                1,
-                2,
-                1,
-                JobAnalysisFailureCode.EVIDENCE_COMPARISON_MODEL_UNAVAILABLE
+                new EvidenceComparisonSummary(
+                        1,
+                        2,
+                        1,
+                        JobAnalysisFailureCode.EVIDENCE_COMPARISON_MODEL_UNAVAILABLE)
         );
     }
 
