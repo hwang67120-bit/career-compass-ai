@@ -2,6 +2,7 @@ package com.careercompass.jobsearch.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 class JobPostingProviderSelectionTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withBean(ObjectMapper.class, ObjectMapper::new)
             .withUserConfiguration(DevSampleJobPostingProvider.class);
 
     @Test
@@ -26,6 +28,19 @@ class JobPostingProviderSelectionTest {
     void withDevProfileAndDevSampleProperty_selectsDevSampleProvider() {
         contextRunner
                 .withPropertyValues("spring.profiles.active=dev", "job-search.provider=dev-sample")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(JobPostingProvider.class);
+                    assertThat(context).hasSingleBean(DevSampleJobPostingProvider.class);
+                });
+    }
+
+    @Test
+    void withProdAndDemoProfilesAndDevSampleProperty_selectsDevSampleProvider() {
+        contextRunner
+                .withPropertyValues(
+                        "spring.profiles.active=prod,demo",
+                        "job-search.provider=dev-sample"
+                )
                 .run(context -> {
                     assertThat(context).hasSingleBean(JobPostingProvider.class);
                     assertThat(context).hasSingleBean(DevSampleJobPostingProvider.class);

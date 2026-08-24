@@ -54,7 +54,8 @@ services:
 
   backend-java:
     build:
-      context: ../backend-java
+      context: ..
+      dockerfile: backend-java/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

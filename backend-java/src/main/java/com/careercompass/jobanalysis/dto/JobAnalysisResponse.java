@@ -10,6 +10,7 @@ public record JobAnalysisResponse(
         int completedUnits,
         int totalUnits,
         String failureCode,
-        List<JobAnalysisPostingResponse> postings
+        List<JobAnalysisPostingResponse> postings,
+        List<JobAnalysisEvidenceResponse> evidence
 ) {
 }

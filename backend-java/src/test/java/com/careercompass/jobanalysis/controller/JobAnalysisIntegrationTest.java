@@ -245,6 +245,8 @@ class JobAnalysisIntegrationTest {
                 .andExpect(jsonPath("$.data.failureCode").doesNotExist())
                 .andExpect(jsonPath("$.data.postings").isArray())
                 .andExpect(jsonPath("$.data.postings").isEmpty())
+                .andExpect(jsonPath("$.data.evidence").isArray())
+                .andExpect(jsonPath("$.data.evidence").isEmpty())
                 .andExpect(jsonPath("$.data.extraction").doesNotExist())
                 .andExpect(jsonPath("$.data.modelExecutions").doesNotExist());
     }
@@ -269,12 +271,23 @@ class JobAnalysisIntegrationTest {
                 )
                 VALUES (?, ?, 'posting-1', 'DEV_SAMPLE', ?, ?, '회사',
                         '백엔드 개발자', 'https://example.invalid/posting-1',
-                        '{}', '[]', ?, ?)
+                        ?, '[]', ?, ?)
                 """,
                 postingId,
                 jobAnalysisId,
                 jobPostingId,
                 extractionTaskId,
+                """
+                {
+                  "evidence":[{
+                    "evidenceId":"job-evidence-1",
+                    "sourceText":"공공서비스 회원 권한 REST API를 개발합니다."
+                  }],
+                  "responsibilities":[{
+                    "evidenceIds":["job-evidence-1"]
+                  }]
+                }
+                """,
                 """
                 {
                   "comparisonTaskId":"%s",
@@ -317,7 +330,15 @@ class JobAnalysisIntegrationTest {
                 ).value("RELATED"))
                 .andExpect(jsonPath(
                         "$.data.postings[0].comparison.modelExecution.provider"
-                ).value("OLLAMA"));
+                ).value("OLLAMA"))
+                .andExpect(jsonPath("$.data.evidence[0].evidenceId")
+                        .value("job-evidence-1"))
+                .andExpect(jsonPath("$.data.evidence[0].sourceType")
+                        .value("JOB_POSTING"))
+                .andExpect(jsonPath("$.data.evidence[0].sourceId")
+                        .value(jobPostingId.toString()))
+                .andExpect(jsonPath("$.data.evidence[0].excerpt")
+                        .value("공공서비스 회원 권한 REST API를 개발합니다."));
     }
 
     @Test
