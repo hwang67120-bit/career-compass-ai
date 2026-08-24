@@ -104,10 +104,10 @@ python:
   worker:
     base-url: ${PYTHON_WORKER_BASE_URL:http://localhost:8000}
     internal-token: ${INTERNAL_SERVICE_TOKEN}
-    # 확인 필요: 실제 로컬 LLM(Ollama) 표본 기준 재조정. 두 단계(core+responsibility)를
-    # 순차 호출하고 Gemini 폴백까지 있을 수 있어 넉넉하게 잡는다.
+    # Python은 Ollama 응답을 최대 120초 기다린다. Java가 먼저 연결을 끊지 않도록
+    # 네트워크·응답 변환 여유를 포함해 읽기 제한시간을 더 길게 둔다.
     extract-connect-timeout: ${PYTHON_WORKER_EXTRACT_CONNECT_TIMEOUT:3s}
-    extract-read-timeout: ${PYTHON_WORKER_EXTRACT_READ_TIMEOUT:60s}
+    extract-read-timeout: ${PYTHON_WORKER_EXTRACT_READ_TIMEOUT:150s}
     project-responsibility:
       max-selected-technology-tags: ${PROJECT_RESPONSIBILITY_MAX_SELECTED_TECHNOLOGY_TAGS:10}
       max-detected-technologies: ${PROJECT_RESPONSIBILITY_MAX_DETECTED_TECHNOLOGIES:30}

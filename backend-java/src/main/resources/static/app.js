@@ -1044,24 +1044,40 @@
             null
         );
         const bubble = entry.querySelector(".chat-bubble");
-        const postings = (jobAnalysis.postings || [])
+        const searchedPostings = jobAnalysis.postings || [];
+        if (searchedPostings.length === 0) {
+            setLogEntryDetail(
+                entry,
+                "희망 직무와 일치하는 합성 공고가 없습니다."
+            );
+            markLogEntryDone(entry);
+            return;
+        }
+
+        const postings = searchedPostings
             .filter((posting) => posting.comparison);
         if (postings.length === 0) {
-            setLogEntryDetail(entry, "표시할 비교 결과가 없습니다.");
+            setLogEntryDetail(
+                entry,
+                "공고는 검색됐지만 비교 결과가 만들어지지 않았습니다."
+            );
             markLogEntryDone(entry);
             return;
         }
 
         const container = document.createElement("div");
         container.className = "comparison-results";
+        const evidenceList = jobAnalysis.evidence || [];
         postings.forEach((posting) => {
-            container.appendChild(createComparisonPosting(posting));
+            container.appendChild(
+                createComparisonPosting(posting, evidenceList)
+            );
         });
         bubble.appendChild(container);
         markLogEntryDone(entry);
     }
 
-    function createComparisonPosting(posting) {
+    function createComparisonPosting(posting, evidenceList) {
         const section = document.createElement("section");
         section.className = "comparison-posting";
         const heading = document.createElement("div");
@@ -1075,7 +1091,12 @@
         heading.appendChild(titleGroup);
 
         const sourceUrl = safeHttpUrl(posting.sourceUrl);
-        if (sourceUrl) {
+        if (posting.provider === "DEV_SAMPLE") {
+            const syntheticLabel = document.createElement("span");
+            syntheticLabel.className = "synthetic-posting-label";
+            syntheticLabel.textContent = "합성 공고";
+            heading.appendChild(syntheticLabel);
+        } else if (sourceUrl) {
             const link = document.createElement("a");
             link.href = sourceUrl;
             link.target = "_blank";
@@ -1096,12 +1117,26 @@
         }
 
         if (comparison.results?.length) {
+            section.appendChild(
+                createComparisonSummary(comparison.results)
+            );
+
+            const details = document.createElement("details");
+            details.className = "comparison-details";
+            const detailsTitle = document.createElement("summary");
+            detailsTitle.textContent =
+                `담당 업무별 결과 보기 (${comparison.results.length}건)`;
             const bars = document.createElement("div");
             bars.className = "similarity-bars";
-            comparison.results.forEach((result, index) => {
-                bars.appendChild(createJudgmentBar(result, index));
+            comparison.results.forEach((result) => {
+                bars.appendChild(createJudgmentDetail(
+                    result,
+                    posting.jobPostingId,
+                    evidenceList
+                ));
             });
-            section.appendChild(bars);
+            details.append(detailsTitle, bars);
+            section.appendChild(details);
         }
 
         if (comparison.modelExecution) {
@@ -1114,29 +1149,143 @@
         return section;
     }
 
-    function createJudgmentBar(result, index) {
+    function createComparisonSummary(results) {
+        const summary = calculateComparisonSummary(results);
+        const container = document.createElement("div");
+        container.className = "comparison-summary";
+
+        const chart = document.createElement("div");
+        chart.className = "comparison-percentage-chart";
+        chart.classList.toggle(
+            "is-unavailable",
+            summary.relatedPercentage === null
+        );
+        chart.style.setProperty(
+            "--related-percentage",
+            `${summary.relatedPercentage || 0}%`
+        );
+        chart.setAttribute("role", "img");
+        chart.setAttribute(
+            "aria-label",
+            summary.relatedPercentage === null
+                ? "업무 근거 관련도 계산 불가"
+                : `업무 근거 관련도 ${summary.relatedPercentage}%`
+        );
+
+        const percentage = document.createElement("strong");
+        percentage.textContent = summary.relatedPercentage === null
+            ? "계산 불가"
+            : `${summary.relatedPercentage}%`;
+        chart.appendChild(percentage);
+
+        const explanation = document.createElement("div");
+        explanation.className = "comparison-summary-explanation";
+        const title = document.createElement("strong");
+        title.textContent = "업무 근거 관련도";
+        const description = document.createElement("p");
+        description.textContent =
+            "비교 가능한 공고 담당 업무 중 프로젝트 근거와 관련 있다고 판단된 비율입니다.";
+
+        const counts = document.createElement("ul");
+        counts.className = "comparison-summary-counts";
+        counts.append(
+            createComparisonCount(
+                "관련 있음",
+                summary.relatedCount,
+                "is-related"
+            ),
+            createComparisonCount(
+                "관련 없음",
+                summary.notRelatedCount,
+                "is-not-related"
+            ),
+            createComparisonCount(
+                "판단 불가",
+                summary.unavailableCount,
+                "is-unavailable"
+            )
+        );
+        explanation.append(title, description, counts);
+        container.append(chart, explanation);
+        return container;
+    }
+
+    function calculateComparisonSummary(results) {
+        const relatedCount = results.filter((result) =>
+            result.status === "CALCULATED"
+            && result.judgment === "RELATED"
+        ).length;
+        const notRelatedCount = results.filter((result) =>
+            result.status === "CALCULATED"
+            && result.judgment === "NOT_RELATED"
+        ).length;
+        const calculableCount = relatedCount + notRelatedCount;
+        return {
+            relatedCount,
+            notRelatedCount,
+            unavailableCount: results.length - calculableCount,
+            relatedPercentage: calculableCount === 0
+                ? null
+                : Math.round((relatedCount / calculableCount) * 100)
+        };
+    }
+
+    function createComparisonCount(label, count, statusClass) {
+        const item = document.createElement("li");
+        item.className = statusClass;
+        item.textContent = `${label} ${count}건`;
+        return item;
+    }
+
+    function createJudgmentDetail(result, jobPostingId, evidenceList) {
         const row = document.createElement("div");
+        row.className = "similarity-result";
+
         const label = document.createElement("div");
         label.className = "similarity-label";
-        const evidence = document.createElement("span");
-        evidence.textContent = `공고 담당업무 ${index + 1}`;
-        evidence.title = result.jobEvidenceId;
+        const jobEvidence = document.createElement("span");
+        jobEvidence.className = "similarity-evidence-text";
+        jobEvidence.textContent = findEvidenceExcerpt(
+            evidenceList,
+            result.jobEvidenceId,
+            "JOB_POSTING",
+            jobPostingId
+        ) || "공고 담당업무 근거를 찾을 수 없습니다.";
         const judgment = document.createElement("strong");
         judgment.textContent = judgmentLabel(result);
-        label.append(evidence, judgment);
+        label.append(jobEvidence, judgment);
+        row.appendChild(label);
 
-        const track = document.createElement("div");
-        track.className = "similarity-track";
-        track.setAttribute("role", "img");
-        track.setAttribute(
-            "aria-label",
-            `공고 담당업무 ${index + 1}: ${judgment.textContent}`
+        const userEvidenceText = findEvidenceExcerpt(
+            evidenceList,
+            result.bestMatchUserEvidenceId,
+            "USER_PROJECT",
+            null
         );
-        const fill = document.createElement("div");
-        fill.className = `similarity-fill ${judgmentClass(result)}`;
-        track.appendChild(fill);
-        row.append(label, track);
+        if (userEvidenceText) {
+            const userEvidence = document.createElement("p");
+            userEvidence.className = "similarity-user-evidence";
+            userEvidence.textContent = `프로젝트 근거: ${userEvidenceText}`;
+            row.appendChild(userEvidence);
+        }
+
         return row;
+    }
+
+    function findEvidenceExcerpt(
+        evidenceList,
+        evidenceId,
+        sourceType,
+        jobPostingId
+    ) {
+        if (!evidenceId) {
+            return null;
+        }
+        return evidenceList.find((evidence) =>
+            evidence.evidenceId === evidenceId
+            && evidence.sourceType === sourceType
+            && (!jobPostingId || evidence.sourceId === jobPostingId)
+        )?.excerpt || null;
     }
 
     function judgmentLabel(result) {
@@ -1144,13 +1293,6 @@
             return "판단 불가";
         }
         return result.judgment === "RELATED" ? "관련 있음" : "관련 없음";
-    }
-
-    function judgmentClass(result) {
-        if (result.status !== "CALCULATED") {
-            return "is-unavailable";
-        }
-        return result.judgment === "RELATED" ? "is-related" : "is-not-related";
     }
 
     function comparisonFailureLabel(code) {

@@ -6,7 +6,10 @@ import httpx
 from pydantic import ValidationError
 
 from app.schemas.job_evidence_similarity import JudgeVerdict
-from app.schemas.job_posting import JobPostingCoreExtraction, JobPostingResponsibilityExtraction
+from app.schemas.job_posting import (
+    JobPostingCoreExtraction,
+    JobPostingResponsibilityExtraction,
+)
 from app.schemas.job_search_keywords import GeneratedKeywordSuggestions
 from app.schemas.project_responsibility import ProjectResponsibilityExtraction
 from app.services.performance_tracking import set_last_usage
@@ -49,12 +52,36 @@ _JOB_POSTING_RESPONSIBILITY_EXTRACTION_SYSTEM_PROMPT = (
     "제공된 채용 공고에서 '담당 업무'·'주요 업무'처럼 이 직무가 실제로 하는 일을 "
     "서술한 부분만 추출한다. 자격 요건·기술·우대 사항·근무 조건·회사 소개는 담당 "
     "업무가 아니다. 확인할 수 없으면 만들지 않고 빈 배열로 남긴다. "
+    "원문 줄 앞에 표시된 J1, J2 같은 줄 식별자를 evidenceId로 그대로 사용한다. "
     "반드시 evidence 배열부터 먼저 전부 채운 다음 responsibilities를 채운다. "
     "sourceText는 반드시 원문에서 이어져 있는 부분을 글자 하나까지 그대로 복사한 것이어야 한다. "
     "요약·재구성하지 않는다. 정확히 이어 붙여 복사할 수 없으면 그 항목은 만들지 않는다. "
     "responsibilities의 모든 항목은 evidenceIds에 evidence 배열에 실제로 존재하는 "
     "evidenceId를 하나 이상 채워 넣는다. 근거를 만들지 못하면 그 항목은 만들지 않는다."
 )
+
+def _numbered_source_lines(source_text: str) -> str:
+    """모델이 짧은 근거 ID와 정확한 원문 줄을 함께 볼 수 있게 만든다."""
+    return "\n".join(
+        f"[J{index}] {line}"
+        for index, line in enumerate(source_text.splitlines(), start=1)
+        if line.strip()
+    )
+
+
+def _remove_matching_line_id_prefix(
+    extraction: JobPostingResponsibilityExtraction,
+) -> JobPostingResponsibilityExtraction:
+    """모델이 sourceText에 다시 붙인 동일한 줄 ID 표시만 제거한다."""
+    normalized_evidence = []
+    for evidence in extraction.evidence:
+        prefix = f"[{evidence.evidence_id}] "
+        source_text = evidence.source_text.removeprefix(prefix)
+        normalized_evidence.append(
+            evidence.model_copy(update={"source_text": source_text})
+        )
+    return extraction.model_copy(update={"evidence": normalized_evidence})
+
 
 _EVIDENCE_JUDGE_SYSTEM_PROMPT = (
     "너는 채용공고의 '담당 업무' 하나와 지원자의 '프로젝트 업무' 목록을 받는다. "
@@ -72,8 +99,9 @@ _PROJECT_RESPONSIBILITY_SYSTEM_PROMPT = (
     "실제로 '하는 일'(담당 업무·기능)을 추출한다. 사용자가 선택한 기술과 관련된 업무에 "
     "집중한다. 각 항목의 source_evidence_ids에는 그 업무의 근거가 되는 자료의 id를 "
     "제공된 목록에서 하나 이상 골라 담는다 — 목록에 없는 id를 만들지 않는다. 근거 자료에 "
-    "없는 내용을 지어내지 않는다. text는 근거로 확인 가능한 짧은 담당 업무 문장이며 새로운 "
-    "성과·역할을 만들지 않는다. 뽑을 수 없으면 빈 배열을 반환한다."
+    "없는 내용을 지어내지 않는다. text는 근거 자료에 실제로 이어져 있는 문장에서 담당 업무를 "
+    "확인할 수 있는 최소 구간을 그대로 복사한다. 표현을 요약하거나 바꾸지 않고, 새로운 성과·역할을 "
+    "만들지 않는다. 그대로 복사할 수 있는 업무 근거가 없으면 빈 배열을 반환한다."
 )
 
 
@@ -196,6 +224,7 @@ class OllamaProvider:
             OllamaResponseError: Ollama 응답이 프로젝트 스키마와 다른 경우.
         """
         schema = JobPostingResponsibilityExtraction.model_json_schema()
+        numbered_source_lines = _numbered_source_lines(source_text)
         messages = [
             {
                 "role": "system",
@@ -205,7 +234,9 @@ class OllamaProvider:
                 "role": "user",
                 "content": (
                     f"JSON Schema: {json.dumps(schema, ensure_ascii=False)}"
-                    f"\n\n채용 공고 원문:\n{source_text}"
+                    "\n\n각 줄의 대괄호 안 값은 evidenceId로 사용할 줄 식별자다. "
+                    "sourceText에는 식별자를 제외한 원문 줄을 그대로 복사한다."
+                    f"\n\n채용 공고 원문:\n{numbered_source_lines}"
                 ),
             },
         ]
@@ -223,7 +254,8 @@ class OllamaProvider:
             )
             response.raise_for_status()
             content = _content_and_record_usage(response)
-            return JobPostingResponsibilityExtraction.model_validate_json(content)
+            extraction = JobPostingResponsibilityExtraction.model_validate_json(content)
+            return _remove_matching_line_id_prefix(extraction)
         except httpx.TimeoutException as error:
             raise OllamaUnavailableError(
                 "Ollama 응답 제한시간을 초과했습니다."

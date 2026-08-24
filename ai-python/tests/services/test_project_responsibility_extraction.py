@@ -62,8 +62,18 @@ def _request() -> ProjectResponsibilityRequest:
     )
 
 
-def test_grounding_score_overlap() -> None:
+def test_grounding_score_accepts_exact_overlap() -> None:
     assert grounding_score("React 대시보드 구현", "React 대시보드") == 1.0
+
+
+def test_grounding_score_accepts_verbatim_readme_fragment() -> None:
+    source = "Java 서버는 외부 데이터 수집, 분석 작업을 제어하고 결과를 저장했습니다."
+    candidate = "외부 데이터 수집, 분석 작업을 제어하고 결과를 저장했습니다"
+
+    assert grounding_score(source, candidate) == 1.0
+
+
+def test_grounding_score_rejects_unrelated_responsibility() -> None:
     assert grounding_score("export default function App", "머신러닝 파이프라인 학습") < 0.3
 
 
@@ -136,7 +146,7 @@ async def test_detected_technologies_sorted_by_evidence_then_name_capped_30() ->
 @pytest.mark.asyncio
 async def test_responsibility_valid_citation_no_tag_ids() -> None:
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(text="관리자 대시보드 UI 구현", source_evidence_ids=["readme-1"])]
+        [ProjectResponsibilityCandidate(text="관리자 대시보드 UI 구현", source_evidence_ids=["S1"])]
     )
     data = await extract_project_evidence(_request(), provider)
     resp = data["responsibilityEvidenceCandidates"]
@@ -146,8 +156,85 @@ async def test_responsibility_valid_citation_no_tag_ids() -> None:
     assert resp[0]["category"] == "PROJECT_RESPONSIBILITY"
     assert resp[0]["sourceEvidenceIds"] == ["readme-1"]
     assert resp[0]["confirmationStatus"] == "UNCONFIRMED"
+    assert [evidence_id for evidence_id, _ in provider.calls[0][0]] == ["S1", "S2", "S3"]
     # 담당 업무 후보는 표준 태그 id를 반환하지 않는다
     assert "relatedTechnologyTagIds" not in resp[0]
+
+
+@pytest.mark.asyncio
+async def test_responsibility_from_realistic_readme_is_kept() -> None:
+    request = ProjectResponsibilityRequest(
+        extractionTaskId="realistic-readme-task",
+        projectSourceId="career-compass-ai",
+        selectedTechnologyTags=[
+            {"technologyTagId": "tag-java", "canonicalName": "Java"},
+            {"technologyTagId": "tag-python", "canonicalName": "Python"},
+        ],
+        repositorySnapshot={
+            "sourceUrl": "https://github.com/example/career-compass-ai",
+            "fetchedAt": "2026-08-24T08:00:00Z",
+            "repositoryVersion": "abc123",
+            "readmes": [
+                {
+                    "evidenceId": "repo-readme",
+                    "path": "README.md",
+                    "text": (
+                        "Java 서버는 저장소와 채용공고에서 비교 자료를 준비하고, "
+                        "Python 분석 서버는 두 자료의 업무 의미를 비교합니다."
+                    ),
+                }
+            ],
+            "files": [],
+        },
+    )
+    provider = FakeExtractionProvider(
+        [
+            ProjectResponsibilityCandidate(
+                text="저장소와 채용공고에서 비교 자료를 준비",
+                source_evidence_ids=["S1"],
+            ),
+            ProjectResponsibilityCandidate(
+                text="두 자료의 업무 의미를 비교",
+                source_evidence_ids=["S1"],
+            ),
+        ]
+    )
+
+    data = await extract_project_evidence(request, provider)
+
+    assert [candidate["text"] for candidate in data["responsibilityEvidenceCandidates"]] == [
+        "저장소와 채용공고에서 비교 자료를 준비",
+        "두 자료의 업무 의미를 비교",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_responsibility_filter_counts_are_logged(caplog) -> None:
+    provider = FakeExtractionProvider(
+        [
+            ProjectResponsibilityCandidate(
+                text="관리자 대시보드 UI 구현", source_evidence_ids=["S1"]
+            ),
+            ProjectResponsibilityCandidate(
+                text="유령 근거 인용", source_evidence_ids=["ghost"]
+            ),
+            ProjectResponsibilityCandidate(
+                text="머신러닝 파이프라인 학습", source_evidence_ids=["S1"]
+            ),
+            ProjectResponsibilityCandidate(
+                text="React 대시보드 구현 " * 40, source_evidence_ids=["S1"]
+            ),
+        ]
+    )
+
+    with caplog.at_level("INFO", logger="app.project_responsibility_extraction"):
+        await extract_project_evidence(_request(), provider)
+
+    assert "모델 후보 4개, 최종 후보 1개" in caplog.text
+    assert "잘못된 근거 제외 1개" in caplog.text
+    assert "500자 초과 제외 1개" in caplog.text
+    assert "근거 점수 부족 제외 1개" in caplog.text
+    assert "extractionTaskId=e1 projectSourceId=p1" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -162,7 +249,7 @@ async def test_responsibility_invalid_citation_dropped() -> None:
 @pytest.mark.asyncio
 async def test_responsibility_ungrounded_text_dropped() -> None:
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(text="머신러닝 파이프라인 텐서플로 학습", source_evidence_ids=["readme-1"])]
+        [ProjectResponsibilityCandidate(text="머신러닝 파이프라인 텐서플로 학습", source_evidence_ids=["S1"])]
     )
     data = await extract_project_evidence(_request(), provider)
     assert data["responsibilityEvidenceCandidates"] == []
@@ -186,7 +273,7 @@ async def test_responsibility_oversized_text_dropped() -> None:
         },
     )
     provider = FakeExtractionProvider(
-        [ProjectResponsibilityCandidate(text=long_text, source_evidence_ids=["readme-1"])]
+        [ProjectResponsibilityCandidate(text=long_text, source_evidence_ids=["S1"])]
     )
     data = await extract_project_evidence(request, provider)
     assert data["responsibilityEvidenceCandidates"] == []

@@ -4,6 +4,8 @@ import pytest_asyncio
 
 from app.providers.ollama import OllamaProvider
 from app.providers.settings import OllamaSettings
+from app.schemas.project_responsibility import ProjectResponsibilityRequest
+from app.services.project_responsibility_extraction import extract_project_evidence
 
 
 @pytest.fixture
@@ -52,6 +54,44 @@ async def test_extract_job_posting_returns_evidence_linked_result(
 
     assert result.evidence
     assert result.required_skills or result.preferred_skills
+
+
+@pytest.mark.real_ollama
+@pytest.mark.asyncio
+async def test_project_responsibility_extraction_keeps_grounded_readme_candidate(
+    provider: OllamaProvider,
+) -> None:
+    request = ProjectResponsibilityRequest(
+        extractionTaskId="real-ollama-readme-task",
+        projectSourceId="career-compass-ai",
+        selectedTechnologyTags=[
+            {"technologyTagId": "tag-java", "canonicalName": "Java"},
+            {"technologyTagId": "tag-python", "canonicalName": "Python"},
+        ],
+        repositorySnapshot={
+            "sourceUrl": "https://github.com/example/career-compass-ai",
+            "fetchedAt": "2026-08-24T08:00:00Z",
+            "repositoryVersion": "abc123",
+            "readmes": [
+                {
+                    "evidenceId": "repo-readme",
+                    "path": "README.md",
+                    "text": (
+                        "Java 서버는 저장소와 채용공고에서 비교 자료를 준비하고, "
+                        "Python 분석 서버는 두 자료의 업무 의미를 비교합니다."
+                    ),
+                }
+            ],
+            "files": [],
+        },
+    )
+
+    result = await extract_project_evidence(request, provider)
+
+    candidates = result["responsibilityEvidenceCandidates"]
+    assert candidates
+    assert all(candidate["sourceEvidenceIds"] == ["repo-readme"] for candidate in candidates)
+    assert any("준비" in candidate["text"] or "비교" in candidate["text"] for candidate in candidates)
 
 
 @pytest.mark.real_ollama

@@ -15,6 +15,11 @@ cp deploy/.env.example deploy/.env
 # deploy/.env는 .gitignore로 커밋 제외됨
 ```
 
+Python은 Ollama 응답을 최대 120초 기다린다. Java의
+`PYTHON_WORKER_EXTRACT_READ_TIMEOUT`은 이보다 긴 150초를 기본으로 사용해
+Python이 반환하는 정상 또는 오류 응답을 먼저 받을 수 있게 한다. 모델 머신 성능을
+실측하지 않고 이 값을 더 줄이지 않는다.
+
 ## Phase 1 — Python + DB (지금 가능, Docker 빌드 첫 검증)
 Java Dockerfile 확정 전에도 Python·DB로 배포 파이프라인을 먼저 검증한다.
 ```bash

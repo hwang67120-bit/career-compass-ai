@@ -74,6 +74,12 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+tasks.named('processResources') {
+	from('../contracts/fixtures') {
+		into 'fixtures'
+	}
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 }

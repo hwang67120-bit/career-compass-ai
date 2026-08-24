@@ -93,8 +93,19 @@
                 </p>
                 <div class="profile-target-field">
                     <label for="target-job-title">희망 개발 직무</label>
-                    <input id="target-job-title" name="targetJobTitle" form="profile-form" type="text" placeholder="백엔드 개발자" autocomplete="off" required>
-                    <p class="field-help">채용공고 검색과 비교의 기준으로 사용합니다.</p>
+                    <input id="target-job-title" name="targetJobTitle" form="profile-form" type="text" list="synthetic-job-titles" placeholder="백엔드 개발자" autocomplete="off" required>
+                    <datalist id="synthetic-job-titles">
+                        <option value="백엔드 개발자"></option>
+                        <option value="프론트엔드 개발자"></option>
+                        <option value="게임 클라이언트 개발자"></option>
+                        <option value="Android 애플리케이션 개발자"></option>
+                        <option value="머신러닝 엔지니어"></option>
+                        <option value="데이터 엔지니어"></option>
+                        <option value="DevOps·클라우드 엔지니어"></option>
+                        <option value="정보보안 엔지니어"></option>
+                        <option value="QA 자동화 엔지니어"></option>
+                    </datalist>
+                    <p class="field-help">채용공고 검색과 비교의 기준입니다. 합성 공고 시연은 목록에서 직무를 선택해 주세요.</p>
                 </div>
                 <form id="technology-form" class="technology-search-form" novalidate>
                     <label for="technology-query">보유 기술 검색</label>

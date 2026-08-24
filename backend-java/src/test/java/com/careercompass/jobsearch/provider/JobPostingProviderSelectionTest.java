@@ -33,6 +33,19 @@ class JobPostingProviderSelectionTest {
     }
 
     @Test
+    void withProdAndDemoProfilesAndDevSampleProperty_selectsDevSampleProvider() {
+        contextRunner
+                .withPropertyValues(
+                        "spring.profiles.active=prod,demo",
+                        "job-search.provider=dev-sample"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(JobPostingProvider.class);
+                    assertThat(context).hasSingleBean(DevSampleJobPostingProvider.class);
+                });
+    }
+
+    @Test
     void withDevSamplePropertyButDefaultProfile_selectsNoProvider() {
         contextRunner
                 .withPropertyValues("job-search.provider=dev-sample")
