@@ -1044,10 +1044,23 @@
             null
         );
         const bubble = entry.querySelector(".chat-bubble");
-        const postings = (jobAnalysis.postings || [])
+        const searchedPostings = jobAnalysis.postings || [];
+        if (searchedPostings.length === 0) {
+            setLogEntryDetail(
+                entry,
+                "희망 직무와 일치하는 합성 공고가 없습니다."
+            );
+            markLogEntryDone(entry);
+            return;
+        }
+
+        const postings = searchedPostings
             .filter((posting) => posting.comparison);
         if (postings.length === 0) {
-            setLogEntryDetail(entry, "표시할 비교 결과가 없습니다.");
+            setLogEntryDetail(
+                entry,
+                "공고는 검색됐지만 비교 결과가 만들어지지 않았습니다."
+            );
             markLogEntryDone(entry);
             return;
         }
